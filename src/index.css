@@ -2393,10 +2393,6 @@ body {
     padding-top: 0;
   }
 
-  .mate-app--menu-open .brand {
-    display: none;
-  }
-
   .mate-app--menu-open .topbar {
     position: fixed;
     top: 0;
@@ -2413,7 +2409,7 @@ body {
       0;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 10px;
     background: #fff;
     backdrop-filter: none;
@@ -2423,7 +2419,7 @@ body {
   }
 
   .mate-app--menu-open .top-actions--mobile {
-    margin-left: 0;
+    margin-left: auto;
   }
 
   .mobile-menu__backdrop {
