@@ -12,6 +12,8 @@ type Props = {
   trigger: ReactNode;
   scrollable?: boolean;
   minMenuWidth?: number;
+  /** Optional content above the options (e.g. search field) */
+  header?: ReactNode;
   children: ReactNode;
 };
 
@@ -25,9 +27,11 @@ export function CalcOptionPicker({
   trigger,
   scrollable = false,
   minMenuWidth = 0,
+  header,
   children,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const mobile = useMobileSheet();
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
@@ -69,9 +73,14 @@ export function CalcOptionPicker({
     if (!open || mobile) return;
     const onDoc = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (!wrapRef.current?.contains(target) && !listRef.current?.contains(target)) {
-        onOpenChange(false);
+      if (
+        wrapRef.current?.contains(target)
+        || panelRef.current?.contains(target)
+        || listRef.current?.contains(target)
+      ) {
+        return;
       }
+      onOpenChange(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -110,11 +119,23 @@ export function CalcOptionPicker({
       id={listId}
       role="listbox"
       aria-label={ariaLabel}
-      style={mobile ? undefined : menuStyle}
+      style={mobile || header ? undefined : menuStyle}
     >
       {children}
     </ul>
   );
+
+  const floatingPanel = header ? (
+    <div
+      ref={panelRef}
+      className="calc-option-panel calc-option-panel--floating"
+      style={menuStyle}
+      role="presentation"
+    >
+      <div className="calc-option-panel__header">{header}</div>
+      {list}
+    </div>
+  ) : list;
 
   return (
     <>
@@ -122,7 +143,7 @@ export function CalcOptionPicker({
         {trigger}
       </div>
 
-      {open && !mobile && createPortal(list, document.body)}
+      {open && !mobile && createPortal(floatingPanel, document.body)}
 
       {open && mobile && createPortal(
         <div className="calc-option-sheet-root" role="presentation">
@@ -140,7 +161,10 @@ export function CalcOptionPicker({
           >
             <div className="calc-option-sheet__grab" aria-hidden />
             {sheetTitle && <p className="calc-option-sheet__title">{sheetTitle}</p>}
-            <div className="calc-option-sheet__body">{list}</div>
+            <div className="calc-option-sheet__body">
+              {header && <div className="calc-option-panel__header calc-option-panel__header--sheet">{header}</div>}
+              {list}
+            </div>
           </div>
         </div>,
         document.body,
