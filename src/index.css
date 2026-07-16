@@ -8091,31 +8091,33 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
   border-radius: 50%;
-  background: #1a73e8;
-  border: 2.5px solid #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  background: #2ecc40;
+  border: 3px solid #fff;
+  box-shadow:
+    0 0 0 2px rgba(46, 204, 64, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .calc-user-loc__pulse {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
   border-radius: 50%;
-  background: rgba(26, 115, 232, 0.28);
+  background: rgba(46, 204, 64, 0.32);
   animation: calcUserPulse 1.8s ease-out infinite;
 }
 
 @keyframes calcUserPulse {
   0% { transform: scale(0.7); opacity: 0.9; }
-  70% { transform: scale(1.6); opacity: 0; }
-  100% { transform: scale(1.6); opacity: 0; }
+  70% { transform: scale(1.7); opacity: 0; }
+  100% { transform: scale(1.7); opacity: 0; }
 }
 
 /* Address autocomplete */

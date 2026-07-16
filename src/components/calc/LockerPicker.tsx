@@ -305,6 +305,9 @@ export function LockerPicker({
 
     if (userMarkerRef.current) {
       userMarkerRef.current.setLatLng([lat, lng])
+      userMarkerRef.current.setPopupContent(
+        `<b>${source === 'ip' ? t('calc.approxHere') : t('calc.youAreHere')}</b>`,
+      )
     } else {
       const marker = L.marker([lat, lng], {
         icon: userLocationIcon,
@@ -319,17 +322,22 @@ export function LockerPicker({
     if (!fit) return
     if (focusPos && isValidCoord(focusPos.lat, focusPos.lng)) return
 
-    // Don't yank the map away if estimate is far from shown lockers
+    // Always keep the green user dot visible: fit user + lockers together
     if (mapLockers.length) {
       let nearestKm = Infinity
       for (const l of mapLockers) {
         nearestKm = Math.min(nearestKm, haversineKm(lat, lng, l.lat, l.lng))
       }
+      const bounds = L.latLngBounds([
+        [lat, lng],
+        ...mapLockers.map((l) => [l.lat, l.lng] as [number, number]),
+      ])
+      map.fitBounds(bounds.pad(nearestKm > 120 ? 0.2 : 0.35))
       if (nearestKm > 120) {
         setGeoStatus('approx')
-        setGeoHint(t('calc.geoHintFar'))
-        return
+        setGeoHint(t('calc.geoHintFarVisible'))
       }
+      return
     }
     fitAround(lat, lng)
   }, [fitAround, focusPos, t, mapLockers])
