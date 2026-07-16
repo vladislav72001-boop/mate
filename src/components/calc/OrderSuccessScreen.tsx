@@ -23,7 +23,7 @@ type Props = {
 function SuccessMapArt() {
   return (
     <div className="order-success__map" aria-hidden>
-      <svg viewBox="0 0 600 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 600 220" fill="none">
         <defs>
           <pattern id="order-success-dots" x="0" y="0" width="12" height="12" patternUnits="userSpaceOnUse">
             <circle cx="6" cy="6" r="1.4" fill="#122023" fillOpacity="0.14" />

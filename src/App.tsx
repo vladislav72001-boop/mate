@@ -777,7 +777,7 @@ function App() {
           {/* ── HERO ── */}
           <section className="biz-hero card">
             <div className="biz-hero__map" aria-hidden>
-              <svg className="biz-map-svg" viewBox="0 0 600 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg className="biz-map-svg" viewBox="0 0 600 360" fill="none">
                 <defs>
                   <pattern id="map-dots" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
                     <circle cx="7" cy="7" r="1.7" fill="#122023" fillOpacity="0.18"/>
@@ -1000,7 +1000,7 @@ function App() {
                   </button>
                 </div>
                 <div className="about-hero__map" aria-hidden>
-                  <svg className="about-map-svg" viewBox="0 0 600 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <svg className="about-map-svg" viewBox="0 0 600 360" fill="none">
                     <defs>
                       <pattern id="about-map-dots" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
                         <circle cx="7" cy="7" r="1.7" fill="#122023" fillOpacity="0.16"/>

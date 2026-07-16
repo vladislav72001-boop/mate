@@ -24,6 +24,15 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '2mb' }));
 
+// Avoid mixed-content warnings on HTTPS (e.g. accidental http:// subresources)
+if (String(process.env.APP_URL || '').startsWith('https://')) {
+  app.use((_req, res, next) => {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Content-Security-Policy', 'upgrade-insecure-requests');
+    next();
+  });
+}
+
 function signToken(user) {
   return jwt.sign({ sub: user.id, type: user.type }, JWT_SECRET, { expiresIn: '30d' });
 }
