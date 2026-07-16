@@ -2393,6 +2393,10 @@ body {
     padding-top: 0;
   }
 
+  .mate-app--menu-open .brand {
+    display: none;
+  }
+
   .mate-app--menu-open .topbar {
     position: fixed;
     top: 0;
@@ -2409,12 +2413,17 @@ body {
       0;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 10px;
-    background: rgba(255, 255, 255, 0.96);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    box-shadow: 0 1px 0 rgba(18, 32, 35, 0.08);
+    background: #fff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
     box-sizing: border-box;
+  }
+
+  .mate-app--menu-open .top-actions--mobile {
+    margin-left: 0;
   }
 
   .mobile-menu__backdrop {
@@ -2423,30 +2432,33 @@ body {
     border: none;
     padding: 0;
     margin: 0;
-    background: rgba(10, 18, 20, 0.42);
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
+    background: #fff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     cursor: pointer;
     animation: mobile-menu-fade 200ms ease;
   }
 
   .mobile-menu__panel {
     position: absolute;
-    top: var(--mobile-header-h);
+    inset: 0;
+    top: 0;
     right: 0;
-    left: auto;
-    width: min(360px, 100%);
-    height: calc(100% - var(--mobile-header-h));
+    left: 0;
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     gap: 14px;
     padding:
-      16px 18px
+      calc(var(--mobile-header-h) + 8px)
+      max(18px, var(--grid-margin))
       calc(22px + env(safe-area-inset-bottom, 0px));
     background:
       linear-gradient(165deg, #ffffff 0%, #f4f7f5 48%, #eef2f0 100%);
-    border-left: 1px solid rgba(18, 32, 35, 0.08);
-    box-shadow: -18px 0 48px rgba(10, 18, 20, 0.18);
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
     animation: mobile-menu-slide 280ms cubic-bezier(0.22, 1, 0.36, 1);
     overflow-y: auto;
     box-sizing: border-box;
@@ -2747,13 +2759,15 @@ body {
   }
 
   .mobile-menu__panel {
-    top: var(--mobile-header-h);
+    inset: 0;
+    top: 0;
     left: 0;
     right: 0;
     width: 100%;
-    height: calc(100% - var(--mobile-header-h));
-    border-left: none;
-    border-radius: 18px 18px 0 0;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .mobile-menu__nav {
