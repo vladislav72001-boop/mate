@@ -98,11 +98,11 @@ body {
 }
 
 .brand img,
-.brand .mate-logo svg {
+.brand .mate-logo img {
   width: auto;
-  height: 62px;
+  height: 44px;
   display: block;
-  color: var(--navy);
+  border-radius: 10px;
 }
 
 .brand .mate-logo {
@@ -536,15 +536,16 @@ body {
 
 .hero-copy h1 .hero-logo-word .mate-logo {
   display: inline-flex;
-  height: 1.12em;
+  height: 1.05em;
   overflow: visible;
 }
 
-.hero-copy h1 .hero-logo-word .mate-logo svg {
+.hero-copy h1 .hero-logo-word .mate-logo img {
   height: 100%;
   width: auto;
+  aspect-ratio: 1;
   display: block;
-  overflow: visible;
+  border-radius: 22%;
 }
 
 .hero-copy h1 .hero-highlight {
@@ -2774,9 +2775,10 @@ body {
   }
 
   .brand img,
-  .brand .mate-logo svg {
+  .brand .mate-logo img {
     width: auto;
-    height: 48px;
+    height: 40px;
+    border-radius: 9px;
   }
 
   .btn-ghost {
@@ -4535,8 +4537,11 @@ body {
   flex-shrink: 0;
 }
 
-.mate-logo svg {
+.mate-logo img {
   display: block;
+  border-radius: 22%;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 .client-auth__switch {
