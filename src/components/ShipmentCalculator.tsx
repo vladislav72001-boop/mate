@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { AuthUser } from '../api/auth';
 import {
   calculateBatch,
@@ -1974,7 +1975,7 @@ export function ShipmentCalculator({ open, onClose, user, onSuccess }: ModalProp
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="ship-calc-overlay" role="dialog" aria-modal="true" aria-labelledby="ship-calc-title">
       <button type="button" className="ship-calc-overlay__backdrop" onClick={onClose} aria-label={t('calc.close')} />
       <aside className="calc-card card calc-card--modal">
@@ -2000,7 +2001,8 @@ export function ShipmentCalculator({ open, onClose, user, onSuccess }: ModalProp
           <span>{t('calc.metaReliable')}</span>
         </div>
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

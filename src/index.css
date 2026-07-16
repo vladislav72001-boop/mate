@@ -966,6 +966,9 @@ body {
   border-radius:20px;
   flex-direction:column;
   width:min(520px,100%);
+  max-width:100%;
+  margin-left:auto;
+  margin-right:auto;
   max-height:min(92vh,720px);
   padding:22px 24px 18px;
   animation: shipCalcSlideUp 0.28s cubic-bezier(0.22, 1, 0.36, 1);
@@ -5021,8 +5024,12 @@ body {
 .client-dash {
   position: fixed;
   inset: 0;
+  left: 0;
+  right: 0;
   z-index: 200;
   display: flex;
+  width: 100%;
+  max-width: 100vw;
   background: #eef0ee;
   overflow: hidden;
   height: 100dvh;
@@ -7302,7 +7309,7 @@ body {
   }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .client-dash { flex-direction: column; }
   .client-dash__sidebar {
     width: 100%;
@@ -7357,7 +7364,14 @@ body {
   .client-dash__nav-text--short { display: inline; }
   .client-dash__promo { display: none; }
   .client-dash__user-mini { display: none; }
-  .client-dash__main { padding: 16px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .client-dash__body {
+    width: 100%;
+    min-width: 0;
+  }
+  .client-dash__main {
+    width: 100%;
+    padding: 16px 14px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
   .client-dash__head-row { flex-direction: column; align-items: stretch; }
   .client-dash__head-row h1 { font-size: 1.65rem; }
   .client-dash__welcome-discount {
@@ -7381,6 +7395,9 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
   animation: shipCalcFadeIn 0.22s ease;
 }
 
@@ -8069,17 +8086,25 @@ body {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  width: 100%;
   overflow: hidden;
 }
 
 .calc-form--in-modal .calc-form__layout--modal {
   flex: 1;
   min-height: 0;
+  width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-right: 2px;
+}
+
+.calc-form--in-modal .calc-form__main,
+.calc-form--in-modal .calc-form__step-body {
+  width: 100%;
+  min-width: 0;
 }
 
 .calc-form--in-modal .calc-form__nav {
@@ -9625,12 +9650,16 @@ body.calc-option-sheet-open {
 
   .ship-calc-overlay {
     padding: 0;
-    align-items: flex-end;
+    align-items: stretch;
+    justify-content: center;
   }
 
   .calc-card--modal {
     width: 100%;
+    max-width: 100%;
+    margin: 0;
     max-height: min(96dvh, 100dvh);
+    height: min(96dvh, 100dvh);
     border-radius: 18px 18px 0 0;
     padding:
       calc(14px + env(safe-area-inset-top, 0px))
