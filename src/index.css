@@ -9063,6 +9063,67 @@ body {
   overscroll-behavior: contain;
 }
 
+.calc-option-panel--floating {
+  background: #fff;
+  border: 1px solid rgba(18, 32, 35, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(18, 32, 35, 0.16);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 360px);
+}
+
+.calc-option-panel--floating .calc-option-list--floating {
+  position: static;
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.calc-option-panel__header {
+  flex-shrink: 0;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid rgba(18, 32, 35, 0.08);
+  background: #fff;
+}
+
+.calc-option-panel__header--sheet {
+  padding: 0 0 12px;
+  border-bottom: none;
+  background: transparent;
+}
+
+.calc-option-search {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgba(18, 32, 35, 0.12);
+  border-radius: 12px;
+  background: #f7f8f7;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--navy);
+  outline: none;
+}
+
+.calc-option-search:focus {
+  border-color: rgba(18, 32, 35, 0.28);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(225, 255, 1, 0.35);
+}
+
+.calc-option-list__empty {
+  padding: 16px 14px;
+  color: rgba(18, 32, 35, 0.55);
+  font-size: 0.95rem;
+  list-style: none;
+}
+
 .calc-option-sheet-root {
   position: fixed;
   inset: 0;
