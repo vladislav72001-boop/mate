@@ -8154,6 +8154,34 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* In-flow list: never clipped by modal overflow / iOS keyboard */
+.calc-address__panel--inline {
+  position: static;
+  left: auto;
+  right: auto;
+  top: auto;
+  z-index: auto;
+  margin-top: 8px;
+  max-height: min(38vh, 260px);
+  box-shadow: none;
+}
+
+.calc-address__status--muted {
+  color: rgba(18, 32, 35, 0.55);
+  font-size: 0.82rem;
+  padding-bottom: 4px;
+}
+
+.calc-address__approx {
+  background: #f4f8ec !important;
+  border: 1px solid rgba(18, 32, 35, 0.08) !important;
+  margin-bottom: 4px;
+}
+
+.calc-address__approx b {
+  color: #3d5a1f;
+}
+
 /* Portal: above calc modal (z-index 1200) and option sheets (1400) */
 .calc-address__panel--floating {
   position: fixed;

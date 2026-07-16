@@ -1,9 +1,10 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   fetchAddressSuggestions,
   type AddressSuggestion,
 } from '../../api/shipping';
+import { useI18n } from '../../i18n/context';
+import { CITY_COORDS } from './LockerPicker';
 
 type Props = {
   label?: string;
@@ -18,6 +19,34 @@ type Props = {
   disabled?: boolean;
 };
 
+function cityFallbackCoords(country?: string, city?: string) {
+  const cc = String(country || '').toUpperCase();
+  const name = String(city || '').trim();
+  const exact = CITY_COORDS.find((c) => c.country === cc && c.city === name);
+  if (exact) return exact;
+  return CITY_COORDS.find((c) => c.country === cc) || null;
+}
+
+function buildApproxSuggestion(
+  q: string,
+  country: string | undefined,
+  city: string | undefined,
+  near: AddressSuggestion | null,
+): AddressSuggestion {
+  const center = cityFallbackCoords(country, city);
+  const labelParts = [q.trim(), city || near?.city, country].filter(Boolean);
+  return {
+    id: `approx:${q.trim().toLowerCase()}:${city || ''}`,
+    label: labelParts.join(', '),
+    street: q.trim(),
+    city: city || near?.city || '',
+    postal: near?.postal || '',
+    country: String(country || near?.country || '').toUpperCase(),
+    lat: near?.lat ?? center?.lat ?? 0,
+    lng: near?.lng ?? center?.lng ?? 0,
+  };
+}
+
 export function AddressSuggest({
   label = 'Адрес',
   value,
@@ -30,16 +59,14 @@ export function AddressSuggest({
   hint,
   disabled = false,
 }: Props) {
+  const { t } = useI18n();
   const listId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<AddressSuggestion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
   const skipFetchRef = useRef(false);
 
   useEffect(() => {
@@ -57,9 +84,10 @@ export function AddressSuggest({
     }
 
     let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setOpen(true);
     const timer = window.setTimeout(async () => {
-      setLoading(true);
-      setError(null);
       setSearched(false);
       try {
         const suggestions = await fetchAddressSuggestions({ q, country, city });
@@ -73,78 +101,23 @@ export function AddressSuggest({
           setItems([]);
           setSearched(true);
           setOpen(true);
-          setError(e instanceof Error ? e.message : 'Не удалось найти адрес');
+          setError(e instanceof Error ? e.message : t('calc.addressSearchFail'));
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
-    }, 280);
+    }, 220);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [value, country, city]);
-
-  const updatePanelPosition = () => {
-    const el = inputRef.current ?? wrapRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const width = rect.width;
-    let left = rect.left;
-    const maxLeft = window.innerWidth - width - 8;
-    if (left > maxLeft) left = Math.max(8, maxLeft);
-
-    const vv = window.visualViewport;
-    const viewTop = vv?.offsetTop ?? 0;
-    const viewBottom = viewTop + (vv?.height ?? window.innerHeight);
-    const gap = 4;
-    const preferredMax = Math.min(280, Math.floor((viewBottom - viewTop) * 0.42));
-    const spaceBelow = viewBottom - rect.bottom - gap - 8;
-    const spaceAbove = rect.top - viewTop - gap - 8;
-    const placeAbove = spaceBelow < 120 && spaceAbove > spaceBelow;
-    const maxHeight = Math.max(96, Math.min(preferredMax, placeAbove ? spaceAbove : spaceBelow));
-
-    setPanelStyle({
-      position: 'fixed',
-      left,
-      width,
-      zIndex: 5000,
-      maxHeight,
-      ...(placeAbove
-        ? { bottom: window.innerHeight - rect.top + gap, top: 'auto' }
-        : { top: rect.bottom + gap, bottom: 'auto' }),
-    });
-  };
-
-  const showPanel = open && (loading || searched || items.length > 0);
-
-  useLayoutEffect(() => {
-    if (!showPanel) return;
-    updatePanelPosition();
-  }, [showPanel, items.length, loading, error]);
-
-  useEffect(() => {
-    if (!showPanel) return;
-    const onLayout = () => updatePanelPosition();
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-    window.visualViewport?.addEventListener('resize', onLayout);
-    window.visualViewport?.addEventListener('scroll', onLayout);
-    return () => {
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-      window.visualViewport?.removeEventListener('resize', onLayout);
-      window.visualViewport?.removeEventListener('scroll', onLayout);
-    };
-  }, [showPanel]);
+  }, [value, country, city, t]);
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (wrapRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-      setOpen(false);
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -169,52 +142,21 @@ export function AddressSuggest({
     setSearched(false);
   };
 
-  const showEmpty = searched && !loading && !error && items.length === 0 && value.trim().length >= 3;
+  const q = value.trim();
+  const canSuggest = q.length >= 3;
+  const approx = useMemo(() => {
+    if (!canSuggest) return null;
+    return buildApproxSuggestion(q, country, city, items[0] || null);
+  }, [canSuggest, q, country, city, items]);
 
-  const panel = showPanel ? (
-    <div
-      ref={panelRef}
-      className="calc-address__panel calc-address__panel--floating"
-      role="presentation"
-      style={panelStyle}
-    >
-      {loading && <p className="calc-address__status">Ищем адрес…</p>}
-      {error && <p className="calc-address__status calc-address__status--error">{error}</p>}
-      {showEmpty && (
-        <p className="calc-address__status">
-          Адрес не найден. Попробуйте «улица 7» или добавьте район / город.
-        </p>
-      )}
-      {items.length > 0 && (
-        <ul
-          id={`${listId}-list`}
-          className="calc-address__list"
-          role="listbox"
-          aria-label="Подсказки адресов"
-        >
-          {items.map((item) => (
-            <li key={item.id} role="option">
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(item)}
-              >
-                <b>{item.street || item.label.split(',')[0]}</b>
-                <em>{item.label}</em>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  ) : null;
+  const showPanel = open && canSuggest && (loading || searched || items.length > 0 || Boolean(error));
+  const showEmpty = searched && !loading && !error && items.length === 0;
 
   return (
     <div className={`field-block calc-address${open ? ' is-open' : ''}`} ref={wrapRef}>
       <label htmlFor={listId}>{label}</label>
       <div className="calc-address__control">
         <input
-          ref={inputRef}
           id={listId}
           name={name}
           type="text"
@@ -229,7 +171,7 @@ export function AddressSuggest({
             setOpen(true);
           }}
           onFocus={() => {
-            if (items.length || searched || loading || value.trim().length >= 3) setOpen(true);
+            if (canSuggest) setOpen(true);
           }}
           aria-autocomplete="list"
           aria-expanded={showPanel}
@@ -237,8 +179,54 @@ export function AddressSuggest({
         />
         {loading && <span className="calc-address__spinner" aria-hidden />}
       </div>
+
+      {showPanel && (
+        <div className="calc-address__panel calc-address__panel--inline" role="presentation">
+          {loading && <p className="calc-address__status">{t('calc.addressSearching')}</p>}
+          {error && <p className="calc-address__status calc-address__status--error">{error}</p>}
+          {showEmpty && (
+            <p className="calc-address__status">{t('calc.addressEmpty')}</p>
+          )}
+          {!loading && searched && items.length > 0 && (
+            <p className="calc-address__status calc-address__status--muted">{t('calc.addressPickHint')}</p>
+          )}
+
+          <ul
+            id={`${listId}-list`}
+            className="calc-address__list"
+            role="listbox"
+            aria-label={t('calc.addressSuggestions')}
+          >
+            {approx && searched && !loading && (
+              <li role="option">
+                <button
+                  type="button"
+                  className="calc-address__approx"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(approx)}
+                >
+                  <b>{t('calc.addressApprox')}</b>
+                  <em>{approx.label}</em>
+                </button>
+              </li>
+            )}
+            {items.map((item) => (
+              <li key={item.id} role="option">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(item)}
+                >
+                  <b>{item.street || item.label.split(',')[0]}</b>
+                  <em>{item.label}</em>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {hint && !showPanel && <p className="calc-form__hint">{hint}</p>}
-      {panel && createPortal(panel, document.body)}
     </div>
   );
 }

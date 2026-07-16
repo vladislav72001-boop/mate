@@ -135,6 +135,48 @@ function buildSearchQuery(q, country, city) {
   return q.trim();
 }
 
+/** Extra phrasings so "Taksony 7" also finds "Taksony utca 7". */
+function queryVariants(q, country, city) {
+  const base = String(q || '').trim();
+  if (!base) return [];
+  const variants = [];
+  const add = (v) => {
+    const s = String(v || '').trim();
+    if (s && !variants.some((x) => foldText(x) === foldText(s))) variants.push(s);
+  };
+
+  add(base);
+  add(buildSearchQuery(base, country, city));
+
+  const houseMatch = base.match(/^(.+?)\s+(\d+[a-zA-Z]?)$/u);
+  if (houseMatch) {
+    const street = houseMatch[1].trim();
+    const house = houseMatch[2].trim();
+    const foldedStreet = foldText(street);
+    const hasType = /(utca|ut|út|strasse|str\.|street|road|allee|weg|ulica|ul\.|rue|via)/i.test(street);
+    if (!hasType) {
+      if (country === 'HU') {
+        add(`${street} utca ${house}`);
+        add(buildSearchQuery(`${street} utca ${house}`, country, city));
+        if (!foldedStreet.endsWith('ut')) add(`${street} út ${house}`);
+      } else if (country === 'DE' || country === 'AT') {
+        add(`${street} Straße ${house}`);
+        add(buildSearchQuery(`${street} Str. ${house}`, country, city));
+      } else if (country === 'PL') {
+        add(`ul. ${street} ${house}`);
+        add(buildSearchQuery(`ul. ${street} ${house}`, country, city));
+      } else {
+        add(`${street} ${house}`);
+      }
+    }
+  }
+
+  // Broader city-less pass helps suburbs / alternate spellings
+  if (city && variants.length < 5) add(base);
+
+  return variants.slice(0, 4);
+}
+
 function mapPhotonFeature(feature, country) {
   const props = feature?.properties || {};
   const coords = feature?.geometry?.coordinates || [];
@@ -215,9 +257,11 @@ function rankSuggestions(items, q, country, city) {
     }
     if (center && Number.isFinite(item.lat) && Number.isFinite(item.lng)) {
       const dist = haversineKm(center.lat, center.lng, item.lat, item.lng);
+      // Keep metro / suburb matches (e.g. near Budapest) instead of dropping them
       if (dist <= 25) score += 6;
-      else if (dist <= 45) score += 2;
-      else score -= 5;
+      else if (dist <= 50) score += 3;
+      else if (dist <= 80) score += 1;
+      else score -= 2;
     }
     if (item._source === 'photon') score += 1;
     return { ...item, _score: score };
@@ -236,8 +280,7 @@ function dedupeSuggestions(items) {
   return out;
 }
 
-async function searchPhoton(q, country, city) {
-  const searchQ = buildSearchQuery(q, country, city);
+async function searchPhotonRaw(searchQ, country) {
   const params = new URLSearchParams({
     q: searchQ,
     limit: '12',
@@ -256,8 +299,7 @@ async function searchPhoton(q, country, city) {
     .filter((s) => !country || !s.country || s.country === country);
 }
 
-async function searchNominatim(q, country, city) {
-  const searchQ = buildSearchQuery(q, country, city);
+async function searchNominatimRaw(searchQ, country) {
   const params = new URLSearchParams({
     format: 'json',
     q: searchQ,
@@ -291,19 +333,18 @@ export async function geocodeAddressSuggestions({ q, country = '', city = '' }) 
   const cityName = String(city || '').trim();
   if (query.length < 3) return [];
 
-  const [photon, nominatim] = await Promise.allSettled([
-    searchPhoton(query, cc, cityName),
-    searchNominatim(query, cc, cityName),
-  ]);
-
-  const merged = [
-    ...(photon.status === 'fulfilled' ? photon.value : []),
-    ...(nominatim.status === 'fulfilled' ? nominatim.value : []),
+  const variants = queryVariants(query, cc, cityName);
+  const jobs = [
+    ...variants.map((variant) => searchPhotonRaw(variant, cc)),
+    searchNominatimRaw(variants[0], cc),
   ];
+  if (variants[1]) jobs.push(searchNominatimRaw(variants[1], cc));
+
+  const settled = await Promise.allSettled(jobs);
+  const merged = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
 
   const ranked = rankSuggestions(dedupeSuggestions(merged), query, cc, cityName);
-  return ranked
-    .filter((s) => s._score > 0 || s._hasHouse)
-    .slice(0, 8)
-    .map(({ _score, _hasHouse, _source, ...suggestion }) => suggestion);
+  const strong = ranked.filter((s) => s._score > 0 || s._hasHouse || streetMatchScore(query, s.street) > 0);
+  const picked = (strong.length ? strong : ranked).slice(0, 10);
+  return picked.map(({ _score, _hasHouse, _source, ...suggestion }) => suggestion);
 }
