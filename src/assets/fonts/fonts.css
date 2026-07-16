@@ -1,0 +1,127 @@
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 300;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-Light.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 300;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-LightItalic.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 400;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-Roman.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 400;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-Italic.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 450;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-Book.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 450;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-BookItalic.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 500;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-Medium.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 500;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-MediumItalic.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 600;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-SemiBold.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 600;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-SemiBoldItalic.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 700;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-Bold.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 700;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-BoldItalic.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 800;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-ExtraBold.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 800;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-ExtraBoldItalic.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 900;
+    font-style: normal;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-Black.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Overused Grotesk';
+    font-weight: 900;
+    font-style: italic;
+    src: url('./Overused-Grotesk/woff2/OverusedGrotesk-BlackItalic.woff2') format('woff2');
+    font-display: swap;
+}

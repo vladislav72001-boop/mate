@@ -1,0 +1,17 @@
+{
+  "vatEnabled": true,
+  "vatPercent": 27,
+  "roundingEnabled": true,
+  "roundingStep": 10,
+  "currency": "HUF",
+  "fxFromEur": {
+    "EUR": 1,
+    "HUF": 400,
+    "PLN": 4.3,
+    "CZK": 25,
+    "RON": 5
+  },
+  "fragileFeeEur": 1.98,
+  "insurancePercent": 1,
+  "updatedAt": "2026-07-13T08:15:58.287Z"
+}

@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mate-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: mate
+      POSTGRES_PASSWORD: mate
+      POSTGRES_DB: mate
+    volumes:
+      - mate_pg_data:/var/lib/postgresql/data
+
+volumes:
+  mate_pg_data:

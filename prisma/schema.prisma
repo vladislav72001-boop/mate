@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// DATABASE_URL example:
+// postgresql://mate:mate@localhost:5432/mate?schema=public
+
+model User {
+  id                     String    @id @default(uuid())
+  name                   String
+  email                  String    @unique
+  login                  String?
+  phone                  String
+  passwordHash           String
+  type                   String    @default("client")
+  welcomeDiscountUsed    Boolean   @default(false)
+  welcomeDiscountUsedAt  DateTime?
+  createdAt              DateTime  @default(now())
+  addresses              Address[]
+  orders                 Order[]
+
+  @@index([login])
+  @@index([type])
+  @@map("users")
+}
+
+model Order {
+  id              String    @id @default(uuid())
+  orderNumber     String    @unique
+  publicToken     String    @unique
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerEmail   String
+  senderPhone     String    @default("")
+  receiverPhone   String    @default("")
+  status          String    @default("pending_payment")
+  amount          Float
+  currency        String    @default("EUR")
+  payload         Json
+  priceBreakdown  Json?
+  priceSource     String?
+  npRef           String?
+  npTtn           String?
+  npSnapshot      Json?
+  paymentMode     String    @default("mock")
+  stripeSessionId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  paidAt          DateTime?
+  cancelledAt     DateTime?
+
+  @@index([userId])
+  @@index([customerEmail])
+  @@index([status])
+  @@index([npTtn])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model Address {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String   @default("Адрес")
+  name      String   @default("")
+  phone     String   @default("")
+  country   String   @default("HU")
+  city      String   @default("")
+  street    String   @default("")
+  postal    String   @default("")
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+model AppSettings {
+  id               Int      @id @default(1)
+  vatEnabled       Boolean  @default(true)
+  vatPercent       Float    @default(27)
+  roundingEnabled  Boolean  @default(true)
+  roundingStep     Int      @default(10)
+  currency         String   @default("HUF")
+  fxFromEur        Json
+  fragileFeeEur    Float    @default(1.98)
+  insurancePercent Float    @default(1)
+  updatedAt        DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model PricingConfig {
+  id            Int      @id @default(1)
+  version       Int      @default(1)
+  destinations  Json
+  weightRows    Json
+  costPrices    Json
+  weightMarkups Json
+  tiers         Json
+  updatedAt     DateTime @updatedAt
+
+  @@map("pricing")
+}
