@@ -103,6 +103,61 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+/** Approximate client location by IP (fallback when browser GPS times out). */
+app.get('/api/geo/approx', async (req, res) => {
+  try {
+    const forwarded = String(req.headers['x-forwarded-for'] || '')
+      .split(',')[0]
+      .trim();
+    const ip = forwarded
+      || String(req.headers['x-real-ip'] || '').trim()
+      || req.socket?.remoteAddress
+      || '';
+    const cleanIp = ip.replace(/^::ffff:/, '');
+    const isLocal = !cleanIp
+      || cleanIp === '127.0.0.1'
+      || cleanIp === '::1'
+      || cleanIp.startsWith('192.168.')
+      || cleanIp.startsWith('10.');
+
+    const url = isLocal
+      ? 'https://get.geojs.io/v1/ip/geo.json'
+      : `https://get.geojs.io/v1/ip/geo/${encodeURIComponent(cleanIp)}.json`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    let upstream;
+    try {
+      upstream = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }    if (!upstream.ok) {
+      return res.status(502).json({ error: 'geo_upstream_failed' });
+    }
+    const data = await upstream.json();
+    const lat = Number(data.latitude ?? data.lat);
+    const lng = Number(data.longitude ?? data.lng ?? data.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(502).json({ error: 'geo_invalid' });
+    }
+    return res.json({
+      lat,
+      lng,
+      latitude: lat,
+      longitude: lng,
+      city: data.city || data.region || null,
+      country_code: data.country_code || data.country || null,
+      source: 'ip',
+    });
+  } catch (err) {
+    console.error('[geo/approx]', err);
+    return res.status(502).json({ error: 'geo_failed' });
+  }
+});
+
 app.post('/api/auth/register', async (req, res) => {
   try {
     const error = validateRegister(req.body);

@@ -5,6 +5,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import { getCurrentPositionReliable, GeoError } from '../../utils/geolocation'
+import { canonicalCityValue } from '../../constants/cities'
 import { useI18n } from '../../i18n/context'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -146,15 +147,44 @@ export function nearestCityFromCoords(
   return { city: best.city, country: best.country, distanceKm: bestDist }
 }
 
-export function detectCityByGeolocation(country?: string): Promise<{ city: string; country: string }> {
-  return getCurrentPositionReliable().then((coords) => {
-    const match = nearestCityFromCoords(coords.lat, coords.lng, country)
-    if (!match) {
-      throw new Error('Не удалось определить город')
+export async function detectCityByGeolocation(country?: string): Promise<{ city: string; country: string; source: 'gps' | 'ip' }> {
+  const coords = await getCurrentPositionReliable({ allowIpFallback: true })
+  const preferredCountry = country || coords.countryCode
+
+  // IP says another country than the required pickup/dest country → use that country's default city
+  if (
+    preferredCountry
+    && coords.source === 'ip'
+    && coords.countryCode
+    && coords.countryCode !== preferredCountry
+  ) {
+    const fallback = CITY_COORDS.find((c) => c.country === preferredCountry)
+    if (fallback) {
+      return { city: fallback.city, country: preferredCountry, source: 'ip' }
     }
-    return { city: match.city, country: match.country }
-  })
+  }
+
+  if (coords.city && preferredCountry) {
+    const canonical = canonicalCityValue(preferredCountry, coords.city)
+    if (canonical) {
+      return { city: canonical, country: preferredCountry, source: coords.source }
+    }
+  }
+
+  const match = nearestCityFromCoords(coords.lat, coords.lng, preferredCountry)
+  if (!match) {
+    throw new Error('Не удалось определить город')
+  }
+  // If "nearest" is still very far (>250km), prefer country capital/first city
+  if (preferredCountry && match.distanceKm > 250) {
+    const fallback = CITY_COORDS.find((c) => c.country === preferredCountry)
+    if (fallback) {
+      return { city: fallback.city, country: preferredCountry, source: coords.source }
+    }
+  }
+  return { city: match.city, country: match.country, source: coords.source }
 }
+
 
 const userLocationIcon = L.divIcon({
   className: 'calc-user-loc',
@@ -208,7 +238,7 @@ export function LockerPicker({
   onSelectRef.current = onSelect
 
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null)
-  const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'ok' | 'denied' | 'error'>('idle')
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'ok' | 'approx' | 'denied' | 'error'>('idle')
   const [geoHint, setGeoHint] = useState<string | null>(null)
 
   const mapLockers = useMemo(
@@ -264,13 +294,13 @@ export function LockerPicker({
     if (fit) fitAround(lat, lng)
   }, [fitAround])
 
-  const placeUserMarker = useCallback((lat: number, lng: number, fit = true) => {
+  const placeUserMarker = useCallback((lat: number, lng: number, fit = true, source: 'gps' | 'ip' = 'gps') => {
     const map = leafletRef.current
     if (!map || !isValidCoord(lat, lng)) return
 
     userPosRef.current = { lat, lng }
     setUserPos({ lat, lng })
-    setGeoStatus('ok')
+    setGeoStatus(source === 'ip' ? 'approx' : 'ok')
     setGeoHint(null)
 
     if (userMarkerRef.current) {
@@ -281,22 +311,34 @@ export function LockerPicker({
         zIndexOffset: 1000,
         interactive: true,
       })
-      marker.bindPopup(`<b>${t('calc.youAreHere')}</b>`)
+      marker.bindPopup(`<b>${source === 'ip' ? t('calc.approxHere') : t('calc.youAreHere')}</b>`)
       marker.addTo(map)
       userMarkerRef.current = marker
     }
 
-    // Prefer address focus for framing when present
     if (!fit) return
     if (focusPos && isValidCoord(focusPos.lat, focusPos.lng)) return
+
+    // Don't yank the map away if estimate is far from shown lockers
+    if (mapLockers.length) {
+      let nearestKm = Infinity
+      for (const l of mapLockers) {
+        nearestKm = Math.min(nearestKm, haversineKm(lat, lng, l.lat, l.lng))
+      }
+      if (nearestKm > 120) {
+        setGeoStatus('approx')
+        setGeoHint(t('calc.geoHintFar'))
+        return
+      }
+    }
     fitAround(lat, lng)
-  }, [fitAround, focusPos, t])
+  }, [fitAround, focusPos, t, mapLockers])
 
   const requestUserLocation = useCallback(() => {
     setGeoStatus('loading')
     setGeoHint(null)
-    void getCurrentPositionReliable()
-      .then((coords) => placeUserMarker(coords.lat, coords.lng, true))
+    void getCurrentPositionReliable({ allowIpFallback: true })
+      .then((coords) => placeUserMarker(coords.lat, coords.lng, true, coords.source))
       .catch((err) => {
         const code = err instanceof GeoError ? err.code : 'unavailable'
         setGeoStatus(code === 'denied' ? 'denied' : 'error')
@@ -355,16 +397,17 @@ export function LockerPicker({
       })
 
       if (userPosRef.current) {
-        placeUserMarker(userPosRef.current.lat, userPosRef.current.lng, !focusOk)
+        placeUserMarker(userPosRef.current.lat, userPosRef.current.lng, !focusOk, 'gps')
       } else if (showUserLocation) {
         setGeoStatus('loading')
-        void getCurrentPositionReliable()
+        void getCurrentPositionReliable({ allowIpFallback: true })
           .then((coords) => {
             if (cancelled) return
-            placeUserMarker(coords.lat, coords.lng, !focusOk)
-            if (navigator.geolocation) {
+            placeUserMarker(coords.lat, coords.lng, !focusOk, coords.source)
+            // Live updates only when real GPS works
+            if (coords.source === 'gps' && navigator.geolocation) {
               watchId = navigator.geolocation.watchPosition(
-                (pos) => placeUserMarker(pos.coords.latitude, pos.coords.longitude, false),
+                (pos) => placeUserMarker(pos.coords.latitude, pos.coords.longitude, false, 'gps'),
                 () => {},
                 { enableHighAccuracy: false, timeout: 20000, maximumAge: 60_000 },
               )
@@ -435,13 +478,22 @@ export function LockerPicker({
             title={t('calc.geoBtn')}
           >
             {geoStatus === 'loading' ? '…' : '◎'}
-            <span>{geoStatus === 'ok' ? t('calc.youOnMap') : t('calc.geoBtnShort')}</span>
+            <span>
+              {geoStatus === 'ok' || geoStatus === 'approx'
+                ? t('calc.youOnMap')
+                : t('calc.geoBtnShort')}
+            </span>
           </button>
-          {(geoStatus === 'denied' || geoStatus === 'error') && (
-            <p className="calc-locker__geo-hint">{geoHint || t('calc.geoHintAllow')}</p>
+          {(geoStatus === 'denied' || geoStatus === 'error' || Boolean(geoHint && geoStatus === 'approx')) && (
+            <p className={`calc-locker__geo-hint${geoStatus === 'approx' ? ' calc-locker__geo-hint--ok' : ''}`}>
+              {geoHint || t('calc.geoHintAllow')}
+            </p>
           )}
-          {geoStatus === 'ok' && (
+          {geoStatus === 'ok' && !geoHint && (
             <p className="calc-locker__geo-hint calc-locker__geo-hint--ok">{t('calc.geoHintOk')}</p>
+          )}
+          {geoStatus === 'approx' && !geoHint && (
+            <p className="calc-locker__geo-hint calc-locker__geo-hint--ok">{t('calc.geoHintApprox')}</p>
           )}
         </div>
       )}
