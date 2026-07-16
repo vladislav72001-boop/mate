@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { COUNTRIES, countryLabel } from '../../constants/shipping';
-import { useT } from '../../i18n/context';
+import { useI18n } from '../../i18n/context';
 import { CalcOptionPicker } from './CalcOptionPicker';
 import { CountryFlag } from './CountryFlag';
 
@@ -11,7 +11,7 @@ type Props = {
 };
 
 export function CountrySelect({ value, onChange, exclude }: Props) {
-  const t = useT();
+  const { locale, t } = useI18n();
   const listId = useId();
   const [open, setOpen] = useState(false);
   const options = COUNTRIES.filter((c) => c.code !== exclude);
@@ -36,7 +36,7 @@ export function CountrySelect({ value, onChange, exclude }: Props) {
         >
           <CountryFlag code={selected?.code ?? value} size={22} className="calc-country-select__flag" />
           <span className="calc-option-trigger__label">
-            {countryLabel(selected?.code ?? value)}
+            {countryLabel(selected?.code ?? value, locale)}
           </span>
           <span className="calc-option-trigger__chev" aria-hidden />
         </button>
@@ -58,7 +58,7 @@ export function CountrySelect({ value, onChange, exclude }: Props) {
             >
               <CountryFlag code={c.code} size={20} />
               <span className="calc-option-list__text">
-                {countryLabel(c.code)}
+                {countryLabel(c.code, locale)}
               </span>
               {active && <span className="calc-option-list__check" aria-hidden>✓</span>}
             </button>

@@ -1,6 +1,6 @@
 import type { ShippingOrder } from '../../api/shipping';
 import { countryLabel } from '../../constants/shipping';
-import { useT } from '../../i18n/context';
+import { useI18n } from '../../i18n/context';
 type Props = {
   order: ShippingOrder;
   dateLabel: string;
@@ -22,10 +22,10 @@ export function PaymentCard({
   onPay,
   paying = false,
 }: Props) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const description = t('dash.deliveryDesc', {
-    from: countryLabel(order.fromCountry || 'HU'),
-    to: countryLabel(order.toCountry || ''),
+    from: countryLabel(order.fromCountry || 'HU', locale),
+    to: countryLabel(order.toCountry || '', locale),
   });
   return (
     <article

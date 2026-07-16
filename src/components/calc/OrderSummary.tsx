@@ -1,5 +1,5 @@
 import { DEFAULT_QUOTE_CURRENCY, countryLabel, formatQuoteMoney } from '../../constants/shipping';
-import { useT } from '../../i18n/context';
+import { useI18n } from '../../i18n/context';
 import { CountryFlag } from './CountryFlag';
 
 export type SummaryRow = {
@@ -28,7 +28,7 @@ export function OrderSummary({
   pricePending = false,
   welcomeDiscountPercent = null,
 }: Props) {
-  const t = useT();
+  const { t } = useI18n();
   const formatMoney = (n: number) => formatQuoteMoney(n, currency);
   const estimate = deliveryEstimate ?? t('calc.deliveryEstimate');
   const routeRow = rows.find((r) => r.key === 'from');
@@ -77,13 +77,14 @@ export function OrderSummary({
 }
 
 function RouteValue({ from }: { from: string }) {
+  const { locale } = useI18n();
   const parts = from.split('→').map((p) => p.trim());
   if (parts.length !== 2) return from;
 
   const parseSide = (side: string) => {
     const code = side.trim().split(/\s+/)[0];
     if (/^[A-Z]{2}$/.test(code)) {
-      return { code, label: countryLabel(code) };
+      return { code, label: countryLabel(code, locale) };
     }
     return { code: '', label: side };
   };

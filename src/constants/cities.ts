@@ -319,17 +319,91 @@ export function citiesForCountry(country: string): string[] {
   return cityOptionsForCountry(country).map((c) => c.value);
 }
 
+/** Optional locale-specific display names (canonical value stays Latin). */
+const CITY_LABEL_BY_LOCALE: Partial<Record<Locale, Record<string, string>>> = {
+  hu: {
+    Budapest: 'Budapest',
+    Debrecen: 'Debrecen',
+    Szeged: 'Szeged',
+    'Pécs': 'Pécs',
+    'Győr': 'Győr',
+    Warsaw: 'Varsó',
+    'Kraków': 'Krakkó',
+    Berlin: 'Berlin',
+    Hamburg: 'Hamburg',
+    Munich: 'München',
+    Cologne: 'Köln',
+    Frankfurt: 'Frankfurt',
+    Vienna: 'Bécs',
+    Prague: 'Prága',
+    Bratislava: 'Pozsony',
+    Paris: 'Párizs',
+    Rome: 'Róma',
+    Milan: 'Milánó',
+    Madrid: 'Madrid',
+    Barcelona: 'Barcelona',
+    Amsterdam: 'Amszterdam',
+    Brussels: 'Brüsszel',
+    London: 'London',
+    Bucharest: 'Bukarest',
+    Kyiv: 'Kijev',
+    Lviv: 'Lviv',
+    Chișinău: 'Kisinyov',
+    Tallinn: 'Tallinn',
+    Riga: 'Riga',
+    Vilnius: 'Vilnius',
+  },
+  uk: {
+    Budapest: 'Будапешт',
+    Warsaw: 'Варшава',
+    Berlin: 'Берлін',
+    Hamburg: 'Гамбург',
+    Munich: 'Мюнхен',
+    Cologne: 'Кельн',
+    Frankfurt: 'Франкфурт',
+    Vienna: 'Відень',
+    Prague: 'Прага',
+    Bratislava: 'Братислава',
+    Paris: 'Париж',
+    Rome: 'Рим',
+    Milan: 'Мілан',
+    Madrid: 'Мадрид',
+    Barcelona: 'Барселона',
+    Amsterdam: 'Амстердам',
+    Brussels: 'Брюссель',
+    London: 'Лондон',
+    Bucharest: 'Бухарест',
+    Kyiv: 'Київ',
+    Lviv: 'Львів',
+    Odesa: 'Одеса',
+    Dnipro: 'Дніпро',
+    Kharkiv: 'Харків',
+    Chișinău: 'Кишинів',
+    Tallinn: 'Таллінн',
+    Riga: 'Рига',
+    Vilnius: 'Вільнюс',
+  },
+};
+
+function cityDisplayLabel(city: CityOption, locale: Locale): string {
+  const override = CITY_LABEL_BY_LOCALE[locale]?.[city.value];
+  if (override) return override;
+  if (locale === 'ru') return city.label;
+  if (locale === 'uk') return city.label;
+  return city.value;
+}
+
 export function cityLabelForValue(country: string, value: string, locale: Locale = getRuntimeLocale()): string {
   const found = cityOptionsForCountry(country).find(
     (c) => c.value.toLowerCase() === value.trim().toLowerCase(),
   );
   if (!found) return value;
-  return locale === 'ru' || locale === 'uk' ? found.label : found.value;
+  return cityDisplayLabel(found, locale);
 }
 
 export function cityOptionsForDisplay(country: string, locale: Locale = getRuntimeLocale()): CityOption[] {
   return cityOptionsForCountry(country).map((c) => ({
-    label: locale === 'ru' || locale === 'uk' ? c.label : c.value,
+    label: cityDisplayLabel(c, locale),
     value: c.value,
   }));
 }

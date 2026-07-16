@@ -122,7 +122,7 @@ export function ClientDashboard({
   openShipmentOnMount,
   onNavigated,
 }: Props) {
-  const { t, intlLocale } = useI18n();
+  const { t, intlLocale, locale } = useI18n();
   const firstName = user.name.split(' ')[0] || user.name;
 
   const statusLabel = useCallback((status: string) => {
@@ -658,7 +658,7 @@ export function ClientDashboard({
                                     {o.npValid === false ? t('dash.npNotCreated') : t('dash.ttnFmt', { ttn: o.npTtn })}
                                   </small>
                                 )}</td>
-                                <td className="client-dash__route">{countryLabel(o.fromCountry || 'HU')} → {countryLabel(o.toCountry || '')}</td>
+                                <td className="client-dash__route">{countryLabel(o.fromCountry || 'HU', locale)} → {countryLabel(o.toCountry || '', locale)}</td>
                                 <td><span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>{statusLabel(o.status)}</span></td>
                                 <td className="client-dash__amount">{formatMoney(o.amount, o.currency)}</td>
                                 <td className="client-dash__cell-actions" onClick={(e) => e.stopPropagation()}>
@@ -737,7 +737,7 @@ export function ClientDashboard({
                                   {o.npValid === false ? t('dash.npNotCreated') : t('dash.ttnFmt', { ttn: o.npTtn })}
                                 </small>
                               )}</td>
-                              <td className="client-dash__route">{countryLabel(o.fromCountry || 'HU')} → {countryLabel(o.toCountry || '')}</td>
+                              <td className="client-dash__route">{countryLabel(o.fromCountry || 'HU', locale)} → {countryLabel(o.toCountry || '', locale)}</td>
                               <td>{o.parcelSize || '—'}</td>
                               <td>{formatDate(o.pickupDate)}</td>
                               <td><span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>{statusLabel(o.status)}</span></td>
@@ -781,7 +781,7 @@ export function ClientDashboard({
                     {orders.filter((o) => o.npTtn || o.status === 'submitted').map((o) => (
                       <button key={o.id} type="button" className={`client-dash__track-item${selectedOrder?.id === o.id ? ' active' : ''}`} onClick={() => { setSelectedOrderId(o.id); setTrackOrder(o); if (o.npTtn) setTrackQuery(o.npTtn); }}>
                         <b>{o.orderNumber}</b>
-                        <span>{countryLabel(o.fromCountry || 'HU')} → {countryLabel(o.toCountry || '')}</span>
+                        <span>{countryLabel(o.fromCountry || 'HU', locale)} → {countryLabel(o.toCountry || '', locale)}</span>
                       </button>
                     ))}
                   </div>
@@ -833,7 +833,7 @@ export function ClientDashboard({
                   <div className="field-block"><label>{t('dash.phone')}</label><input value={addrForm.phone} onChange={(e) => setAddrForm({ ...addrForm, phone: e.target.value })} /></div>
                   <div className="field-block"><label>{t('dash.country')}</label>
                     <select value={addrForm.country} onChange={(e) => setAddrForm({ ...addrForm, country: e.target.value })}>
-                      {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.flag} {c.label}</option>)}
+                      {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.flag} {countryLabel(c.code, locale)}</option>)}
                     </select>
                   </div>
                   <div className="field-block"><label>{t('dash.city')}</label><input value={addrForm.city} onChange={(e) => setAddrForm({ ...addrForm, city: e.target.value })} /></div>
@@ -844,7 +844,7 @@ export function ClientDashboard({
                 <div className="client-dash__addr-list">
                   {addresses.length === 0 ? <p className="client-dash__empty">{t('dash.saveAddressesHint')}</p> : addresses.map((a) => (
                     <article key={a.id} className="client-dash__addr-card">
-                      <div><b>{a.label}{a.isDefault && <em>{t('dash.defaultTag')}</em>}</b><span>{a.name} · {a.phone}</span><span>{a.street}, {a.city} {a.postal}, {countryLabel(a.country)}</span></div>
+                      <div><b>{a.label}{a.isDefault && <em>{t('dash.defaultTag')}</em>}</b><span>{a.name} · {a.phone}</span><span>{a.street}, {a.city} {a.postal}, {countryLabel(a.country, locale)}</span></div>
                       <button type="button" className="client-dash__addr-del" onClick={() => handleDeleteAddress(a.id)}>{t('dash.delete')}</button>
                     </article>
                   ))}
@@ -895,7 +895,7 @@ export function ClientDashboard({
                             <tr key={o.id} className="client-dash__row-click" onClick={() => openDetail(o)}>
                               <td>{formatDate(o.paidAt || o.createdAt)}</td>
                               <td><b>{o.orderNumber}</b></td>
-                              <td className="client-dash__route">{t('dash.deliveryDesc', { from: countryLabel(o.fromCountry || 'HU'), to: countryLabel(o.toCountry || '') })}</td>
+                              <td className="client-dash__route">{t('dash.deliveryDesc', { from: countryLabel(o.fromCountry || 'HU', locale), to: countryLabel(o.toCountry || '', locale) })}</td>
                               <td className="client-dash__amount">{formatMoney(o.amount, o.currency)}</td>
                               <td>
                                 <span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>

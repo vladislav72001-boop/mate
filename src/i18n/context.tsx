@@ -18,11 +18,15 @@ type I18nContextValue = {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => detectLocale());
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    const detected = detectLocale();
+    setRuntimeLocale(detected);
+    return detected;
+  });
 
   const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next);
     setRuntimeLocale(next);
+    setLocaleState(next);
     try {
       localStorage.setItem(LOCALE_STORAGE_KEY, next);
     } catch {

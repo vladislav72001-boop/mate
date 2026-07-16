@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { countryFlag, countryLabel } from '../../constants/shipping';
-import { cityLabelForValue, cityOptionsForCountry, type CityOption } from '../../constants/cities';
+import { cityLabelForValue, cityOptionsForDisplay, type CityOption } from '../../constants/cities';
+import { useI18n } from '../../i18n/context';
 import { CalcOptionPicker } from './CalcOptionPicker';
 import { CountryFlag } from './CountryFlag';
 
@@ -16,14 +17,17 @@ export function CitySelect({
   country,
   value,
   onChange,
-  placeholder = 'Выберите город',
-  ariaLabel = 'Город',
+  placeholder,
+  ariaLabel,
 }: Props) {
+  const { locale, t } = useI18n();
   const listId = useId();
   const [open, setOpen] = useState(false);
-  const options: CityOption[] = cityOptionsForCountry(country);
-  const label = value ? cityLabelForValue(country, value) : placeholder;
-  const sheetTitle = `${ariaLabel} · ${countryLabel(country)} ${countryFlag(country)}`;
+  const resolvedPlaceholder = placeholder || t('calc.cityPlaceholder');
+  const resolvedAria = ariaLabel || t('calc.city');
+  const options: CityOption[] = cityOptionsForDisplay(country, locale);
+  const label = value ? cityLabelForValue(country, value, locale) : resolvedPlaceholder;
+  const sheetTitle = `${resolvedAria} · ${countryLabel(country, locale)} ${countryFlag(country)}`;
 
   if (!options.length) {
     return (
@@ -31,7 +35,7 @@ export function CitySelect({
         className="calc-form__select"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
       />
     );
   }
@@ -40,7 +44,7 @@ export function CitySelect({
     <CalcOptionPicker
       wrapperClassName="calc-city-select"
       listId={listId}
-      ariaLabel={ariaLabel}
+      ariaLabel={resolvedAria}
       sheetTitle={sheetTitle}
       open={open}
       onOpenChange={setOpen}

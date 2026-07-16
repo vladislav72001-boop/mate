@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useI18n } from '../../i18n/context';
 import { countryLabel } from '../../constants/shipping';
 import { resolveMapPoint } from '../../constants/geo';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -45,6 +46,7 @@ export function TrackingMap({
   toLine,
   active = true,
 }: Props) {
+  const { t, locale } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,10 +86,10 @@ export function TrackingMap({
         }).addTo(map);
 
         const fromMarker = L.marker(from, { icon: limeIcon }).addTo(map);
-        fromMarker.bindPopup(`<b>Отправление</b><br>${countryLabel(fromCountry)}`);
+        fromMarker.bindPopup(`<b>${t('dash.mapOrigin')}</b><br>${countryLabel(fromCountry, locale)}`);
 
         const toMarker = L.marker(to, { icon: destIcon }).addTo(map);
-        toMarker.bindPopup(`<b>Назначение</b><br>${countryLabel(toCountry)}`);
+        toMarker.bindPopup(`<b>${t('dash.mapDestination')}</b><br>${countryLabel(toCountry, locale)}`);
 
         L.polyline([from, to], {
           color: active ? '#7a9200' : '#122023',
@@ -100,7 +102,7 @@ export function TrackingMap({
         setLoading(false);
       } catch {
         if (!cancelled) {
-          setError('Не удалось загрузить карту');
+          setError(t('dash.mapLoadError'));
           setLoading(false);
         }
       }
@@ -115,18 +117,18 @@ export function TrackingMap({
         mapRef.current = null;
       }
     };
-  }, [fromCountry, toCountry, fromLine, toLine, active]);
+  }, [fromCountry, toCountry, fromLine, toLine, active, locale, t]);
 
   return (
     <div className={`client-track-map${active ? ' client-track-map--active' : ''}`}>
-      <div ref={containerRef} className="client-track-map__leaflet" aria-label="Карта маршрута" />
-      {loading && <div className="client-track-map__loading">Загрузка карты…</div>}
+      <div ref={containerRef} className="client-track-map__leaflet" aria-label={t('dash.mapAria')} />
+      {loading && <div className="client-track-map__loading">{t('dash.mapLoading')}</div>}
       {error && <div className="client-track-map__error">{error}</div>}
       <div className="client-track-map__labels">
-        <span className="client-track-map__from">{countryLabel(fromCountry)}</span>
+        <span className="client-track-map__from">{countryLabel(fromCountry, locale)}</span>
         <span className="client-track-map__arrow">→</span>
-        <span className="client-track-map__to">{countryLabel(toCountry)}</span>
-        {active && <span className="client-track-map__live">В пути</span>}
+        <span className="client-track-map__to">{countryLabel(toCountry, locale)}</span>
+        {active && <span className="client-track-map__live">{t('dash.inTransit')}</span>}
       </div>
     </div>
   );

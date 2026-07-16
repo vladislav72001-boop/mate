@@ -88,10 +88,10 @@ export function formatOrderMoney(order: ShippingOrder) {
   return formatQuoteMoney(order.amount, order.currency || 'EUR');
 }
 
-export function routeCityLine(countryCode?: string, line?: string | null) {
+export function routeCityLine(countryCode?: string, line?: string | null, locale?: import('../../i18n/types').Locale) {
   const parsed = parseAddressLine(line);
   if (countryCode && parsed.cityLine !== '—') {
-    const country = countryLabel(countryCode);
+    const country = countryLabel(countryCode, locale);
     if (!parsed.cityLine.toLowerCase().includes(country.toLowerCase())) {
       const city = parsed.cityLine.split(',')[0]?.trim() || parsed.cityLine;
       return `${city}, ${country}`;

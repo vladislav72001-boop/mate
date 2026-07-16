@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { ShippingOrder } from '../../api/client-types';
-import { countryLabel } from '../../constants/shipping';
+import { useI18n } from '../../i18n/context';
 import { CountryFlag } from './CountryFlag';
 import {
   carrierLabel,
@@ -79,14 +79,15 @@ function CopyIcon() {
 }
 
 export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDashboard }: Props) {
+  const { locale } = useI18n();
   const [copied, setCopied] = useState(false);
   const trackNo = trackingNumber(order);
   const status = orderStatusHeadline(order);
   const carrier = carrierLabel(order);
   const service = deliveryServiceLabel(order.deliveryMode);
   const delivery = estimateDeliveryWindow(order);
-  const fromCity = routeCityLine(order.fromCountry, order.senderLine);
-  const toCity = routeCityLine(order.toCountry, order.receiverLine);
+  const fromCity = routeCityLine(order.fromCountry, order.senderLine, locale);
+  const toCity = routeCityLine(order.toCountry, order.receiverLine, locale);
   const fromAddress = parseAddressLine(order.senderLine);
   const toAddress = parseAddressLine(order.receiverLine);
 

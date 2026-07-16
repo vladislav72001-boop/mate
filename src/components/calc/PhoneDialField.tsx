@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { countryLabel, countryCodeFromDial, PHONE_PREFIXES } from '../../constants/shipping';
+import { useI18n } from '../../i18n/context';
 import { CalcOptionPicker } from './CalcOptionPicker';
 import { CountryFlag } from './CountryFlag';
 
@@ -24,6 +25,7 @@ export function PhoneDialField({
   autoComplete = 'tel-national',
   name = 'phone',
 }: Props) {
+  const { locale, t } = useI18n();
   const listId = useId();
   const [open, setOpen] = useState(false);
   const known = PHONE_PREFIXES.some((p) => p.dial === dial);
@@ -35,8 +37,8 @@ export function PhoneDialField({
       <CalcOptionPicker
         wrapperClassName="calc-form__dial calc-phone-dial"
         listId={listId}
-        ariaLabel="Код страны"
-        sheetTitle="Код страны"
+        ariaLabel={t('calc.dialCode')}
+        sheetTitle={t('calc.dialCode')}
         open={open}
         onOpenChange={setOpen}
         scrollable
@@ -73,7 +75,7 @@ export function PhoneDialField({
                 <CountryFlag code={p.code} size={20} />
                 <span className="calc-option-list__text calc-phone-dial__option">
                   <b>{p.dial}</b>
-                  <em>{countryLabel(p.code)}</em>
+                  <em>{countryLabel(p.code, locale)}</em>
                 </span>
                 {active && <span className="calc-option-list__check" aria-hidden>✓</span>}
               </button>
@@ -90,7 +92,7 @@ export function PhoneDialField({
         inputMode="tel"
         type="tel"
         autoComplete={autoComplete}
-        aria-label="Номер телефона"
+        aria-label={t('calc.phone')}
       />
     </div>
   );

@@ -234,7 +234,7 @@ function OptionGrid<T extends string>({
 }
 
 export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const initialRef = useRef<{ restored: boolean; draft: ReturnType<typeof loadCalcDraft> } | null>(null);
   if (initialRef.current === null) {
     initialRef.current = { restored: false, draft: loadCalcDraft(inModal) };
@@ -906,16 +906,16 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const buildPickupLine = () => {
     if (pickupType === 'locker' || pickupType === 'branch') {
-      return `${countryLabel(PICKUP_COUNTRY)}, ${pickupLocationObj?.address || t('calc.pointFallback')}`;
+      return `${countryLabel(PICKUP_COUNTRY, locale)}, ${pickupLocationObj?.address || t('calc.pointFallback')}`;
     }
-    return `${countryLabel(PICKUP_COUNTRY)}, ${pickupStreet}, ${pickupCity} ${pickupPostal}`.trim();
+    return `${countryLabel(PICKUP_COUNTRY, locale)}, ${pickupStreet}, ${pickupCity} ${pickupPostal}`.trim();
   };
 
   const buildDestLine = () => {
     if (deliveryType === 'locker' || deliveryType === 'branch') {
-      return `${countryLabel(toCountry)}, ${destLocationObj?.address || t('calc.pointFallback')}`;
+      return `${countryLabel(toCountry, locale)}, ${destLocationObj?.address || t('calc.pointFallback')}`;
     }
-    return `${countryLabel(toCountry)}, ${destStreet}, ${destCity} ${destPostal}`.trim();
+    return `${countryLabel(toCountry, locale)}, ${destStreet}, ${destCity} ${destPostal}`.trim();
   };
 
   const contentLabel = useCallback((key: ContentKey, note?: string) => {
@@ -945,7 +945,7 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const summaryRows: SummaryRow[] = useMemo(() => [
     { key: 'from', label: t('calc.summaryFrom'), value: formatRoute(PICKUP_COUNTRY, toCountry), onEdit: () => goTo(1) },
-    { key: 'cities', label: t('calc.summaryCities'), value: [cityLabelForValue(PICKUP_COUNTRY, pickupCity), cityLabelForValue(toCountry, destCity)].filter(Boolean).join(' → ') || '—', onEdit: () => goTo(2) },
+    { key: 'cities', label: t('calc.summaryCities'), value: [cityLabelForValue(PICKUP_COUNTRY, pickupCity, locale), cityLabelForValue(toCountry, destCity, locale)].filter(Boolean).join(' → ') || '—', onEdit: () => goTo(2) },
     { key: 'type', label: t('calc.summaryType'), value: formatDeliveryTypeLocalized(pickupType, deliveryType), onEdit: () => goTo(3) },
     { key: 'size', label: t('calc.summarySize'), value: sizeLabel, onEdit: () => goTo(4) },
     {
@@ -1252,7 +1252,7 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const addressPlaceholder = useCallback((country: string, city: string) => (
     city.trim()
-      ? t('calc.addressPlaceholderInCity', { city: cityLabelForValue(country, city) })
+      ? t('calc.addressPlaceholderInCity', { city: cityLabelForValue(country, city, locale) })
       : t('calc.addressPlaceholder')
   ), [t]);
 
@@ -1265,7 +1265,7 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
                 <label className="calc-form__field-label">{t('calc.from')}</label>
                 <div className="calc-form__static calc-form__static--active calc-country-static">
                   <CountryFlag code={PICKUP_COUNTRY} size={22} />
-                  <span>{countryLabel(PICKUP_COUNTRY)} {countryFlag(PICKUP_COUNTRY)}</span>
+                  <span>{countryLabel(PICKUP_COUNTRY, locale)} {countryFlag(PICKUP_COUNTRY)}</span>
                 </div>
               </div>
               <div className="field-block">
@@ -1880,15 +1880,15 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
                   <span>{t('calc.confirmRoute')}</span>
                   <b className="calc-form__confirm-route">
                     <CountryFlag code={PICKUP_COUNTRY} size={18} />
-                    {countryLabel(PICKUP_COUNTRY)}
+                    {countryLabel(PICKUP_COUNTRY, locale)}
                     <span>→</span>
                     <CountryFlag code={toCountry} size={18} />
-                    {countryLabel(toCountry)}
+                    {countryLabel(toCountry, locale)}
                   </b>
                 </div>
                 <div className="calc-form__confirm-row">
                   <span>{t('calc.summaryCities')}</span>
-                  <b>{pickupCity || '—'} → {destCity || '—'}</b>
+                  <b>{cityLabelForValue(PICKUP_COUNTRY, pickupCity, locale) || '—'} → {cityLabelForValue(toCountry, destCity, locale) || '—'}</b>
                 </div>
                 <div className="calc-form__confirm-row">
                   <span>{t('calc.confirmSize')}</span>
@@ -1995,7 +1995,7 @@ export function ShipmentCalculator({ open, onClose, user, onSuccess }: ModalProp
 }
 
 export function TrackShipment() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [ttn, setTtn] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2032,7 +2032,7 @@ export function TrackShipment() {
             active={order.status === 'submitted'}
           />
           <b>{order.orderNumber}</b>
-          <span>{countryLabel(order.fromCountry || 'HU')} → {countryLabel(order.toCountry || '')}</span>
+          <span>{countryLabel(order.fromCountry || 'HU', locale)} → {countryLabel(order.toCountry || '', locale)}</span>
           <span>{t('calc.statusLabel')}: {order.status === 'submitted' ? t('calc.statusSubmitted') : order.status === 'paid' ? t('calc.statusPaid') : order.status}</span>
           {order.npTtn && <span>{t('calc.ttnLabel')}: {order.npTtn}</span>}
         </div>

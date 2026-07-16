@@ -1,6 +1,6 @@
 import type { ShippingOrder } from '../../api/shipping';
 import { countryLabel } from '../../constants/shipping';
-import { useT } from '../../i18n/context';
+import { useI18n } from '../../i18n/context';
 type Props = {
   order: ShippingOrder;
   statusLabel: string;
@@ -32,8 +32,8 @@ export function OrderCard({
   variant = 'home',
   pickupDate,
 }: Props) {
-  const t = useT();
-  const route = `${countryLabel(order.fromCountry || 'HU')} → ${countryLabel(order.toCountry || '')}`;
+  const { t, locale } = useI18n();
+  const route = `${countryLabel(order.fromCountry || 'HU', locale)} → ${countryLabel(order.toCountry || '', locale)}`;
   return (
     <article
       className="client-dash-order-card"
