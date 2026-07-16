@@ -4,6 +4,8 @@ import 'leaflet/dist/leaflet.css'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+import { getCurrentPositionReliable, GeoError } from '../../utils/geolocation'
+import { useI18n } from '../../i18n/context'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -145,23 +147,12 @@ export function nearestCityFromCoords(
 }
 
 export function detectCityByGeolocation(country?: string): Promise<{ city: string; country: string }> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Геолокация недоступна в этом браузере'))
-      return
+  return getCurrentPositionReliable().then((coords) => {
+    const match = nearestCityFromCoords(coords.lat, coords.lng, country)
+    if (!match) {
+      throw new Error('Не удалось определить город')
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const match = nearestCityFromCoords(pos.coords.latitude, pos.coords.longitude, country)
-        if (!match) {
-          reject(new Error('Не удалось определить город'))
-          return
-        }
-        resolve({ city: match.city, country: match.country })
-      },
-      () => reject(new Error('Не удалось получить геолокацию. Разрешите доступ к местоположению.')),
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 60_000 },
-    )
+    return { city: match.city, country: match.country }
   })
 }
 
@@ -206,6 +197,7 @@ export function LockerPicker({
   showUserLocation = true,
   focusPos = null,
 }: Props) {
+  const { t } = useI18n()
   const mapRef = useRef<HTMLDivElement>(null)
   const leafletRef = useRef<L.Map | null>(null)
   const markersRef = useRef<L.Marker[]>([])
@@ -216,7 +208,8 @@ export function LockerPicker({
   onSelectRef.current = onSelect
 
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null)
-  const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'ok' | 'denied'>('idle')
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'ok' | 'denied' | 'error'>('idle')
+  const [geoHint, setGeoHint] = useState<string | null>(null)
 
   const mapLockers = useMemo(
     () => lockers.filter((l) => isValidCoord(l.lat, l.lng)),
@@ -278,6 +271,7 @@ export function LockerPicker({
     userPosRef.current = { lat, lng }
     setUserPos({ lat, lng })
     setGeoStatus('ok')
+    setGeoHint(null)
 
     if (userMarkerRef.current) {
       userMarkerRef.current.setLatLng([lat, lng])
@@ -287,7 +281,7 @@ export function LockerPicker({
         zIndexOffset: 1000,
         interactive: true,
       })
-      marker.bindPopup('<b>Вы здесь</b>')
+      marker.bindPopup(`<b>${t('calc.youAreHere')}</b>`)
       marker.addTo(map)
       userMarkerRef.current = marker
     }
@@ -296,20 +290,19 @@ export function LockerPicker({
     if (!fit) return
     if (focusPos && isValidCoord(focusPos.lat, focusPos.lng)) return
     fitAround(lat, lng)
-  }, [fitAround, focusPos])
+  }, [fitAround, focusPos, t])
 
   const requestUserLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGeoStatus('denied')
-      return
-    }
     setGeoStatus('loading')
-    navigator.geolocation.getCurrentPosition(
-      (pos) => placeUserMarker(pos.coords.latitude, pos.coords.longitude, true),
-      () => setGeoStatus('denied'),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 15_000 },
-    )
-  }, [placeUserMarker])
+    setGeoHint(null)
+    void getCurrentPositionReliable()
+      .then((coords) => placeUserMarker(coords.lat, coords.lng, true))
+      .catch((err) => {
+        const code = err instanceof GeoError ? err.code : 'unavailable'
+        setGeoStatus(code === 'denied' ? 'denied' : 'error')
+        setGeoHint(err instanceof Error ? err.message : t('calc.geoFail'))
+      })
+  }, [placeUserMarker, t])
 
   useEffect(() => {
     if (!showMap || !mapRef.current || !mapLockers.length) return undefined
@@ -363,18 +356,26 @@ export function LockerPicker({
 
       if (userPosRef.current) {
         placeUserMarker(userPosRef.current.lat, userPosRef.current.lng, !focusOk)
-      } else if (showUserLocation && navigator.geolocation) {
+      } else if (showUserLocation) {
         setGeoStatus('loading')
-        navigator.geolocation.getCurrentPosition(
-          (pos) => placeUserMarker(pos.coords.latitude, pos.coords.longitude, !focusOk),
-          () => setGeoStatus('denied'),
-          { enableHighAccuracy: true, timeout: 12000, maximumAge: 30_000 },
-        )
-        watchId = navigator.geolocation.watchPosition(
-          (pos) => placeUserMarker(pos.coords.latitude, pos.coords.longitude, false),
-          () => {},
-          { enableHighAccuracy: false, timeout: 15000, maximumAge: 30_000 },
-        )
+        void getCurrentPositionReliable()
+          .then((coords) => {
+            if (cancelled) return
+            placeUserMarker(coords.lat, coords.lng, !focusOk)
+            if (navigator.geolocation) {
+              watchId = navigator.geolocation.watchPosition(
+                (pos) => placeUserMarker(pos.coords.latitude, pos.coords.longitude, false),
+                () => {},
+                { enableHighAccuracy: false, timeout: 20000, maximumAge: 60_000 },
+              )
+            }
+          })
+          .catch((err) => {
+            if (cancelled) return
+            const code = err instanceof GeoError ? err.code : 'unavailable'
+            setGeoStatus(code === 'denied' ? 'denied' : 'error')
+            setGeoHint(err instanceof Error ? err.message : t('calc.geoHintAllow'))
+          })
       }
     }
 
@@ -394,7 +395,7 @@ export function LockerPicker({
       }
       markersRef.current = []
     }
-  }, [mapLockers, showMap, showUserLocation, placeUserMarker, placeFocusMarker, focusPos])
+  }, [mapLockers, showMap, showUserLocation, placeUserMarker, placeFocusMarker, focusPos, t])
 
   useEffect(() => {
     if (!focusPos || !isValidCoord(focusPos.lat, focusPos.lng)) return
@@ -431,22 +432,22 @@ export function LockerPicker({
             className="calc-locker__locate"
             onClick={requestUserLocation}
             disabled={geoStatus === 'loading'}
-            title="Показать моё местоположение"
+            title={t('calc.geoBtn')}
           >
             {geoStatus === 'loading' ? '…' : '◎'}
-            <span>{geoStatus === 'ok' ? 'Вы на карте' : 'Где я'}</span>
+            <span>{geoStatus === 'ok' ? t('calc.youOnMap') : t('calc.geoBtnShort')}</span>
           </button>
-          {geoStatus === 'denied' && (
-            <p className="calc-locker__geo-hint">Разрешите геолокацию в браузере, чтобы увидеть себя на карте</p>
+          {(geoStatus === 'denied' || geoStatus === 'error') && (
+            <p className="calc-locker__geo-hint">{geoHint || t('calc.geoHintAllow')}</p>
           )}
           {geoStatus === 'ok' && (
-            <p className="calc-locker__geo-hint calc-locker__geo-hint--ok">Синяя точка — ваше местоположение</p>
+            <p className="calc-locker__geo-hint calc-locker__geo-hint--ok">{t('calc.geoHintOk')}</p>
           )}
         </div>
       )}
       <div className="calc-locker__list-wrap">
         <div className="calc-locker__list-head">
-          <span>Точки рядом</span>
+          <span>{t('calc.nearbyPoints')}</span>
           <small>{sortedLockers.length}</small>
         </div>
         <div className="calc-locker__list" role="listbox" aria-label="Список постаматов">

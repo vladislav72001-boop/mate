@@ -29,6 +29,7 @@ if (String(process.env.APP_URL || '').startsWith('https://')) {
   app.use((_req, res, next) => {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     res.setHeader('Content-Security-Policy', 'upgrade-insecure-requests');
+    res.setHeader('Permissions-Policy', 'geolocation=(self)');
     next();
   });
 }
