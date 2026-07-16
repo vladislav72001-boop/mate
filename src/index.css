@@ -8126,7 +8126,7 @@ body {
 }
 
 .calc-address.is-open {
-  z-index: 55;
+  z-index: 80;
 }
 
 .calc-address__control {
@@ -8140,15 +8140,28 @@ body {
 
 .calc-address__panel {
   position: absolute;
-  z-index: 60;
+  z-index: 90;
   left: 0;
   right: 0;
   top: calc(100% + 4px);
+  max-height: min(42vh, 280px);
   padding: 6px;
   background: #fff;
   border: 1px solid var(--line, #d5d9d8);
   border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(18, 32, 35, 0.12);
+  box-shadow: 0 10px 28px rgba(18, 32, 35, 0.16);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Portal: above calc modal (z-index 1200) and option sheets (1400) */
+.calc-address__panel--floating {
+  position: fixed;
+  left: auto;
+  right: auto;
+  top: auto;
+  z-index: 5000;
+  box-shadow: 0 14px 36px rgba(18, 32, 35, 0.22);
 }
 
 .calc-address__status {
@@ -8990,7 +9003,7 @@ body {
 .calc-option-sheet-root {
   position: fixed;
   inset: 0;
-  z-index: 600;
+  z-index: 1400;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;

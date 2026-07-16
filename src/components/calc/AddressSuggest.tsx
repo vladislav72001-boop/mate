@@ -1,10 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
   fetchAddressSuggestions,
   type AddressSuggestion,
 } from '../../api/shipping';
-import { useMobileSheet } from './useMobileSheet';
 
 type Props = {
   label?: string;
@@ -33,12 +32,14 @@ export function AddressSuggest({
 }: Props) {
   const listId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
-  const mobile = useMobileSheet();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<AddressSuggestion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
   const skipFetchRef = useRef(false);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export function AddressSuggest({
       } finally {
         if (!cancelled) setLoading(false);
       }
-    }, 320);
+    }, 280);
 
     return () => {
       cancelled = true;
@@ -85,25 +86,69 @@ export function AddressSuggest({
     };
   }, [value, country, city]);
 
+  const updatePanelPosition = () => {
+    const el = inputRef.current ?? wrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const width = rect.width;
+    let left = rect.left;
+    const maxLeft = window.innerWidth - width - 8;
+    if (left > maxLeft) left = Math.max(8, maxLeft);
+
+    const vv = window.visualViewport;
+    const viewTop = vv?.offsetTop ?? 0;
+    const viewBottom = viewTop + (vv?.height ?? window.innerHeight);
+    const gap = 4;
+    const preferredMax = Math.min(280, Math.floor((viewBottom - viewTop) * 0.42));
+    const spaceBelow = viewBottom - rect.bottom - gap - 8;
+    const spaceAbove = rect.top - viewTop - gap - 8;
+    const placeAbove = spaceBelow < 120 && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(96, Math.min(preferredMax, placeAbove ? spaceAbove : spaceBelow));
+
+    setPanelStyle({
+      position: 'fixed',
+      left,
+      width,
+      zIndex: 5000,
+      maxHeight,
+      ...(placeAbove
+        ? { bottom: window.innerHeight - rect.top + gap, top: 'auto' }
+        : { top: rect.bottom + gap, bottom: 'auto' }),
+    });
+  };
+
+  const showPanel = open && (loading || searched || items.length > 0);
+
+  useLayoutEffect(() => {
+    if (!showPanel) return;
+    updatePanelPosition();
+  }, [showPanel, items.length, loading, error]);
+
   useEffect(() => {
-    if (!open || mobile) return;
+    if (!showPanel) return;
+    const onLayout = () => updatePanelPosition();
+    window.addEventListener('resize', onLayout);
+    window.addEventListener('scroll', onLayout, true);
+    window.visualViewport?.addEventListener('resize', onLayout);
+    window.visualViewport?.addEventListener('scroll', onLayout);
+    return () => {
+      window.removeEventListener('resize', onLayout);
+      window.removeEventListener('scroll', onLayout, true);
+      window.visualViewport?.removeEventListener('resize', onLayout);
+      window.visualViewport?.removeEventListener('scroll', onLayout);
+    };
+  }, [showPanel]);
+
+  useEffect(() => {
+    if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, [open, mobile]);
-
-  useEffect(() => {
-    if (!open || !mobile) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.body.classList.add('calc-option-sheet-open');
-    return () => {
-      document.body.style.overflow = prev;
-      document.body.classList.remove('calc-option-sheet-open');
-    };
-  }, [open, mobile]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,19 +169,21 @@ export function AddressSuggest({
     setSearched(false);
   };
 
-  const showPanel = open && (loading || searched || items.length > 0);
   const showEmpty = searched && !loading && !error && items.length === 0 && value.trim().length >= 3;
 
-  const listContent = (
-    <>
-      {loading && (
-        <p className="calc-address__status">Ищем адрес…</p>
-      )}
-      {error && (
-        <p className="calc-address__status calc-address__status--error">{error}</p>
-      )}
+  const panel = showPanel ? (
+    <div
+      ref={panelRef}
+      className="calc-address__panel calc-address__panel--floating"
+      role="presentation"
+      style={panelStyle}
+    >
+      {loading && <p className="calc-address__status">Ищем адрес…</p>}
+      {error && <p className="calc-address__status calc-address__status--error">{error}</p>}
       {showEmpty && (
-        <p className="calc-address__status">Адрес не найден. Проверьте написание или добавьте город.</p>
+        <p className="calc-address__status">
+          Адрес не найден. Попробуйте «улица 7» или добавьте район / город.
+        </p>
       )}
       {items.length > 0 && (
         <ul
@@ -147,7 +194,11 @@ export function AddressSuggest({
         >
           {items.map((item) => (
             <li key={item.id} role="option">
-              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pick(item)}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(item)}
+              >
                 <b>{item.street || item.label.split(',')[0]}</b>
                 <em>{item.label}</em>
               </button>
@@ -155,18 +206,21 @@ export function AddressSuggest({
           ))}
         </ul>
       )}
-    </>
-  );
+    </div>
+  ) : null;
 
   return (
     <div className={`field-block calc-address${open ? ' is-open' : ''}`} ref={wrapRef}>
       <label htmlFor={listId}>{label}</label>
       <div className="calc-address__control">
         <input
+          ref={inputRef}
           id={listId}
           name={name}
           type="text"
           autoComplete="off"
+          inputMode="text"
+          enterKeyHint="search"
           value={value}
           disabled={disabled}
           placeholder={placeholder}
@@ -175,39 +229,16 @@ export function AddressSuggest({
             setOpen(true);
           }}
           onFocus={() => {
-            if (items.length || searched || loading) setOpen(true);
+            if (items.length || searched || loading || value.trim().length >= 3) setOpen(true);
           }}
           aria-autocomplete="list"
           aria-expanded={showPanel}
           aria-controls={`${listId}-list`}
         />
         {loading && <span className="calc-address__spinner" aria-hidden />}
-        {showPanel && !mobile && (
-          <div className="calc-address__panel" role="presentation">
-            {listContent}
-          </div>
-        )}
       </div>
-      {hint && !error && !showEmpty && <p className="calc-form__hint">{hint}</p>}
-
-      {showPanel && mobile && createPortal(
-        <div className="calc-option-sheet-root" role="presentation">
-          <button
-            type="button"
-            className="calc-option-sheet-backdrop"
-            aria-label="Закрыть"
-            onClick={() => setOpen(false)}
-          />
-          <div className="calc-option-sheet calc-address-sheet" role="dialog" aria-modal="true" aria-label={label}>
-            <div className="calc-option-sheet__grab" aria-hidden />
-            <p className="calc-option-sheet__title">{label}</p>
-            <div className="calc-option-sheet__body calc-address-sheet__body">
-              {listContent}
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+      {hint && !showPanel && <p className="calc-form__hint">{hint}</p>}
+      {panel && createPortal(panel, document.body)}
     </div>
   );
 }
