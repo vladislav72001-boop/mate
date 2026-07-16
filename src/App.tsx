@@ -569,7 +569,7 @@ function App() {
           onClick={() => goPage('home')}
           aria-label={t('nav.homeAria')}
         >
-          <MateLogo height={44} />
+          <MateLogo height={62} />
         </button>
 
         <nav className="main-nav" aria-label={t('nav.mainAria')}>
@@ -711,7 +711,7 @@ function App() {
               <h1>
                 {t('home.titleYou')}<br />
                 <span className="hero-logo-word" aria-label="MATE">
-                  <MateLogo height={52} />
+                  <MateLogo height={68} />
                 </span>{' '}
                 {t('home.titleMate')}
                 <br />
