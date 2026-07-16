@@ -71,12 +71,14 @@ function buildSideCoverage({ country, city, npCounts, useFallback }) {
 
 async function sendCheckoutEmail(order, checkoutUrl) {
   if (!order?.customerEmail) return;
-  try {
-    await sendOrderCreatedEmail(order, { checkoutUrl });
-    console.log(`[mail] checkout email sent to ${order.customerEmail} (${order.orderNumber})`);
-  } catch (err) {
-    console.error('[mail] checkout email failed:', err);
-  }
+  // Never block Stripe redirect on SMTP
+  void sendOrderCreatedEmail(order, { checkoutUrl })
+    .then(() => {
+      console.log(`[mail] checkout email sent to ${order.customerEmail} (${order.orderNumber})`);
+    })
+    .catch((err) => {
+      console.error('[mail] checkout email failed:', err);
+    });
 }
 
 async function createStripeCheckoutForOrder(order, customerEmail) {
@@ -94,6 +96,16 @@ async function createStripeCheckoutForOrder(order, customerEmail) {
 }
 
 const AMOUNT_TOLERANCE_PERCENT = Number(process.env.B2C_AMOUNT_TOLERANCE_PERCENT ?? 3);
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
 
 function mapDeliveryMode(type) {
   const t = String(type || '').toLowerCase();
@@ -563,8 +575,16 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         || await resolveUserMonthlyShipments(req.userId);
 
       const [pricingResult, shipmentResult] = await Promise.allSettled([
-        resolveCheckoutAmount({ ...body, monthlyShipments }, req.userId),
-        tryCreateCheckoutShipment(body, orderNumber),
+        withTimeout(
+          resolveCheckoutAmount({ ...body, monthlyShipments }, req.userId),
+          Number(process.env.CHECKOUT_PRICING_TIMEOUT_MS ?? 25_000),
+          'checkout-pricing',
+        ),
+        withTimeout(
+          tryCreateCheckoutShipment(body, orderNumber),
+          Number(process.env.CHECKOUT_NP_TIMEOUT_MS ?? 18_000),
+          'checkout-np',
+        ),
       ]);
 
       if (pricingResult.status === 'rejected') {

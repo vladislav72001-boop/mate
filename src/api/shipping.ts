@@ -32,7 +32,7 @@ async function shippingRequest<T>(path: string, options: RequestInit = {}, timeo
     return data as T;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Сервер не отвечает. Запустите npm run dev');
+      throw new Error('Сервер не отвечает. Попробуйте ещё раз через минуту');
     }
     if (err instanceof TypeError) {
       throw new Error('Сервер не отвечает. Запустите npm run dev');

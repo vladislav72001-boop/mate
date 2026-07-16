@@ -9171,6 +9171,11 @@ body.calc-option-sheet-open {
   font-size: 0.95rem;
 }
 
+.calc-form__error--nav {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+}
+
 .calc-form__error p {
   margin: 0;
 }

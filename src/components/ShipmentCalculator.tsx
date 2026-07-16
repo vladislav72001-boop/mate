@@ -1149,9 +1149,12 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
       throw new Error(t('calc.payLinkMissing'));
     } catch (err) {
       const msg = err instanceof Error ? err.message : t('calc.orderFail');
-      setError(msg.includes('Ошибка запроса') || msg.includes('Временная ошибка')
-        ? t('calc.serverDown')
-        : msg);
+      const timedOut = /не отвечает|AbortError|timed out|timeout/i.test(msg);
+      setError(timedOut
+        ? t('calc.checkoutTimeout')
+        : (msg.includes('Ошибка запроса') || msg.includes('Временная ошибка')
+          ? t('calc.serverDown')
+          : msg));
     } finally {
       payInFlight.current = false;
       setSubmitting(false);
@@ -1160,6 +1163,13 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const nav = () => (
     <div className="calc-form__nav">
+      {error && (
+        <div className="calc-form__error calc-form__error--nav" role="alert">
+          {error.split('\n').map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+        </div>
+      )}
       {step > 1 && (
         <button type="button" className="btn btn-outline" onClick={() => goTo(step - 1)}>
           {t('common.back')}

@@ -50,7 +50,9 @@ async function fetchWithNode(url, init = {}) {
   for (const [name, value] of Object.entries(NOVAPOST_DEFAULT_HEADERS)) {
     if (!headers.has(name)) headers.set(name, value);
   }
-  return fetch(url, { ...init, headers });
+  const timeoutMs = Number(process.env.NOVAPOST_TIMEOUT_MS ?? 15_000);
+  const signal = init.signal || AbortSignal.timeout(Math.max(3_000, timeoutMs));
+  return fetch(url, { ...init, headers, signal });
 }
 
 async function requestJson(method, path, extraHeaders = {}, body) {

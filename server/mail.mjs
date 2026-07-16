@@ -14,35 +14,66 @@ const STATUS_LABELS = {
 };
 
 let transporter = null;
+let transporterPromise = null;
+
+function isProductionRuntime() {
+  return process.env.NODE_ENV === 'production'
+    || String(process.env.APP_URL || '').startsWith('https://');
+}
 
 async function getTransporter() {
   if (transporter) return transporter;
+  if (transporterPromise) return transporterPromise;
 
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  transporterPromise = (async () => {
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT || 587),
+        secure: process.env.SMTP_SECURE === 'true',
+        connectionTimeout: 12_000,
+        greetingTimeout: 12_000,
+        socketTimeout: 20_000,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+      return transporter;
+    }
+
+    // Never block production checkout on Ethereal account creation
+    if (isProductionRuntime() || process.env.MAIL_DISABLE === 'true') {
+      console.warn('[mail] SMTP_* not configured — emails are written to server/outbox only');
+      transporter = null;
+      return null;
+    }
+
+    const testAccount = await Promise.race([
+      nodemailer.createTestAccount(),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Ethereal createTestAccount timed out')), 8_000);
+      }),
+    ]);
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === 'true',
+      host: testAccount.smtp.host,
+      port: testAccount.smtp.port,
+      secure: testAccount.smtp.secure,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        user: testAccount.user,
+        pass: testAccount.pass,
       },
     });
+    console.log('[mail] Using Ethereal test SMTP. Set SMTP_* env vars for production.');
     return transporter;
-  }
-
-  const testAccount = await nodemailer.createTestAccount();
-  transporter = nodemailer.createTransport({
-    host: testAccount.smtp.host,
-    port: testAccount.smtp.port,
-    secure: testAccount.smtp.secure,
-    auth: {
-      user: testAccount.user,
-      pass: testAccount.pass,
-    },
+  })().finally(() => {
+    transporterPromise = null;
   });
-  console.log('[mail] Using Ethereal test SMTP. Set SMTP_* env vars for production.');
-  return transporter;
+
+  return transporterPromise;
 }
 
 async function saveOutboxCopy(filename, html) {
@@ -119,15 +150,32 @@ function orderSummaryBlock(order, extraRows = '') {
 }
 
 async function deliver({ to, subject, html, outboxName }) {
+  if (outboxName) {
+    try {
+      await saveOutboxCopy(outboxName, html);
+    } catch (err) {
+      console.error('[mail] outbox write failed:', err?.message || err);
+    }
+  }
+
   const transport = await getTransporter();
-  const info = await transport.sendMail({
-    from: mailFrom(),
-    to,
-    subject,
-    html,
-  });
+  if (!transport) {
+    console.warn(`[mail] skipped send (no SMTP): ${subject} → ${to}`);
+    return { messageId: null, preview: null, skipped: true };
+  }
+
+  const info = await Promise.race([
+    transport.sendMail({
+      from: mailFrom(),
+      to,
+      subject,
+      html,
+    }),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('SMTP send timed out')), 20_000);
+    }),
+  ]);
   const preview = nodemailer.getTestMessageUrl(info);
-  if (outboxName) await saveOutboxCopy(outboxName, html);
   if (preview) console.log(`[mail] Preview (${subject}): ${preview}`);
   return { messageId: info.messageId, preview };
 }
