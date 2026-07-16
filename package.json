@@ -14,7 +14,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:import": "node server/scripts/migrate-json-to-pg.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate || true"
   },
   "engines": {
     "node": ">=20"
