@@ -51,10 +51,21 @@ export type CalcDraft = {
 };
 
 const DRAFT_VERSION = 1 as const;
-const MAX_AGE_MS = 1000 * 60 * 60 * 24; // 24 h
+const MAX_AGE_MS = 1000 * 60 * 60 * 24; // 24 h — guest session
+const MAX_CART_AGE_MS = 1000 * 60 * 60 * 24 * 14; // 14 d — logged-in cart
+
+export const CALC_DRAFT_EVENT = 'mate-calc-draft-change';
+
+export function notifyCalcDraftChange() {
+  window.dispatchEvent(new CustomEvent(CALC_DRAFT_EVENT));
+}
 
 export function calcDraftKey(inModal: boolean) {
   return inModal ? 'mate-calc-draft-modal' : 'mate-calc-draft-hero';
+}
+
+export function calcCartKey(userId: string) {
+  return `mate-calc-cart-${userId}`;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -65,9 +76,9 @@ function isDeliveryMode(v: unknown): v is CalcDraftDeliveryMode {
   return v === 'home' || v === 'branch' || v === 'locker';
 }
 
-function parseDraft(raw: unknown): CalcDraft | null {
+function parseDraft(raw: unknown, maxAgeMs: number): CalcDraft | null {
   if (!isRecord(raw) || raw.v !== DRAFT_VERSION) return null;
-  if (typeof raw.savedAt !== 'number' || Date.now() - raw.savedAt > MAX_AGE_MS) return null;
+  if (typeof raw.savedAt !== 'number' || Date.now() - raw.savedAt > maxAgeMs) return null;
   if (typeof raw.step !== 'number' || raw.step < 1 || raw.step > 9) return null;
   if (typeof raw.toCountry !== 'string') return null;
   if (!isDeliveryMode(raw.pickupType) || !isDeliveryMode(raw.deliveryType)) return null;
@@ -139,33 +150,122 @@ function parseDraft(raw: unknown): CalcDraft | null {
   };
 }
 
-export function loadCalcDraft(inModal: boolean): CalcDraft | null {
+function readFromStorage(storage: Storage, key: string, maxAgeMs: number): CalcDraft | null {
   try {
-    const raw = sessionStorage.getItem(calcDraftKey(inModal));
+    const raw = storage.getItem(key);
     if (!raw) return null;
-    return parseDraft(JSON.parse(raw));
+    return parseDraft(JSON.parse(raw), maxAgeMs);
   } catch {
     return null;
   }
 }
 
-export function saveCalcDraft(inModal: boolean, draft: Omit<CalcDraft, 'v' | 'savedAt'>) {
+function writePayload(storage: Storage, key: string, draft: Omit<CalcDraft, 'v' | 'savedAt'>) {
+  const payload: CalcDraft = {
+    v: DRAFT_VERSION,
+    savedAt: Date.now(),
+    ...draft,
+  };
+  storage.setItem(key, JSON.stringify(payload));
+}
+
+function latestSessionDraft(preferredInModal: boolean): CalcDraft | null {
+  const preferred = readFromStorage(sessionStorage, calcDraftKey(preferredInModal), MAX_AGE_MS);
+  const fallback = readFromStorage(sessionStorage, calcDraftKey(!preferredInModal), MAX_AGE_MS);
+  if (preferred && fallback) {
+    return preferred.savedAt >= fallback.savedAt ? preferred : fallback;
+  }
+  return preferred ?? fallback;
+}
+
+export function loadCalcDraft(inModal: boolean, userId?: string | null): CalcDraft | null {
+  if (userId) {
+    const cart = readFromStorage(localStorage, calcCartKey(userId), MAX_CART_AGE_MS);
+    if (cart) return cart;
+  }
+  return latestSessionDraft(inModal);
+}
+
+/** Best available draft for cart chip — prefers logged-in cart, then modal, then hero. */
+export function loadActiveCalcDraft(userId?: string | null): CalcDraft | null {
+  if (userId) {
+    const cart = readFromStorage(localStorage, calcCartKey(userId), MAX_CART_AGE_MS);
+    if (cart) return cart;
+  }
+  return latestSessionDraft(true);
+}
+
+function readExistingDraft(inModal: boolean, userId?: string | null): CalcDraft | null {
+  if (userId) {
+    return readFromStorage(localStorage, calcCartKey(userId), MAX_CART_AGE_MS);
+  }
+  return latestSessionDraft(inModal);
+}
+
+/** Avoid overwriting real progress when UI is reset to step 1 without user stepping back. */
+function mergeDraftStep(
+  incoming: Omit<CalcDraft, 'v' | 'savedAt'>,
+  inModal: boolean,
+  userId?: string | null,
+): Omit<CalcDraft, 'v' | 'savedAt'> {
+  const existing = readExistingDraft(inModal, userId);
+  if (!existing) return incoming;
+  if (incoming.step >= existing.step) return incoming;
+  const stepDrop = existing.step - incoming.step;
+  // Large jump back to step 1 with filled route data is usually a UI reset, not user Back.
+  if (
+    incoming.step <= 1
+    && stepDrop > 1
+    && (incoming.destCity.trim() || incoming.pickupCity.trim())
+  ) {
+    return { ...incoming, step: existing.step };
+  }
+  return incoming;
+}
+
+export function saveCalcDraft(
+  inModal: boolean,
+  draft: Omit<CalcDraft, 'v' | 'savedAt'>,
+  userId?: string | null,
+) {
   try {
-    const payload: CalcDraft = {
-      v: DRAFT_VERSION,
-      savedAt: Date.now(),
-      ...draft,
-    };
-    sessionStorage.setItem(calcDraftKey(inModal), JSON.stringify(payload));
+    const payload = mergeDraftStep(draft, inModal, userId);
+    if (userId) {
+      writePayload(localStorage, calcCartKey(userId), payload);
+      writePayload(sessionStorage, calcDraftKey(true), payload);
+      writePayload(sessionStorage, calcDraftKey(false), payload);
+    } else {
+      writePayload(sessionStorage, calcDraftKey(inModal), payload);
+    }
+    notifyCalcDraftChange();
   } catch {
     /* quota / private mode */
   }
 }
 
-export function clearCalcDraft(inModal: boolean) {
+export function clearCalcDraft(inModal: boolean, userId?: string | null) {
   try {
-    sessionStorage.removeItem(calcDraftKey(inModal));
+    if (userId) {
+      localStorage.removeItem(calcCartKey(userId));
+    }
+    sessionStorage.removeItem(calcDraftKey(true));
+    sessionStorage.removeItem(calcDraftKey(false));
+    notifyCalcDraftChange();
   } catch {
     /* ignore */
+  }
+}
+
+/** Merge guest session draft into user cart after login (keeps newest). */
+export function mergeGuestDraftIntoCart(userId: string) {
+  const modal = readFromStorage(sessionStorage, calcDraftKey(true), MAX_AGE_MS);
+  const hero = readFromStorage(sessionStorage, calcDraftKey(false), MAX_AGE_MS);
+  const guest = [modal, hero].filter(Boolean).sort((a, b) => b!.savedAt - a!.savedAt)[0] ?? null;
+  if (!guest) return;
+
+  const existing = readFromStorage(localStorage, calcCartKey(userId), MAX_CART_AGE_MS);
+  if (!existing || guest.savedAt > existing.savedAt) {
+    const { v: _v, savedAt: _s, ...rest } = guest;
+    saveCalcDraft(true, rest, userId);
   }
 }

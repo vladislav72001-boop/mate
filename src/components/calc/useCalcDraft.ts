@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { saveCalcDraft, type CalcDraft } from './calcDraft';
 
 export function useCalcDraftPersistence(
@@ -6,19 +6,27 @@ export function useCalcDraftPersistence(
   snapshot: () => Omit<CalcDraft, 'v' | 'savedAt'>,
   deps: readonly unknown[],
   enabled = true,
+  userId?: string | null,
+  skipFlushRef?: RefObject<boolean>,
 ) {
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const inModalRef = useRef(inModal);
   inModalRef.current = inModal;
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
 
   const flush = useCallback(() => {
     if (!enabled) return;
+    if (skipFlushRef?.current) {
+      skipFlushRef.current = false;
+      return;
+    }
     const data = snapshotRef.current();
     if (data.step <= 1 && !data.destCity.trim() && !data.senderPhone.trim() && !data.receiverPhone.trim()) {
       return;
     }
-    saveCalcDraft(inModalRef.current, data);
+    saveCalcDraft(inModalRef.current, data, userIdRef.current);
   }, [enabled]);
 
   useEffect(() => {

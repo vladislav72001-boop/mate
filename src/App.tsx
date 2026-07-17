@@ -1,9 +1,17 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { CalcCard } from './components/CalcCard';
 import { ClientAuthModal, type ClientOnboardingTarget } from './components/ClientAuthModal';
 import { ClientDashboard, type ClientDashTab } from './components/ClientDashboard';
 import { ShipmentCalculator, resumePaymentFromUrl } from './components/ShipmentCalculator';
-import { loadCalcDraft, clearCalcDraft } from './components/calc/calcDraft';
+import {
+  loadActiveCalcDraft,
+  clearCalcDraft,
+  mergeGuestDraftIntoCart,
+  CALC_DRAFT_EVENT,
+} from './components/calc/calcDraft';
+import { CalcDraftCart } from './components/calc/CalcDraftCart';
+import { isMeaningfulCalcDraft } from './components/calc/calcDraftSummary';
+import { ScrollToTop } from './components/ScrollToTop';
 import { OrderSuccessScreen } from './components/calc/OrderSuccessScreen';
 import { AdminApp } from './components/admin/AdminApp';
 import { MateLogo } from './components/MateLogo';
@@ -374,10 +382,9 @@ function App() {
   ));
   const [filter, setFilter] = useState<ServiceFilter>('all');
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [calcOpen, setCalcOpen] = useState(() => {
-    const draft = loadCalcDraft(true);
-    return Boolean(draft && draft.step > 1);
-  });
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcResumeSignal, setCalcResumeSignal] = useState(0);
+  const [draftTick, setDraftTick] = useState(0);
   const [dashNav, setDashNav] = useState<{ tab: ClientDashTab; openCalc?: boolean } | null>(null);
   const [ordersRefresh, setOrdersRefresh] = useState(0);
   const [clientAuthMode, setClientAuthMode] = useState<ClientAuthMode | null>(null);
@@ -399,6 +406,43 @@ function App() {
   );
   // Focus/blur only on desktop; mobile keeps the calculator in place without overlay.
   const calcFocused = page === 'home' && heroCalcStep > 1 && calcFocusDesktop;
+
+  const activeDraft = useMemo(() => {
+    void draftTick;
+    const draft = loadActiveCalcDraft(user?.id);
+    return draft && isMeaningfulCalcDraft(draft) ? draft : null;
+  }, [user?.id, draftTick]);
+
+  const showDraftCart = Boolean(
+    activeDraft
+    && page !== 'admin'
+    && !calcOpen
+    && !(page === 'home' && heroCalcStep > 1),
+  );
+  const [calcModalKey, setCalcModalKey] = useState(0);
+
+  const resumeDraftStep = useCallback(() => {
+    const resumeStep = activeDraft?.step ?? 1;
+    setHeroCalcStep(resumeStep);
+    document.querySelector('.hero-module')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setCalcResumeSignal((n) => n + 1);
+  }, [activeDraft?.step]);
+
+  const handleContinueDraft = useCallback(() => {
+    if (page === 'home') {
+      resumeDraftStep();
+      return;
+    }
+    // From dashboard and other pages — open modal immediately with saved draft.
+    setCalcModalKey((n) => n + 1);
+    setCalcOpen(true);
+  }, [page, resumeDraftStep]);
+
+  const handleDismissDraft = useCallback(() => {
+    clearCalcDraft(true, user?.id);
+    clearCalcDraft(false, user?.id);
+    setDraftTick((n) => n + 1);
+  }, [user?.id]);
 
   const dismissCalcFocus = useCallback(() => {
     setCalcResetSignal((n) => n + 1);
@@ -427,11 +471,25 @@ function App() {
     };
   }, [calcFocused, dismissCalcFocus]);
 
+  useEffect(() => {
+    const onDraftChange = () => setDraftTick((n) => n + 1);
+    window.addEventListener(CALC_DRAFT_EVENT, onDraftChange);
+    return () => window.removeEventListener(CALC_DRAFT_EVENT, onDraftChange);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    mergeGuestDraftIntoCart(user.id);
+    setDraftTick((n) => n + 1);
+  }, [user?.id]);
+
   const goPage = useCallback((next: TopPage) => {
     setPage(next);
     setMenuOpen(false);
-    if (next !== 'home') {
-      setHeroCalcStep(1);
+    setHeroCalcStep(1);
+    if (next === 'home') {
+      setCalcOpen(false);
+      setCalcResetSignal((n) => n + 1);
     }
   }, []);
 
@@ -522,8 +580,10 @@ function App() {
 
   const handleAuthSuccess = useCallback((authUser: AuthUser, token: string) => {
     storeSession(token);
+    mergeGuestDraftIntoCart(authUser.id);
     setUser(authUser);
     setDashboardType(authUser.type === 'corp' ? 'corp' : 'client');
+    setDraftTick((n) => n + 1);
   }, []);
 
   const openClientAuth = useCallback((mode: ClientAuthMode) => {
@@ -786,6 +846,7 @@ function App() {
                 onOrderSuccess={() => setOrdersRefresh((n) => n + 1)}
                 onStepChange={setHeroCalcStep}
                 resetToStep1Signal={calcResetSignal}
+                resumeSignal={calcResumeSignal}
               />
             </div>
           </section>
@@ -1330,8 +1391,8 @@ function App() {
           }}
           onCreateAnother={() => {
             setPaymentNotice(null);
-            clearCalcDraft(false);
-            clearCalcDraft(true);
+            clearCalcDraft(false, user?.id);
+            clearCalcDraft(true, user?.id);
             setPage('home');
             setCalcOpen(true);
           }}
@@ -1376,7 +1437,7 @@ function App() {
       {page === 'client-dashboard' && user && (
         <ClientDashboard
           user={user}
-          onExit={() => setPage('home')}
+          onExit={() => goPage('home')}
           onLogout={handleLogout}
           onCreateShipment={() => setCalcOpen(true)}
           onUserUpdate={setUser}
@@ -1391,6 +1452,7 @@ function App() {
         open={calcOpen}
         onClose={() => setCalcOpen(false)}
         user={user}
+        resumeKey={calcModalKey}
         onSuccess={() => {
           setOrdersRefresh((n) => n + 1);
           setCalcOpen(false);
@@ -1402,7 +1464,7 @@ function App() {
         <div className="dash-overlay">
           {/* Sidebar */}
           <aside className="dash-sidebar">
-            <button className="dash-logo" type="button" onClick={() => setPage('home')}>MATE<span>.</span></button>
+            <button className="dash-logo" type="button" onClick={() => goPage('home')}>MATE<span>.</span></button>
             <nav className="dash-nav">
               {([
                 ['home',         'Главная',     true  ],
@@ -1487,6 +1549,16 @@ function App() {
           </main>
         </div>
       )}
+
+      {showDraftCart && activeDraft && (
+        <CalcDraftCart
+          draft={activeDraft}
+          onContinue={handleContinueDraft}
+          onDismiss={handleDismissDraft}
+        />
+      )}
+
+      {page !== 'admin' && <ScrollToTop />}
     </div>
   );
 }

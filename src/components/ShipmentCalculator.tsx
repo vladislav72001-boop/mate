@@ -64,6 +64,7 @@ import {
   type SummaryRow,
 } from './calc/OrderSummary';
 import { loadCalcDraft, clearCalcDraft } from './calc/calcDraft';
+import { CalcDraftHints, type DraftHintItem } from './calc/CalcDraftHints';
 import { useCalcDraftPersistence } from './calc/useCalcDraft';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
@@ -77,6 +78,8 @@ type FormProps = {
   onStepChange?: (step: number) => void;
   /** Increment to force calculator back to step 1 (e.g. backdrop dismiss). */
   resetToStep1Signal?: number;
+  /** Start from step 1 but still load saved field values for hints. */
+  startFromStep1?: boolean;
 };
 
 type DeliveryMode = 'home' | 'branch' | 'locker';
@@ -273,16 +276,23 @@ export function CalcForm({
   onDone: _onDone,
   onStepChange,
   resetToStep1Signal,
+  startFromStep1,
 }: FormProps) {
   const { t, locale } = useI18n();
   const initialRef = useRef<{ restored: boolean; draft: ReturnType<typeof loadCalcDraft> } | null>(null);
   if (initialRef.current === null) {
-    initialRef.current = { restored: false, draft: loadCalcDraft(inModal) };
+    initialRef.current = { restored: false, draft: loadCalcDraft(inModal, user?.id) };
     initialRef.current.restored = Boolean(initialRef.current.draft);
   }
   const saved = initialRef.current.draft;
+  const restoredHintsRef = useRef({
+    pickupCity: saved?.pickupCity ?? '',
+    pickupAddress: saved?.pickupAddressQuery || saved?.pickupStreet || '',
+    destCity: saved?.destCity ?? '',
+    destAddress: saved?.destAddressQuery || saved?.destStreet || '',
+  });
 
-  const [step, setStep] = useState(saved?.step ?? 1);
+  const [step, setStep] = useState(startFromStep1 ? 1 : (saved?.step ?? 1));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quoteWarning, setQuoteWarning] = useState<string | null>(null);
@@ -350,6 +360,16 @@ export function CalcForm({
   const [currency, setCurrency] = useState(DEFAULT_QUOTE_CURRENCY);
   const [bookAddresses, setBookAddresses] = useState<AddressEntry[]>([]);
 
+  useEffect(() => {
+    const h = restoredHintsRef.current;
+    if (pickupCity.trim()) h.pickupCity = pickupCity.trim();
+    if (destCity.trim()) h.destCity = destCity.trim();
+    const pickupAddr = (pickupAddressQuery || pickupStreet).trim();
+    if (pickupAddr) h.pickupAddress = pickupAddr;
+    const destAddr = (destAddressQuery || destStreet).trim();
+    if (destAddr) h.destAddress = destAddr;
+  }, [pickupCity, destCity, pickupAddressQuery, pickupStreet, destAddressQuery, destStreet]);
+
   const quoteDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quoteWaitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quoteRequestId = useRef(0);
@@ -413,6 +433,7 @@ export function CalcForm({
   const payInFlight = useRef(false);
   const routeQuoteCache = useRef(new Map<string, { quotes: Partial<Record<ParcelKey, number>>; currency: string }>());
   const prevRouteKey = useRef('');
+  const skipDraftFlushRef = useRef(false);
 
   const goTo = (n: number) => {
     setStep(n);
@@ -429,6 +450,7 @@ export function CalcForm({
     if (resetToStep1Signal == null) return;
     if (prevResetSignal.current === resetToStep1Signal) return;
     prevResetSignal.current = resetToStep1Signal;
+    skipDraftFlushRef.current = true;
     setStep(1);
     onStepChange?.(1);
     setError(null);
@@ -562,7 +584,7 @@ export function CalcForm({
     receiverDial,
     receiverPhone,
     termsAccepted,
-  ]);
+  ], true, user?.id, skipDraftFlushRef);
 
   const resetPickupAddressRefinement = useCallback(() => {
     setPickupAddressReady(false);
@@ -890,6 +912,85 @@ export function CalcForm({
     setDestLocker('');
     setDestBranch('');
   }, []);
+
+  const draftHintItems = useMemo((): DraftHintItem[] => {
+    const hints = restoredHintsRef.current;
+    const items: DraftHintItem[] = [];
+    const push = (
+      id: string,
+      label: string,
+      restored: string,
+      current: string,
+      apply: () => void,
+    ) => {
+      const value = restored.trim();
+      const now = current.trim();
+      if (!value || value === now) return;
+      items.push({ id, label, value, onApply: apply });
+    };
+
+    if (step === 2) {
+      push('pickupCity', t('calc.pickupCity'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
+      push('destCity', t('calc.destCity'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
+    }
+
+    if (step === 7) {
+      push('pickupCity', t('calc.city'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
+      push(
+        'pickupAddress',
+        t('calc.senderAddress'),
+        hints.pickupAddress,
+        pickupAddressQuery || pickupStreet,
+        () => {
+          setPickupAddressQuery(hints.pickupAddress);
+          setPickupStreet(hints.pickupAddress);
+        },
+      );
+      if (hints.destCity.trim()) {
+        items.push({
+          id: 'destCityCtx',
+          label: t('calc.destCity'),
+          value: hints.destCity.trim(),
+          onApply: () => changeDestCity(hints.destCity),
+        });
+      }
+    }
+
+    if (step === 8) {
+      push('destCity', t('calc.city'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
+      push(
+        'destAddress',
+        t('calc.deliveryAddress'),
+        hints.destAddress,
+        destAddressQuery || destStreet,
+        () => {
+          setDestAddressQuery(hints.destAddress);
+          setDestStreet(hints.destAddress);
+        },
+      );
+      if (hints.pickupCity.trim()) {
+        items.push({
+          id: 'pickupCityCtx',
+          label: t('calc.pickupCity'),
+          value: hints.pickupCity.trim(),
+          onApply: () => changePickupCity(hints.pickupCity),
+        });
+      }
+    }
+
+    return items;
+  }, [
+    step,
+    t,
+    pickupCity,
+    destCity,
+    pickupAddressQuery,
+    pickupStreet,
+    destAddressQuery,
+    destStreet,
+    changePickupCity,
+    changeDestCity,
+  ]);
 
   // Load live locker points when entering steps 7/8
   useEffect(() => {
@@ -1253,7 +1354,7 @@ export function CalcForm({
       });
 
       if (result.checkoutUrl) {
-        clearCalcDraft(inModal);
+        clearCalcDraft(inModal, user?.id);
         window.location.assign(result.checkoutUrl);
         return;
       }
@@ -2055,6 +2156,7 @@ export function CalcForm({
         <div className="calc-form__main">
           <div className="calc-form__step-body">
             {stepContent}
+            {(step === 2 || step === 7 || step === 8) && <CalcDraftHints items={draftHintItems} />}
           </div>
           {!navAfterLayout && nav()}
         </div>
@@ -2071,11 +2173,18 @@ type ModalProps = {
   onClose: () => void;
   user?: AuthUser | null;
   onSuccess?: (order: ShippingOrder) => void;
+  /** Bump to remount form with latest draft (e.g. continue unfinished shipment). */
+  resumeKey?: number;
 };
 
-export function ShipmentCalculator({ open, onClose, user, onSuccess }: ModalProps) {
+export function ShipmentCalculator({ open, onClose, user, onSuccess, resumeKey = 0 }: ModalProps) {
   const { t } = useI18n();
   const [formKey, setFormKey] = useState(0);
+
+  useEffect(() => {
+    if (!resumeKey) return;
+    setFormKey(resumeKey);
+  }, [resumeKey]);
 
   useEffect(() => {
     if (!open) return;

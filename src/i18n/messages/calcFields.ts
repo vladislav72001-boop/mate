@@ -169,6 +169,13 @@ const ru: MessageTree = {
   fieldReceiverFirst: 'Имя получателя',
   fieldReceiverLast: 'Фамилия получателя',
   fieldReceiverPhone: 'Телефон получателя',
+  draftCartLabel: 'Незавершённая отправка',
+  draftCartContinue: 'Продолжить',
+  draftCartDismiss: 'Удалить черновик',
+  draftCartStep: 'Шаг {{current}} из {{total}}',
+  draftHintsTitle: 'Уже вводили',
+  draftHintApply: 'Подставить',
+  scrollToTop: 'Наверх',
 };
 
 const en: MessageTree = {
@@ -340,6 +347,13 @@ const en: MessageTree = {
   fieldReceiverFirst: 'Recipient first name',
   fieldReceiverLast: 'Recipient last name',
   fieldReceiverPhone: 'Recipient phone',
+  draftCartLabel: 'Unfinished shipment',
+  draftCartContinue: 'Continue',
+  draftCartDismiss: 'Discard draft',
+  draftCartStep: 'Step {{current}} of {{total}}',
+  draftHintsTitle: 'You already entered',
+  draftHintApply: 'Use this',
+  scrollToTop: 'Back to top',
 };
 
 const hu: MessageTree = {
@@ -511,6 +525,13 @@ const hu: MessageTree = {
   fieldReceiverFirst: 'Címzett keresztneve',
   fieldReceiverLast: 'Címzett vezetékneve',
   fieldReceiverPhone: 'Címzett telefon',
+  draftCartLabel: 'Befejezetlen küldemény',
+  draftCartContinue: 'Folytatás',
+  draftCartDismiss: 'Piszkozat törlése',
+  draftCartStep: '{{current}}. lépés / {{total}}',
+  draftHintsTitle: 'Korábban megadva',
+  draftHintApply: 'Beillesztés',
+  scrollToTop: 'Vissza a tetejére',
 };
 
 const uk: MessageTree = {
@@ -682,6 +703,13 @@ const uk: MessageTree = {
   fieldReceiverFirst: "Ім'я отримувача",
   fieldReceiverLast: 'Прізвище отримувача',
   fieldReceiverPhone: 'Телефон отримувача',
+  draftCartLabel: 'Незавершена відправка',
+  draftCartContinue: 'Продовжити',
+  draftCartDismiss: 'Видалити чернетку',
+  draftCartStep: 'Крок {{current}} з {{total}}',
+  draftHintsTitle: 'Вже вводили',
+  draftHintApply: 'Підставити',
+  scrollToTop: 'Нагору',
 };
 
 export const calcFieldMessages: Record<Locale, MessageTree> = { ru, en, hu, uk };
