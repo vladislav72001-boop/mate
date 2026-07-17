@@ -12,6 +12,7 @@ import { sendWelcomeEmail, sendLoginEmail } from './mail.mjs';
 import { createShippingRouter } from './shipping.mjs';
 import { createClientRouter } from './client-routes.mjs';
 import { createAdminRouter, ensureAdminUser } from './admin-routes.mjs';
+import { syncPricingFromJsonIfNeeded } from './pricing-config.mjs';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5012);
@@ -297,6 +298,9 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 });
 
 await ensureAdminUser({ createUser, findByEmail });
+await syncPricingFromJsonIfNeeded().catch((err) => {
+  console.error('[pricing] JSON sync failed:', err);
+});
 
 // Production: serve Vite build from the same origin as /api
 const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');

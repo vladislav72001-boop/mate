@@ -17,6 +17,10 @@ type Props = {
   compact?: boolean;
   pricePending?: boolean;
   welcomeDiscountPercent?: number | null;
+  deliveryAmount?: number | null;
+  fragileFee?: number;
+  insuranceFee?: number;
+  insurancePercent?: number;
 };
 
 export function OrderSummary({
@@ -27,11 +31,16 @@ export function OrderSummary({
   compact = false,
   pricePending = false,
   welcomeDiscountPercent = null,
+  deliveryAmount = null,
+  fragileFee = 0,
+  insuranceFee = 0,
+  insurancePercent = 1,
 }: Props) {
   const { t } = useI18n();
   const formatMoney = (n: number) => formatQuoteMoney(n, currency);
   const estimate = deliveryEstimate ?? t('calc.deliveryEstimate');
   const routeRow = rows.find((r) => r.key === 'from');
+  const showExtras = Boolean(fragileFee || insuranceFee);
 
   return (
     <aside className={`calc-summary${compact ? ' calc-summary--compact' : ''}`}>
@@ -60,6 +69,27 @@ export function OrderSummary({
               </span>
             </li>
           ))}
+        </ul>
+      )}
+
+      {showExtras && deliveryAmount != null && (
+        <ul className="calc-summary__extras">
+          <li>
+            <span>{t('calc.summaryDelivery')}</span>
+            <span>{formatMoney(deliveryAmount)}</span>
+          </li>
+          {fragileFee > 0 && (
+            <li>
+              <span>{t('calc.summaryFragile')}</span>
+              <span>+{formatMoney(fragileFee)}</span>
+            </li>
+          )}
+          {insuranceFee > 0 && (
+            <li>
+              <span>{t('calc.summaryInsurance', { percent: insurancePercent })}</span>
+              <span>+{formatMoney(insuranceFee)}</span>
+            </li>
+          )}
         </ul>
       )}
 

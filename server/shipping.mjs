@@ -26,10 +26,8 @@ import {
 import {
   getSettings,
   calculateMatePrice,
-  applyVat,
-  roundAmount,
-  eurToCurrency,
   finalizeExternalQuote,
+  computeOrderExtras,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
 import { countNovaPostCoverage, fetchNovaPostDivisions, mapDivisionToPoint } from './novapost/divisions.mjs';
@@ -122,7 +120,6 @@ export async function resolveCheckoutAmount(body, userId = null) {
   const fromCountry = tariff.fromCountry || body.sender?.country || 'HU';
   const weightKg = Number(parcel.weightKg) || 2;
   const deliveryMode = mapDeliveryMode(tariff.deliveryType || tariff.deliveryMode || body.deliveryType);
-  const fx = settings.fxFromEur || {};
   const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(userId || body.userId);
 
   const reconciled = await reconcileParcelPrice({
@@ -153,30 +150,28 @@ export async function resolveCheckoutAmount(body, userId = null) {
     log.pop();
   }
 
-  if (parcel.fragile) {
-    const fee = eurToCurrency(settings.fragileFeeEur ?? 1.98, currency, fx);
-    const withVat = roundAmount(applyVat(fee, settings), settings);
-    total += withVat;
+  const extras = computeOrderExtras(total, {
+    fragile: Boolean(parcel.fragile),
+    insurance: Boolean(parcel.insurance),
+  }, settings);
+
+  if (extras.fragileFee) {
     log.push({
       step: log.length + 1,
       title: 'Хрупкое',
       detail: `${settings.fragileFeeEur ?? 1.98} EUR + НДС`,
-      value: withVat,
+      value: extras.fragileFee,
     });
   }
-  if (parcel.insurance) {
-    const insured = Math.max(0, Number(parcel.insuredValueEur ?? parcel.declaredValue ?? 0));
-    const ins = eurToCurrency(insured * ((settings.insurancePercent ?? 1) / 100), currency, fx);
-    const withVat = roundAmount(applyVat(ins, settings), settings);
-    total += withVat;
+  if (extras.insuranceFee) {
     log.push({
       step: log.length + 1,
       title: 'Страховка',
-      detail: `${settings.insurancePercent ?? 1}% от ${insured} EUR + НДС`,
-      value: withVat,
+      detail: `${extras.insurancePercent}% от тарифа доставки`,
+      value: extras.insuranceFee,
     });
   }
-  total = roundAmount(total, settings);
+  total = extras.total;
   log.push({
     step: log.length + 1,
     title: 'Итого заказа',
@@ -190,6 +185,10 @@ export async function resolveCheckoutAmount(body, userId = null) {
     currency,
     source: priceSource,
     deliveryMode,
+    deliveryAmount: extras.base,
+    fragileFee: extras.fragileFee,
+    insuranceFee: extras.insuranceFee,
+    insurancePercent: extras.insurancePercent,
     log,
   };
 
@@ -365,6 +364,28 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     } catch (err) {
       console.error('[shipping] geocode:', err);
       res.status(500).json({ error: 'Не удалось найти адрес' });
+    }
+  });
+
+  /** Public quote settings — keep calculator extras in sync with admin/DB. */
+  router.get('/quote-settings', async (_req, res) => {
+    try {
+      const settings = await getSettings();
+      res.json({
+        data: {
+          currency: settings.currency,
+          vatEnabled: settings.vatEnabled,
+          vatPercent: settings.vatPercent,
+          roundingEnabled: settings.roundingEnabled,
+          roundingStep: settings.roundingStep,
+          fxFromEur: settings.fxFromEur,
+          fragileFeeEur: settings.fragileFeeEur,
+          insurancePercent: settings.insurancePercent,
+        },
+      });
+    } catch (err) {
+      console.error('[shipping] quote-settings:', err);
+      res.status(500).json({ error: 'Не удалось загрузить настройки тарифа' });
     }
   });
 

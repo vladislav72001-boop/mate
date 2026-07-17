@@ -125,6 +125,73 @@ export async function calculateBatch(payload: {
   return res.data;
 }
 
+export type QuoteSettings = {
+  currency: string;
+  vatEnabled: boolean;
+  vatPercent: number;
+  roundingEnabled: boolean;
+  roundingStep: number;
+  fxFromEur: Record<string, number>;
+  fragileFeeEur: number;
+  insurancePercent: number;
+};
+
+export async function fetchQuoteSettings() {
+  const res = await shippingRequest<ApiData<QuoteSettings>>('/api/shipping/quote-settings', {}, 8000);
+  return res.data;
+}
+
+/** Same rounding as server/pricing-config.mjs */
+export function roundQuoteAmount(amount: number, settings: Pick<QuoteSettings, 'roundingEnabled' | 'roundingStep' | 'currency'>) {
+  const n = Number(amount) || 0;
+  if (!settings.roundingEnabled) {
+    return settings.currency === 'HUF' ? Math.round(n) : Math.round(n * 100) / 100;
+  }
+  const step = Number(settings.roundingStep) || 10;
+  return Math.round(n / step) * step;
+}
+
+export function applyQuoteVat(amount: number, settings: Pick<QuoteSettings, 'vatEnabled' | 'vatPercent'>) {
+  const n = Number(amount) || 0;
+  if (!settings.vatEnabled) return n;
+  return n * (1 + (Number(settings.vatPercent) || 0) / 100);
+}
+
+export function eurToSettingsCurrency(amountEur: number, settings: Pick<QuoteSettings, 'currency' | 'fxFromEur'>) {
+  const code = String(settings.currency || 'HUF').toUpperCase();
+  if (!Number.isFinite(amountEur) || amountEur === 0) return 0;
+  if (code === 'EUR') return amountEur;
+  const rate = Number(settings.fxFromEur?.[code]);
+  if (!rate) return 0;
+  return amountEur * rate;
+}
+
+/** Extras aligned with server computeOrderExtras — insurance = % of delivery tariff. */
+export function computeClientExtras(
+  baseAmount: number,
+  opts: { fragile?: boolean; insurance?: boolean },
+  settings: QuoteSettings,
+) {
+  const base = Number(baseAmount) || 0;
+  let fragileFee = 0;
+  let insuranceFee = 0;
+  if (opts.fragile) {
+    const fee = eurToSettingsCurrency(settings.fragileFeeEur ?? 1.98, settings);
+    fragileFee = roundQuoteAmount(applyQuoteVat(fee, settings), settings);
+  }
+  if (opts.insurance) {
+    const pct = Number(settings.insurancePercent ?? 1) / 100;
+    insuranceFee = roundQuoteAmount(base * pct, settings);
+  }
+  return {
+    base,
+    fragileFee,
+    insuranceFee,
+    insurancePercent: Number(settings.insurancePercent ?? 1),
+    total: roundQuoteAmount(base + fragileFee + insuranceFee, settings),
+  };
+}
+
 export async function checkout(payload: Record<string, unknown>) {
   const res = await shippingRequest<ApiData<{
     checkoutUrl?: string | null;

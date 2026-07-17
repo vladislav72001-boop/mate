@@ -1485,7 +1485,7 @@ function SettingsTab() {
             />
           </label>
           <label className="admin-field admin-field--sm">
-            <span>Страховка (%)</span>
+            <span>Страховка (% от тарифа доставки)</span>
             <input
               type="number"
               step="0.1"

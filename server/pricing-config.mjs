@@ -1,4 +1,9 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { prisma } from './db.mjs';
+
+const DATA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
 
 export const DESTINATIONS = [
   'DOM', 'DE', 'CZ', 'SK', 'AT', 'LT', 'LV', 'EE',
@@ -131,38 +136,173 @@ function mapPricingRow(row) {
   };
 }
 
+async function readJsonFile(name, fallback = null) {
+  try {
+    const raw = await readFile(path.join(DATA_DIR, name), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+/** Prefer checked-in JSON tariffs over generated matrix (legacy JSON store). */
+async function jsonSeedPricing() {
+  const fromFile = await readJsonFile('pricing.json', null);
+  if (fromFile?.costPrices) {
+    return {
+      version: fromFile.version || 1,
+      destinations: fromFile.destinations || DESTINATIONS,
+      weightRows: fromFile.weightRows || WEIGHT_ROWS,
+      costPrices: fromFile.costPrices,
+      weightMarkups: fromFile.weightMarkups || defaultPricing().weightMarkups,
+      tiers: fromFile.tiers || defaultPricing().tiers,
+    };
+  }
+  return defaultPricing();
+}
+
+async function jsonSeedSettings() {
+  const fromFile = await readJsonFile('settings.json', null);
+  if (fromFile) {
+    return {
+      ...defaultSettings(),
+      ...fromFile,
+      fxFromEur: { ...defaultSettings().fxFromEur, ...(fromFile.fxFromEur || {}) },
+    };
+  }
+  return defaultSettings();
+}
+
+function looksLikeGeneratedPricing(pricing) {
+  if (!pricing?.costPrices) return true;
+  const markups = pricing.weightMarkups || [];
+  const allZeroMarkup = markups.length === 0 || markups.every((m) => !Number(m.percent));
+  const generated = buildCostMatrix();
+  const sample = pricing.costPrices?.locker?.['2']?.DE;
+  const generatedSample = generated.locker?.['2']?.DE;
+  return allZeroMarkup && sample === generatedSample;
+}
+
+function needsJsonResync(pricing, jsonPricing) {
+  if (!jsonPricing?.costPrices) return false;
+  if (looksLikeGeneratedPricing(pricing)) return true;
+  const dbZero = !(pricing.weightMarkups || []).some((m) => Number(m.percent) > 0);
+  const jsonHasMarkup = (jsonPricing.weightMarkups || []).some((m) => Number(m.percent) > 0);
+  // Costs imported from JSON but markups wiped to 0% → restore full JSON tariffs
+  if (dbZero && jsonHasMarkup) {
+    const dbSample = pricing.costPrices?.locker?.['2']?.DE;
+    const jsonSample = jsonPricing.costPrices?.locker?.['2']?.DE;
+    if (dbSample === jsonSample) return true;
+  }
+  return false;
+}
+
 export async function ensurePricingDefaults() {
-  const defaults = defaultSettings();
+  const settingsSeed = await jsonSeedSettings();
   await prisma.appSettings.upsert({
     where: { id: 1 },
     create: {
       id: 1,
-      vatEnabled: defaults.vatEnabled,
-      vatPercent: defaults.vatPercent,
-      roundingEnabled: defaults.roundingEnabled,
-      roundingStep: defaults.roundingStep,
-      currency: defaults.currency,
-      fxFromEur: defaults.fxFromEur,
-      fragileFeeEur: defaults.fragileFeeEur,
-      insurancePercent: defaults.insurancePercent,
+      vatEnabled: settingsSeed.vatEnabled,
+      vatPercent: settingsSeed.vatPercent,
+      roundingEnabled: settingsSeed.roundingEnabled,
+      roundingStep: settingsSeed.roundingStep,
+      currency: settingsSeed.currency,
+      fxFromEur: settingsSeed.fxFromEur,
+      fragileFeeEur: settingsSeed.fragileFeeEur,
+      insurancePercent: settingsSeed.insurancePercent,
     },
     update: {},
   });
 
-  const pricingDefaults = defaultPricing();
+  const pricingSeed = await jsonSeedPricing();
   await prisma.pricingConfig.upsert({
     where: { id: 1 },
     create: {
       id: 1,
-      version: pricingDefaults.version,
-      destinations: pricingDefaults.destinations,
-      weightRows: pricingDefaults.weightRows,
-      costPrices: pricingDefaults.costPrices,
-      weightMarkups: pricingDefaults.weightMarkups,
-      tiers: pricingDefaults.tiers,
+      version: pricingSeed.version,
+      destinations: pricingSeed.destinations,
+      weightRows: pricingSeed.weightRows,
+      costPrices: pricingSeed.costPrices,
+      weightMarkups: pricingSeed.weightMarkups,
+      tiers: pricingSeed.tiers,
     },
     update: {},
   });
+}
+
+/**
+ * If PG was seeded with empty generated defaults (0% markups), restore tariffs from JSON.
+ * Does not overwrite admin-edited matrices that already match JSON / custom markups.
+ */
+export async function syncPricingFromJsonIfNeeded() {
+  await ensurePricingDefaults();
+  const force = String(process.env.PRICING_SYNC_FROM_JSON || '').toLowerCase() === 'true';
+  const seed = await jsonSeedPricing();
+  const current = await getPricing();
+  if (!force && !needsJsonResync(current, seed)) return current;
+
+  const settingsSeed = await jsonSeedSettings();
+  await prisma.pricingConfig.update({
+    where: { id: 1 },
+    data: {
+      version: seed.version,
+      destinations: seed.destinations,
+      weightRows: seed.weightRows,
+      costPrices: seed.costPrices,
+      weightMarkups: seed.weightMarkups,
+      tiers: seed.tiers,
+    },
+  });
+  if (force) {
+    await prisma.appSettings.update({
+      where: { id: 1 },
+      data: {
+        vatEnabled: settingsSeed.vatEnabled,
+        vatPercent: settingsSeed.vatPercent,
+        roundingEnabled: settingsSeed.roundingEnabled,
+        roundingStep: settingsSeed.roundingStep,
+        currency: settingsSeed.currency,
+        fxFromEur: settingsSeed.fxFromEur,
+        fragileFeeEur: settingsSeed.fragileFeeEur,
+        insurancePercent: settingsSeed.insurancePercent,
+      },
+    });
+  }
+  console.log(`[pricing] synced matrix from JSON (force=${force})`);
+  return mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
+}
+
+/**
+ * Fragile = fixed EUR fee + VAT.
+ * Insurance = insurancePercent of delivery tariff (already client-facing / with VAT).
+ * Matches calculator UX: "1% от суммы доставки".
+ */
+export function computeOrderExtras(baseAmount, { fragile = false, insurance = false } = {}, settings) {
+  const currency = String(settings?.currency || 'HUF').toUpperCase();
+  const fx = settings?.fxFromEur || {};
+  const base = Number(baseAmount) || 0;
+  let fragileFee = 0;
+  let insuranceFee = 0;
+
+  if (fragile) {
+    const fee = eurToCurrency(settings?.fragileFeeEur ?? 1.98, currency, fx);
+    fragileFee = roundAmount(applyVat(fee, settings), settings);
+  }
+  if (insurance) {
+    const pct = Number(settings?.insurancePercent ?? 1) / 100;
+    insuranceFee = roundAmount(base * pct, settings);
+  }
+
+  const total = roundAmount(base + fragileFee + insuranceFee, settings);
+  return {
+    base,
+    fragileFee,
+    insuranceFee,
+    insurancePercent: Number(settings?.insurancePercent ?? 1),
+    total,
+    currency,
+  };
 }
 
 export async function getSettings() {

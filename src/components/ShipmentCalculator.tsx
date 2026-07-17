@@ -6,24 +6,24 @@ import {
   calculateFinal,
   checkout,
   confirmPayment,
+  computeClientExtras,
   fetchCoverage,
   fetchOrderStatus,
+  fetchQuoteSettings,
   fetchShippingPoints,
   trackByTtn,
   type AddressSuggestion,
   type CoverageSide,
+  type QuoteSettings,
   type ShippingOrder,
   type ShippingPoint,
 } from '../api/shipping';
 import {
   DIAL_BY_CC,
-  FRAGILE_FEE_EUR,
-  INSURANCE_RATE,
   DEFAULT_QUOTE_CURRENCY,
   PARCEL_PRESETS,
   PICKUP_COUNTRY,
   PICKUP_TIMES,
-  eurToQuoteCurrency,
   formatQuoteMoney,
   composePhone,
   validateEmail,
@@ -182,14 +182,6 @@ function sizeToApiKey(
   return sizeKey;
 }
 
-/** Insurance fee in quote currency (1% of declared cargo EUR + VAT 27%), aligned with server. */
-function insuranceFeeInCurrency(declaredValueEur: number, currencyCode: string) {
-  const net = eurToQuoteCurrency(Math.max(0, declaredValueEur) * INSURANCE_RATE, currencyCode);
-  const withVat = net * 1.27;
-  if (currencyCode === 'HUF') return Math.round(withVat / 10) * 10;
-  return Math.round(withVat * 100) / 100;
-}
-
 function deliveryModeToApi(mode: DeliveryMode): 'locker' | 'branch' | 'address' {
   if (mode === 'home') return 'address';
   return mode;
@@ -324,6 +316,7 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const [fragile, setFragile] = useState(saved?.fragile ?? false);
   const [insurance, setInsurance] = useState(saved?.insurance ?? false);
+  const [quoteSettings, setQuoteSettings] = useState<QuoteSettings | null>(null);
 
   const [senderName, setSenderName] = useState(saved?.senderName || user?.name || '');
   const [senderEmail, setSenderEmail] = useState(saved?.senderEmail || user?.email || '');
@@ -361,6 +354,30 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
       if (quoteWaitTimer.current) clearTimeout(quoteWaitTimer.current);
     };
   }, [quoteRefreshing]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchQuoteSettings()
+      .then((s) => {
+        if (!cancelled) setQuoteSettings(s);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setQuoteSettings({
+            currency: DEFAULT_QUOTE_CURRENCY,
+            vatEnabled: true,
+            vatPercent: 27,
+            roundingEnabled: true,
+            roundingStep: 10,
+            fxFromEur: { EUR: 1, HUF: 400, PLN: 4.3, CZK: 25, RON: 5 },
+            fragileFeeEur: 1.98,
+            insurancePercent: 1,
+          });
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const quoteInFlight = useRef(false);
   const payInFlight = useRef(false);
   const routeQuoteCache = useRef(new Map<string, { quotes: Partial<Record<ParcelKey, number>>; currency: string }>());
@@ -696,31 +713,26 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const basePrice = parcelQuotes[apiParcelKey] ?? null;
 
-  const insuranceFee = useMemo(
-    () => insuranceFeeInCurrency(declaredValue, currency),
-    [declaredValue, currency],
-  );
-
-  const totalPrice = useMemo(() => {
-    if (basePrice == null) return null;
-    let t = basePrice;
-    if (fragile) {
-      const fragileNet = eurToQuoteCurrency(FRAGILE_FEE_EUR, currency);
-      const fragileWithVat = fragileNet * 1.27;
-      t += currency === 'HUF' ? Math.round(fragileWithVat / 10) * 10 : Math.round(fragileWithVat * 100) / 100;
+  const extras = useMemo(() => {
+    if (basePrice == null || !quoteSettings) {
+      return { base: basePrice ?? 0, fragileFee: 0, insuranceFee: 0, insurancePercent: 1, total: basePrice };
     }
-    if (insurance) t += insuranceFee;
-    return currency === 'HUF' ? Math.round(t) : Math.round(t * 100) / 100;
-  }, [basePrice, fragile, insurance, insuranceFee, currency]);
+    return computeClientExtras(basePrice, { fragile, insurance }, quoteSettings);
+  }, [basePrice, fragile, insurance, quoteSettings]);
 
+  const totalPrice = extras.total;
   const formatMoney = (n: number) => formatQuoteMoney(n, currency);
-  const fragileFeeLabel = formatQuoteMoney(
-    currency === 'HUF'
-      ? Math.round((eurToQuoteCurrency(FRAGILE_FEE_EUR, currency) * 1.27) / 10) * 10
-      : Math.round(eurToQuoteCurrency(FRAGILE_FEE_EUR, currency) * 1.27 * 100) / 100,
-    currency,
+  const fragileFeeLabel = formatMoney(extras.fragileFee || (
+    quoteSettings
+      ? computeClientExtras(0, { fragile: true }, quoteSettings).fragileFee
+      : 0
+  ));
+  const insuranceFeeLabel = formatMoney(
+    basePrice != null && quoteSettings
+      ? computeClientExtras(basePrice, { insurance: true }, quoteSettings).insuranceFee
+      : 0,
   );
-  const insuranceFeeLabel = formatMoney(insuranceFee);
+  const insurancePercentLabel = quoteSettings?.insurancePercent ?? 1;
 
   const pickupLockersForCity = useMemo(() => {
     if (livePickupLockers) return livePickupLockers as typeof PICKUP_LOCKERS;
@@ -1259,6 +1271,10 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
       compact={summaryCompact}
       pricePending={quoteRefreshing && totalPrice == null}
       welcomeDiscountPercent={welcomeDiscountPercent}
+      deliveryAmount={basePrice}
+      fragileFee={extras.fragileFee}
+      insuranceFee={extras.insuranceFee}
+      insurancePercent={extras.insurancePercent}
     />
   ) : null;
 
@@ -1549,6 +1565,10 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
                 <input type="checkbox" checked={fragile} onChange={(e) => setFragile(e.target.checked)} />
                 <span>{t('calc.fragile', { fee: fragileFeeLabel })}</span>
               </label>
+              <label className="calc-form__check">
+                <input type="checkbox" checked={insurance} onChange={(e) => setInsurance(e.target.checked)} />
+                <span>{t('calc.insurance', { percent: insurancePercentLabel, fee: insuranceFeeLabel })}</span>
+              </label>
               {showQuoteWait && step === 4 && (
                 <p className="calc-form__hint calc-form__hint--inline calc-form__hint--wait" aria-live="polite">
                   <span className="calc-form__wait-dot" aria-hidden />
@@ -1604,10 +1624,6 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
                   </button>
                 ))}
               </div>
-              <label className="calc-form__check">
-                <input type="checkbox" checked={insurance} onChange={(e) => setInsurance(e.target.checked)} />
-                <span>{t('calc.insurance', { fee: insuranceFeeLabel })}</span>
-              </label>
               <p className="calc-form__group-label">{t('calc.whoPays')}</p>
               <div className="calc-form__options calc-form__options--2">
                 <button
