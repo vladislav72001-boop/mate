@@ -25,6 +25,7 @@ import { OrderCard } from './client-dash/OrderCard';
 import { PaymentCard } from './client-dash/PaymentCard';
 import { TrackingMap } from './client-dash/TrackingMap';
 import { LoyaltyCard, loyaltyTierLabel } from './client-dash/LoyaltyCard';
+import { trackingEventLabel } from './client-dash/trackingLabels';
 
 type Tab = 'home' | 'shipments' | 'tracking' | 'address' | 'payments' | 'settings';
 export type ClientDashTab = Tab;
@@ -812,7 +813,7 @@ export function ClientDashboard({
                         <li key={ev.id} className={`client-dash__timeline-item${ev.done ? ' done' : ''}${ev.current ? ' current' : ''}`}>
                           <span className="client-dash__timeline-dot" />
                           <div>
-                            <b>{ev.title}</b>
+                            <b>{trackingEventLabel(ev, t)}</b>
                             {ev.at && <small>{formatDate(ev.at)}</small>}
                           </div>
                         </li>

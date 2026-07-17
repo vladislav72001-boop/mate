@@ -2162,7 +2162,13 @@ export function TrackShipment() {
           />
           <b>{order.orderNumber}</b>
           <span>{countryLabel(order.fromCountry || 'HU', locale)} → {countryLabel(order.toCountry || '', locale)}</span>
-          <span>{t('calc.statusLabel')}: {order.status === 'submitted' ? t('calc.statusSubmitted') : order.status === 'paid' ? t('calc.statusPaid') : order.status}</span>
+          <span>{t('calc.statusLabel')}: {
+            order.status === 'submitted' ? t('calc.statusSubmitted')
+            : order.status === 'paid' ? t('calc.statusPaid')
+            : order.status === 'pending_payment' ? t('dash.statusPending')
+            : order.status === 'cancelled' ? t('dash.statusCancelled')
+            : order.status
+          }</span>
           {order.npTtn && <span>{t('calc.ttnLabel')}: {order.npTtn}</span>}
         </div>
       )}
