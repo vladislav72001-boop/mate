@@ -6,16 +6,22 @@ import { CalcForm, TrackShipment } from './ShipmentCalculator';
 type Props = {
   user?: AuthUser | null;
   onOrderSuccess?: () => void;
+  onStepChange?: (step: number) => void;
+  resetToStep1Signal?: number;
 };
 
-export function CalcCard({ user, onOrderSuccess }: Props) {
+export function CalcCard({ user, onOrderSuccess, onStepChange, resetToStep1Signal }: Props) {
   const t = useT();
   const [tab, setTab] = useState<'calc' | 'track'>('calc');
   const [formKey, setFormKey] = useState(0);
 
   const switchTab = (next: 'calc' | 'track') => {
     setTab(next);
-    if (next === 'calc') setFormKey((k) => k + 1);
+    if (next === 'calc') {
+      setFormKey((k) => k + 1);
+    } else {
+      onStepChange?.(1);
+    }
   };
 
   return (
@@ -38,6 +44,8 @@ export function CalcCard({ user, onOrderSuccess }: Props) {
               onOrderSuccess?.();
             }}
             onDone={() => setFormKey((k) => k + 1)}
+            onStepChange={onStepChange}
+            resetToStep1Signal={resetToStep1Signal}
           />
         ) : (
           <TrackShipment />

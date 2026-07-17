@@ -392,10 +392,35 @@ function App() {
     message?: string;
   } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [heroCalcStep, setHeroCalcStep] = useState(1);
+  const [calcResetSignal, setCalcResetSignal] = useState(0);
+  const calcFocused = page === 'home' && heroCalcStep > 1;
+
+  const dismissCalcFocus = useCallback(() => {
+    setCalcResetSignal((n) => n + 1);
+    setHeroCalcStep(1);
+  }, []);
+
+  useEffect(() => {
+    if (!calcFocused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismissCalcFocus();
+    };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [calcFocused, dismissCalcFocus]);
 
   const goPage = useCallback((next: TopPage) => {
     setPage(next);
     setMenuOpen(false);
+    if (next !== 'home') {
+      setHeroCalcStep(1);
+    }
   }, []);
 
   useEffect(() => {
@@ -565,7 +590,7 @@ function App() {
   }
 
   return (
-    <div className={`mate-app${menuOpen ? ' mate-app--menu-open' : ''}`}>
+    <div className={`mate-app${menuOpen ? ' mate-app--menu-open' : ''}${calcFocused ? ' mate-app--calc-focus' : ''}`}>
       {!inDashboard && (
       <header className="topbar container">
           <button
@@ -707,6 +732,14 @@ function App() {
 
       {!inDashboard && (page === 'home' ? (
         <main className="container page-enter home-page">
+          {calcFocused && (
+            <button
+              type="button"
+              className="calc-focus-backdrop"
+              aria-label={t('calc.focusBackdropAria')}
+              onClick={dismissCalcFocus}
+            />
+          )}
           <section className="hero-grid" aria-label="Mate Delivery">
             <div className="hero-copy">
               <div className="ai-badge">
@@ -739,6 +772,8 @@ function App() {
               <CalcCard
                 user={user}
                 onOrderSuccess={() => setOrdersRefresh((n) => n + 1)}
+                onStepChange={setHeroCalcStep}
+                resetToStep1Signal={calcResetSignal}
               />
             </div>
           </section>

@@ -71,6 +71,9 @@ type FormProps = {
   onSuccess?: (order: ShippingOrder) => void;
   onDone?: () => void;
   inModal?: boolean;
+  onStepChange?: (step: number) => void;
+  /** Increment to force calculator back to step 1 (e.g. backdrop dismiss). */
+  resetToStep1Signal?: number;
 };
 
 type DeliveryMode = 'home' | 'branch' | 'locker';
@@ -259,7 +262,15 @@ function OptionGrid<T extends string>({
   );
 }
 
-export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps) {
+export function CalcForm({
+  user,
+  initialTo = 'DE',
+  inModal = false,
+  onSuccess: _onSuccess,
+  onDone: _onDone,
+  onStepChange,
+  resetToStep1Signal,
+}: FormProps) {
   const { t, locale } = useI18n();
   const initialRef = useRef<{ restored: boolean; draft: ReturnType<typeof loadCalcDraft> } | null>(null);
   if (initialRef.current === null) {
@@ -385,8 +396,23 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const goTo = (n: number) => {
     setStep(n);
+    onStepChange?.(n);
     if (n < TOTAL_STEPS) setError(null);
   };
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, []);
+
+  const prevResetSignal = useRef(resetToStep1Signal);
+  useEffect(() => {
+    if (resetToStep1Signal == null) return;
+    if (prevResetSignal.current === resetToStep1Signal) return;
+    prevResetSignal.current = resetToStep1Signal;
+    setStep(1);
+    onStepChange?.(1);
+    setError(null);
+  }, [resetToStep1Signal, onStepChange]);
 
   useEffect(() => {
     if (initialRef.current?.restored) return;

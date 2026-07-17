@@ -466,6 +466,103 @@ body {
   width: 100%;
 }
 
+.calc-focus-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  margin: 0;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  background: rgba(18, 32, 35, 0.34);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: calcFocusIn 220ms ease both;
+}
+
+.mate-app--calc-focus .topbar,
+.mate-app--calc-focus .mobile-menu {
+  filter: blur(8px);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+  transition: filter 220ms ease, opacity 220ms ease;
+}
+
+.mate-app--calc-focus .home-page > :not(.hero-grid):not(.calc-focus-backdrop) {
+  filter: blur(8px);
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+  transition: filter 220ms ease, opacity 220ms ease;
+}
+
+.mate-app--calc-focus .hero-grid {
+  position: relative;
+  z-index: 40;
+}
+
+.mate-app--calc-focus .hero-copy {
+  filter: blur(7px);
+  opacity: 0.38;
+  pointer-events: none;
+  user-select: none;
+  transform: translateX(-10%) scale(0.96);
+  transition: filter 260ms ease, opacity 260ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mate-app--calc-focus .hero-module {
+  position: relative;
+  z-index: 41;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), grid-column 0s;
+}
+
+.mate-app--calc-focus .hero-module .calc-card {
+  box-shadow: 0 28px 64px rgba(18, 32, 35, 0.18);
+}
+
+@keyframes calcFocusIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (min-width: 901px) {
+  .mate-app--calc-focus .hero-grid {
+    align-items: center;
+    min-height: min(72vh, 760px);
+  }
+
+  .mate-app--calc-focus .hero-copy {
+    transform: translateX(-16%) scale(0.94);
+  }
+
+  .mate-app--calc-focus .hero-module {
+    grid-column: 4 / span 6;
+    justify-self: center;
+    width: 100%;
+    max-width: 560px;
+    transform: translateY(4px);
+  }
+}
+
+@media (max-width: 900px) {
+  .mate-app--calc-focus .hero-copy {
+    display: none;
+  }
+
+  .mate-app--calc-focus .hero-module {
+    grid-column: 1 / -1;
+  }
+
+  .mate-app--calc-focus .hero-grid {
+    padding-top: 8px;
+  }
+}
+
 .ai-badge {
   position: relative;
   z-index: 1;
