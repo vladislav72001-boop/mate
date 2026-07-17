@@ -355,10 +355,12 @@ export async function fetchAddressSuggestions(params: {
   q: string;
   country?: string;
   city?: string;
+  lang?: string;
 }) {
   const qs = new URLSearchParams({ q: params.q.trim() });
   if (params.country) qs.set('country', params.country);
   if (params.city?.trim()) qs.set('city', params.city.trim());
+  if (params.lang) qs.set('lang', params.lang);
   const res = await shippingRequest<ApiData<{ suggestions: AddressSuggestion[] }>>(
     `/api/shipping/geocode?${qs}`,
     {},

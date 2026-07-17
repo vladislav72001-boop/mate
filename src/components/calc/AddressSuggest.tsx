@@ -3,6 +3,7 @@ import {
   fetchAddressSuggestions,
   type AddressSuggestion,
 } from '../../api/shipping';
+import type { AddressEntry } from '../../api/client-types';
 import { useI18n } from '../../i18n/context';
 import { CITY_COORDS } from './LockerPicker';
 
@@ -17,6 +18,8 @@ type Props = {
   name?: string;
   hint?: string;
   disabled?: boolean;
+  /** Saved address-book entries to show first in suggestions */
+  bookAddresses?: AddressEntry[];
 };
 
 function cityFallbackCoords(country?: string, city?: string) {
@@ -34,7 +37,7 @@ function buildApproxSuggestion(
   near: AddressSuggestion | null,
 ): AddressSuggestion {
   const center = cityFallbackCoords(country, city);
-  const labelParts = [q.trim(), city || near?.city, country].filter(Boolean);
+  const labelParts = [q.trim(), city || near?.city].filter(Boolean);
   return {
     id: `approx:${q.trim().toLowerCase()}:${city || ''}`,
     label: labelParts.join(', '),
@@ -45,6 +48,27 @@ function buildApproxSuggestion(
     lat: near?.lat ?? center?.lat ?? 0,
     lng: near?.lng ?? center?.lng ?? 0,
   };
+}
+
+function bookToSuggestion(entry: AddressEntry): AddressSuggestion {
+  const center = cityFallbackCoords(entry.country, entry.city);
+  const labelParts = [entry.street, entry.city, entry.postal].filter(Boolean);
+  return {
+    id: `book:${entry.id}`,
+    label: labelParts.join(', '),
+    street: entry.street,
+    city: entry.city,
+    postal: entry.postal,
+    country: String(entry.country || '').toUpperCase(),
+    lat: center?.lat ?? 0,
+    lng: center?.lng ?? 0,
+  };
+}
+
+function matchesQuery(entry: AddressEntry, q: string) {
+  if (!q) return true;
+  const hay = `${entry.label} ${entry.street} ${entry.city} ${entry.postal} ${entry.name}`.toLowerCase();
+  return hay.includes(q.toLowerCase());
 }
 
 export function AddressSuggest({
@@ -58,8 +82,9 @@ export function AddressSuggest({
   name = 'address_suggest',
   hint,
   disabled = false,
+  bookAddresses = [],
 }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const listId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -68,6 +93,15 @@ export function AddressSuggest({
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const skipFetchRef = useRef(false);
+
+  const savedMatches = useMemo(() => {
+    const cc = String(country || '').toUpperCase();
+    const q = value.trim();
+    return bookAddresses
+      .filter((a) => !cc || String(a.country || '').toUpperCase() === cc)
+      .filter((a) => matchesQuery(a, q))
+      .map(bookToSuggestion);
+  }, [bookAddresses, country, value]);
 
   useEffect(() => {
     if (skipFetchRef.current) {
@@ -90,7 +124,12 @@ export function AddressSuggest({
     const timer = window.setTimeout(async () => {
       setSearched(false);
       try {
-        const suggestions = await fetchAddressSuggestions({ q, country, city });
+        const suggestions = await fetchAddressSuggestions({
+          q,
+          country,
+          city,
+          lang: locale,
+        });
         if (!cancelled) {
           setItems(suggestions);
           setSearched(true);
@@ -112,7 +151,7 @@ export function AddressSuggest({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [value, country, city, t]);
+  }, [value, country, city, t, locale]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,13 +183,17 @@ export function AddressSuggest({
 
   const q = value.trim();
   const canSuggest = q.length >= 3;
+  const hasSaved = savedMatches.length > 0;
   const approx = useMemo(() => {
-    if (!canSuggest) return null;
-    return buildApproxSuggestion(q, country, city, items[0] || null);
-  }, [canSuggest, q, country, city, items]);
+    if (!canSuggest || items.length > 0) return null;
+    return buildApproxSuggestion(q, country, city, null);
+  }, [canSuggest, q, country, city, items.length]);
 
-  const showPanel = open && canSuggest && (loading || searched || items.length > 0 || Boolean(error));
-  const showEmpty = searched && !loading && !error && items.length === 0;
+  const showPanel =
+    open
+    && (hasSaved || canSuggest)
+    && (loading || searched || items.length > 0 || hasSaved || Boolean(error));
+  const showEmpty = searched && !loading && !error && items.length === 0 && !hasSaved && !approx;
 
   return (
     <div className={`field-block calc-address${open ? ' is-open' : ''}`} ref={wrapRef}>
@@ -171,7 +214,7 @@ export function AddressSuggest({
             setOpen(true);
           }}
           onFocus={() => {
-            if (canSuggest) setOpen(true);
+            if (canSuggest || hasSaved) setOpen(true);
           }}
           aria-autocomplete="list"
           aria-expanded={showPanel}
@@ -187,7 +230,7 @@ export function AddressSuggest({
           {showEmpty && (
             <p className="calc-address__status">{t('calc.addressEmpty')}</p>
           )}
-          {!loading && searched && items.length > 0 && (
+          {!loading && searched && items.length > 0 && !hasSaved && (
             <p className="calc-address__status calc-address__status--muted">{t('calc.addressPickHint')}</p>
           )}
 
@@ -197,6 +240,26 @@ export function AddressSuggest({
             role="listbox"
             aria-label={t('calc.addressSuggestions')}
           >
+            {hasSaved && (
+              <>
+                <li className="calc-address__group" role="presentation">
+                  {t('calc.addressFromBook')}
+                </li>
+                {savedMatches.map((item) => (
+                  <li key={item.id} role="option">
+                    <button
+                      type="button"
+                      className="calc-address__saved"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pick(item)}
+                    >
+                      <b>{item.street || item.label}</b>
+                      <em>{[item.city, item.postal].filter(Boolean).join(', ')}</em>
+                    </button>
+                  </li>
+                ))}
+              </>
+            )}
             {approx && searched && !loading && (
               <li role="option">
                 <button
@@ -218,7 +281,7 @@ export function AddressSuggest({
                   onClick={() => pick(item)}
                 >
                   <b>{item.street || item.label.split(',')[0]}</b>
-                  <em>{item.label}</em>
+                  <em>{[item.city, item.postal].filter(Boolean).join(', ') || item.label}</em>
                 </button>
               </li>
             ))}

@@ -355,11 +355,12 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const q = String(req.query.q || '').trim();
       const country = String(req.query.country || '').toUpperCase().replace(/[^A-Z]/g, '');
       const city = String(req.query.city || '').trim();
+      const lang = String(req.query.lang || 'en').toLowerCase().slice(0, 2);
       if (q.length < 3) {
         return res.json({ data: { suggestions: [] } });
       }
 
-      const suggestions = await geocodeAddressSuggestions({ q, country, city });
+      const suggestions = await geocodeAddressSuggestions({ q, country, city, lang });
       res.json({ data: { suggestions } });
     } catch (err) {
       console.error('[shipping] geocode:', err);

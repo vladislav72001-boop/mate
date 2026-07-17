@@ -7,11 +7,13 @@ import {
   checkout,
   confirmPayment,
   computeClientExtras,
+  fetchAddresses,
   fetchCoverage,
   fetchOrderStatus,
   fetchQuoteSettings,
   fetchShippingPoints,
   trackByTtn,
+  type AddressEntry,
   type AddressSuggestion,
   type CoverageSide,
   type QuoteSettings,
@@ -345,10 +347,27 @@ export function CalcForm({
   const [showQuoteWait, setShowQuoteWait] = useState(false);
   const [quotesFromNp, setQuotesFromNp] = useState(false);
   const [currency, setCurrency] = useState(DEFAULT_QUOTE_CURRENCY);
+  const [bookAddresses, setBookAddresses] = useState<AddressEntry[]>([]);
 
   const quoteDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quoteWaitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quoteRequestId = useRef(0);
+
+  useEffect(() => {
+    if (!user) {
+      setBookAddresses([]);
+      return;
+    }
+    let cancelled = false;
+    fetchAddresses()
+      .then((list) => {
+        if (!cancelled) setBookAddresses(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setBookAddresses([]);
+      });
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
     if (quoteWaitTimer.current) {
@@ -1733,6 +1752,7 @@ export function CalcForm({
                     placeholder={addressPlaceholder(PICKUP_COUNTRY, pickupCity)}
                     hint={t('calc.addressHintLockers')}
                     name="sender_address_locker"
+                    bookAddresses={bookAddresses}
                   />
                   <p className="calc-form__group-label">{t('calc.pickupLockersLabel')}</p>
                   {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
@@ -1757,6 +1777,7 @@ export function CalcForm({
                       placeholder={addressPlaceholder(PICKUP_COUNTRY, pickupCity)}
                       hint={t('calc.addressHintBranches')}
                       name="sender_address_branch"
+                      bookAddresses={bookAddresses}
                     />
                   )}
                   {(!pickupNeedsAddressRefinement || pickupAddressReady) ? (
@@ -1786,6 +1807,7 @@ export function CalcForm({
                     placeholder={addressPlaceholder(PICKUP_COUNTRY, pickupCity)}
                     hint={t('calc.addressHint')}
                     name="sender_address"
+                    bookAddresses={bookAddresses}
                   />
                   <div className="calc-form__grid">
                     <div className="field-block">
@@ -1885,6 +1907,7 @@ export function CalcForm({
                     placeholder={addressPlaceholder(toCountry, destCity)}
                     hint={t('calc.addressHintLockers')}
                     name="receiver_address"
+                    bookAddresses={bookAddresses}
                   />
                   {destAddressReady ? (
                     <>
@@ -1914,6 +1937,7 @@ export function CalcForm({
                     placeholder={addressPlaceholder(toCountry, destCity)}
                     hint={t('calc.addressHintBranches')}
                     name="receiver_address_branch"
+                    bookAddresses={bookAddresses}
                   />
                   {destAddressReady ? (
                     <>
@@ -1947,6 +1971,7 @@ export function CalcForm({
                     city={destCity}
                     placeholder={addressPlaceholder(toCountry, destCity)}
                     name="receiver_street"
+                    bookAddresses={bookAddresses}
                   />
                   <div className="calc-form__grid">
                     <div className="field-block">

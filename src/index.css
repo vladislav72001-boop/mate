@@ -8452,6 +8452,19 @@ body {
   color: #3d5a1f;
 }
 
+.calc-address__saved {
+  background: rgba(18, 32, 35, 0.04) !important;
+}
+
+.calc-address__group {
+  padding: 6px 12px 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(18, 32, 35, 0.45);
+}
+
 /* Portal: above calc modal (z-index 1200) and option sheets (1400) */
 .calc-address__panel--floating {
   position: fixed;
@@ -8523,12 +8536,13 @@ body {
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 240px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .calc-address__panel .calc-address__list {
-  max-height: 220px;
+  max-height: none;
+  overflow: visible;
 }
 
 .calc-address__list button {

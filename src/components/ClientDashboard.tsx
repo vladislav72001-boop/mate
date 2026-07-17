@@ -23,7 +23,7 @@ import { ShipmentDetailModal } from './client-dash/ShipmentDetailModal';
 import { OrderCard } from './client-dash/OrderCard';
 import { PaymentCard } from './client-dash/PaymentCard';
 import { TrackingMap } from './client-dash/TrackingMap';
-import { LoyaltyCard } from './client-dash/LoyaltyCard';
+import { LoyaltyCard, loyaltyTierLabel } from './client-dash/LoyaltyCard';
 
 type Tab = 'home' | 'shipments' | 'tracking' | 'address' | 'payments' | 'settings';
 export type ClientDashTab = Tab;
@@ -460,11 +460,14 @@ export function ClientDashboard({
             </>
           ) : loyalty ? (
             <>
-              <b>{t('dash.promoLoyaltyLevel', { label: loyalty.tier.label })}</b>
+              <b>{t('dash.promoLoyaltyLevel', { label: loyaltyTierLabel(loyalty.tier.id, loyalty.tier.label, t) })}</b>
               <span>
                 {t('dash.promoShipmentsMonth', { count: loyalty.monthlyShipments })}
                 {loyalty.nextTier && loyalty.remainingToNext != null
-                  ? t('dash.promoToNext', { label: loyalty.nextTier.label, count: loyalty.remainingToNext })
+                  ? t('dash.promoToNext', {
+                      label: loyaltyTierLabel(loyalty.nextTier.id, loyalty.nextTier.label, t),
+                      count: loyalty.remainingToNext,
+                    })
                   : ''}
               </span>
             </>

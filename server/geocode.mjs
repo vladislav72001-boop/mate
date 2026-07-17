@@ -190,7 +190,8 @@ function mapPhotonFeature(feature, country) {
   const resolvedCountry = cc || country;
   const city = canonicalCityValue(resolvedCountry, rawCity) || rawCity;
   const postal = String(props.postcode || '').trim();
-  const labelParts = [street || props.name, city, postal, props.country].filter(Boolean);
+  // Short label: street, city, postal — no long country/district strings
+  const labelParts = [street || props.name, city, postal].filter(Boolean);
   return {
     id: `photon:${props.osm_type || 'node'}:${props.osm_id || `${lat},${lng}`}`,
     label: labelParts.join(', '),
@@ -226,9 +227,10 @@ function mapNominatimRow(row, country) {
   const postal = String(addr.postcode || '').trim();
   const lat = Number(row.lat);
   const lng = Number(row.lon);
+  const labelParts = [street || String(row.display_name || '').split(',')[0]?.trim() || '', city, postal].filter(Boolean);
   return {
     id: `nominatim:${row.place_id || `${lat},${lng}`}`,
-    label: String(row.display_name || '').trim(),
+    label: labelParts.join(', '),
     street: street || String(row.display_name || '').split(',')[0]?.trim() || '',
     city,
     postal,
@@ -280,11 +282,11 @@ function dedupeSuggestions(items) {
   return out;
 }
 
-async function searchPhotonRaw(searchQ, country) {
+async function searchPhotonRaw(searchQ, country, lang = 'en') {
   const params = new URLSearchParams({
     q: searchQ,
     limit: '12',
-    lang: 'en',
+    lang: lang || 'en',
   });
   const res = await fetch(`https://photon.komoot.io/api/?${params}`, {
     headers: { Accept: 'application/json' },
@@ -299,13 +301,13 @@ async function searchPhotonRaw(searchQ, country) {
     .filter((s) => !country || !s.country || s.country === country);
 }
 
-async function searchNominatimRaw(searchQ, country) {
+async function searchNominatimRaw(searchQ, country, lang = 'en') {
   const params = new URLSearchParams({
     format: 'json',
     q: searchQ,
     addressdetails: '1',
     limit: '10',
-    'accept-language': 'en',
+    'accept-language': lang || 'en',
   });
   if (country) params.set('countrycodes', country.toLowerCase());
 
@@ -327,18 +329,19 @@ async function searchNominatimRaw(searchQ, country) {
     .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng) && s.label);
 }
 
-export async function geocodeAddressSuggestions({ q, country = '', city = '' }) {
+export async function geocodeAddressSuggestions({ q, country = '', city = '', lang = 'en' }) {
   const query = String(q || '').trim();
   const cc = String(country || '').toUpperCase().replace(/[^A-Z]/g, '');
   const cityName = String(city || '').trim();
+  const locale = String(lang || 'en').toLowerCase().slice(0, 2) || 'en';
   if (query.length < 3) return [];
 
   const variants = queryVariants(query, cc, cityName);
   const jobs = [
-    ...variants.map((variant) => searchPhotonRaw(variant, cc)),
-    searchNominatimRaw(variants[0], cc),
+    ...variants.map((variant) => searchPhotonRaw(variant, cc, locale)),
+    searchNominatimRaw(variants[0], cc, locale),
   ];
-  if (variants[1]) jobs.push(searchNominatimRaw(variants[1], cc));
+  if (variants[1]) jobs.push(searchNominatimRaw(variants[1], cc, locale));
 
   const settled = await Promise.allSettled(jobs);
   const merged = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));

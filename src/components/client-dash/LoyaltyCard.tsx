@@ -6,8 +6,45 @@ type Props = {
   loading?: boolean;
 };
 
+const TIER_KEYS: Record<string, string> = {
+  start: 'dash.tierStart',
+  active: 'dash.tierActive',
+  pro: 'dash.tierPro',
+  maximum: 'dash.tierMaximum',
+  individual: 'dash.tierIndividual',
+};
+
+export function loyaltyTierLabel(
+  id: string,
+  fallback: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  const key = TIER_KEYS[id];
+  if (!key) return fallback;
+  const translated = t(key);
+  return translated === key ? fallback : translated;
+}
+
+function localizeTier(
+  tier: { id: string; label: string },
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  return loyaltyTierLabel(tier.id, tier.label, t);
+}
+
+function formatPeriodLabel(startIso: string, locale: string) {
+  const d = new Date(startIso);
+  if (!Number.isFinite(d.getTime())) return '';
+  const loc =
+    locale === 'hu' ? 'hu-HU'
+    : locale === 'uk' ? 'uk-UA'
+    : locale === 'en' ? 'en-GB'
+    : 'ru-RU';
+  return d.toLocaleDateString(loc, { month: 'long', year: 'numeric' });
+}
+
 export function LoyaltyCard({ loyalty, loading }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   if (loading && !loyalty) {
     return (
@@ -29,6 +66,10 @@ export function LoyaltyCard({ loyalty, loading }: Props) {
     welcomeDiscount,
   } = loyalty;
 
+  const tierName = localizeTier(tier, t);
+  const nextName = nextTier ? localizeTier(nextTier, t) : '';
+  const periodLabel = formatPeriodLabel(period.start, locale) || period.label;
+
   const discount =
     tier.discountPercent == null
       ? t('dash.priceCustom')
@@ -42,11 +83,11 @@ export function LoyaltyCard({ loyalty, loading }: Props) {
         <div>
           <span className="client-dash__loyalty-eyebrow">{t('dash.loyaltyEyebrow')}</span>
           <h2 className="client-dash__loyalty-level">
-            {t('dash.loyaltyLevel', { label: tier.label })}
+            {t('dash.loyaltyLevel', { label: tierName })}
           </h2>
         </div>
         <span className={`client-dash__loyalty-badge client-dash__loyalty-badge--${tier.id}`}>
-          {tier.label}
+          {tierName}
         </span>
       </div>
 
@@ -63,7 +104,7 @@ export function LoyaltyCard({ loyalty, loading }: Props) {
         </li>
         {nextTier && remainingToNext != null ? (
           <li>
-            <span>{t('dash.toNextRemaining', { label: nextTier.label })}</span>
+            <span>{t('dash.toNextRemaining', { label: nextName })}</span>
             <b>{remainingToNext}</b>
           </li>
         ) : (
@@ -86,7 +127,7 @@ export function LoyaltyCard({ loyalty, loading }: Props) {
             aria-valuenow={progressPercent}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={t('dash.progressAria', { label: nextTier.label })}
+            aria-label={t('dash.progressAria', { label: nextName })}
           >
             <i style={{ width: `${progressPercent}%` }} />
           </div>
@@ -100,7 +141,7 @@ export function LoyaltyCard({ loyalty, loading }: Props) {
       )}
 
       <p className="client-dash__loyalty-note">
-        {t('dash.loyaltyNote', { period: period.label })}
+        {t('dash.loyaltyNote', { period: periodLabel })}
       </p>
     </section>
   );
