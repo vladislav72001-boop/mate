@@ -2175,9 +2175,11 @@ type ModalProps = {
   onSuccess?: (order: ShippingOrder) => void;
   /** Bump to remount form with latest draft (e.g. continue unfinished shipment). */
   resumeKey?: number;
+  /** When true, open on the last saved draft step instead of step 1. */
+  draftResume?: boolean;
 };
 
-export function ShipmentCalculator({ open, onClose, user, onSuccess, resumeKey = 0 }: ModalProps) {
+export function ShipmentCalculator({ open, onClose, user, onSuccess, resumeKey = 0, draftResume = false }: ModalProps) {
   const { t } = useI18n();
   const [formKey, setFormKey] = useState(0);
 
@@ -2217,6 +2219,7 @@ export function ShipmentCalculator({ open, onClose, user, onSuccess, resumeKey =
             key={formKey}
             inModal
             user={user}
+            startFromStep1={!draftResume}
             onSuccess={onSuccess}
             onDone={() => { setFormKey((k) => k + 1); onClose(); }}
           />

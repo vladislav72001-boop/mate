@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { AuthUser } from '../api/auth';
 import { useT } from '../i18n/context';
 import { CalcForm, TrackShipment } from './ShipmentCalculator';
@@ -16,8 +16,12 @@ export function CalcCard({ user, onOrderSuccess, onStepChange, resetToStep1Signa
   const [tab, setTab] = useState<'calc' | 'track'>('calc');
   const [formKey, setFormKey] = useState(0);
   const [resuming, setResuming] = useState(false);
+  const prevResumeSignal = useRef(resumeSignal ?? 0);
 
   useEffect(() => {
+    if (resumeSignal == null) return;
+    if (prevResumeSignal.current === resumeSignal) return;
+    prevResumeSignal.current = resumeSignal;
     if (!resumeSignal) return;
     setTab('calc');
     setResuming(true);

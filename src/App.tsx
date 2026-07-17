@@ -420,6 +420,7 @@ function App() {
     && !(page === 'home' && heroCalcStep > 1),
   );
   const [calcModalKey, setCalcModalKey] = useState(0);
+  const [calcModalResume, setCalcModalResume] = useState(false);
 
   const resumeDraftStep = useCallback(() => {
     const resumeStep = activeDraft?.step ?? 1;
@@ -434,9 +435,15 @@ function App() {
       return;
     }
     // From dashboard and other pages — open modal immediately with saved draft.
+    setCalcModalResume(true);
     setCalcModalKey((n) => n + 1);
     setCalcOpen(true);
   }, [page, resumeDraftStep]);
+
+  const openCalcFresh = useCallback(() => {
+    setCalcModalResume(false);
+    setCalcOpen(true);
+  }, []);
 
   const handleDismissDraft = useCallback(() => {
     clearCalcDraft(true, user?.id);
@@ -489,7 +496,9 @@ function App() {
     setHeroCalcStep(1);
     if (next === 'home') {
       setCalcOpen(false);
+      setCalcModalResume(false);
       setCalcResetSignal((n) => n + 1);
+      setCalcResumeSignal(0);
     }
   }, []);
 
@@ -616,8 +625,8 @@ function App() {
   const handleLogout = useCallback(() => {
     clearSession();
     setUser(null);
-    setPage('home');
-  }, []);
+    goPage('home');
+  }, [goPage]);
 
   useEffect(() => {
     if (corpRegStep === 1) {
@@ -654,7 +663,7 @@ function App() {
     return (
       <AdminApp
         onExit={() => {
-          setPage('home');
+          goPage('home');
           window.history.pushState({}, '', '/');
         }}
       />
@@ -831,7 +840,7 @@ function App() {
                 {t('home.lead')}
               </p>
               <div className="hero-actions">
-                <button className="btn btn-lime" type="button" onClick={() => setCalcOpen(true)}>
+                <button className="btn btn-lime" type="button" onClick={openCalcFresh}>
                   {t('common.start')}
                 </button>
                 <button className="btn btn-outline" type="button" onClick={() => setPage('services')}>
@@ -1045,7 +1054,7 @@ function App() {
                   <TextLink
                     onClick={
                       service.id === 'parcel'
-                        ? () => setCalcOpen(true)
+                        ? openCalcFresh
                         : undefined
                     }
                   >
@@ -1384,8 +1393,7 @@ function App() {
               setDashNav({ tab: 'tracking' });
               setPage('client-dashboard');
             } else {
-              setPage('home');
-              setCalcOpen(false);
+              goPage('home');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }
           }}
@@ -1393,8 +1401,8 @@ function App() {
             setPaymentNotice(null);
             clearCalcDraft(false, user?.id);
             clearCalcDraft(true, user?.id);
-            setPage('home');
-            setCalcOpen(true);
+            goPage('home');
+            openCalcFresh();
           }}
           onOpenDashboard={user ? () => {
             setPaymentNotice(null);
@@ -1439,7 +1447,7 @@ function App() {
           user={user}
           onExit={() => goPage('home')}
           onLogout={handleLogout}
-          onCreateShipment={() => setCalcOpen(true)}
+          onCreateShipment={openCalcFresh}
           onUserUpdate={setUser}
           ordersRefresh={ordersRefresh}
           initialTab={dashNav?.tab}
@@ -1450,12 +1458,17 @@ function App() {
 
       <ShipmentCalculator
         open={calcOpen}
-        onClose={() => setCalcOpen(false)}
+        onClose={() => {
+          setCalcOpen(false);
+          setCalcModalResume(false);
+        }}
         user={user}
         resumeKey={calcModalKey}
+        draftResume={calcModalResume}
         onSuccess={() => {
           setOrdersRefresh((n) => n + 1);
           setCalcOpen(false);
+          setCalcModalResume(false);
         }}
       />
 
