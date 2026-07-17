@@ -591,6 +591,14 @@ function App() {
 
   return (
     <div className={`mate-app${menuOpen ? ' mate-app--menu-open' : ''}${calcFocused ? ' mate-app--calc-focus' : ''}`}>
+      {!inDashboard && calcFocused && (
+        <button
+          type="button"
+          className="calc-focus-backdrop"
+          aria-label={t('calc.focusBackdropAria')}
+          onClick={dismissCalcFocus}
+        />
+      )}
       {!inDashboard && (
       <header className="topbar container">
           <button
@@ -732,14 +740,6 @@ function App() {
 
       {!inDashboard && (page === 'home' ? (
         <main className="container page-enter home-page">
-          {calcFocused && (
-            <button
-              type="button"
-              className="calc-focus-backdrop"
-              aria-label={t('calc.focusBackdropAria')}
-              onClick={dismissCalcFocus}
-            />
-          )}
           <section className="hero-grid" aria-label="Mate Delivery">
             <div className="hero-copy">
               <div className="ai-badge">
