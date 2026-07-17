@@ -154,6 +154,12 @@ export const hu: MessageTree = {
     support247Sub: 'Mindig elérhetők vagyunk',
     supportLabel: '24/7 támogatás',
     supportValue: 'Mindig elérhetők vagyunk és készen állunk segíteni.',
+    legalTitle: 'Cégadatok',
+    legalCompany: 'Máté Logisztikanetwork Kft.',
+    legalAddress: '1117 Budapest, Karinthy Frigyes út 7. fsz. 8.',
+    legalTax: 'Adószám: 32834374-2-43',
+    legalReg: 'Cégjegyzékszám: 01-09-445126',
+    legalVat: 'VAT: HU32834374',
   },
   calc: {
     tabCalc: 'Kalkuláció',

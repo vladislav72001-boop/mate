@@ -1,5 +1,5 @@
 import { normalizeCountryCode } from './novapost/calculate.mjs';
-import { resolveParcelLimits, validateParcelDimensionsCm } from './novapost/parcel.mjs';
+import { inferParcelTier, resolveParcelLimits, validateParcelDimensionsCm } from './novapost/parcel.mjs';
 
 const CALLING_CODE_BY_ISO2 = {
   CZ: '420', DE: '49', EE: '372', ES: '34', FR: '33', GB: '44',
@@ -98,7 +98,8 @@ export function validateCheckoutBody(body) {
     const dimErr = validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits);
     if (dimErr) errors.push(`Посылка: ${dimErr}`);
     if (weightKg > limits.maxWeightKg) {
-      errors.push(`Посылка: вес ${weightKg} кг превышает лимит ${limits.maxWeightKg} кг для размера ${boxSize || 'выбранного'}`);
+      const tierLabel = boxSize || inferParcelTier(lengthCm, widthCm, heightCm, weightKg);
+      errors.push(`Посылка: вес ${weightKg} кг превышает лимит ${limits.maxWeightKg} кг для размера ${tierLabel}`);
     }
     if (weightKg > MAX_NP_WEIGHT_KG) {
       errors.push(`Посылка: Nova Post принимает до ${MAX_NP_WEIGHT_KG} кг на одну отправку`);

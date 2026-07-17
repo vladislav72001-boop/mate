@@ -141,20 +141,53 @@ function tomorrowIso() {
   return d.toISOString().slice(0, 10);
 }
 
+/** Nova Post tier limits — keep in sync with server/novapost/parcel.mjs */
+const PARCEL_LIMITS: Record<ParcelKey, { maxLongestCm: number; maxGirthCm: number; maxWeightKg: number }> = {
+  S: { maxLongestCm: 64, maxGirthCm: 200, maxWeightKg: 5 },
+  M: { maxLongestCm: 64, maxGirthCm: 220, maxWeightKg: 10 },
+  L: { maxLongestCm: 64, maxGirthCm: 240, maxWeightKg: 20 },
+  XL: { maxLongestCm: 150, maxGirthCm: 300, maxWeightKg: 30 },
+  XXL: { maxLongestCm: 250, maxGirthCm: 400, maxWeightKg: 100 },
+};
+
+function sortedSidesCm(l: number, w: number, h: number) {
+  return [l, w, h].map((cm) => Math.max(0.1, cm)).sort((a, b) => b - a);
+}
+
+function fitsParcelTier(lengthCm: number, widthCm: number, heightCm: number, weightKg: number, tier: ParcelKey) {
+  const limits = PARCEL_LIMITS[tier];
+  const [longest, middle, shortest] = sortedSidesCm(lengthCm, widthCm, heightCm);
+  const girth = longest + 2 * (middle + shortest);
+  return weightKg <= limits.maxWeightKg
+    && longest <= limits.maxLongestCm
+    && girth <= limits.maxGirthCm;
+}
+
+/** Map UI size to API boxSize. Custom uses dims+weight — never default to S when custom is missing. */
 function sizeToApiKey(
   sizeKey: SizeKey,
   custom?: { l: string; w: string; h: string; kg: string },
 ): ParcelKey {
   if (sizeKey === 'envelope') return 'S';
   if (sizeKey === 'custom') {
-    const kg = Number(custom?.kg) || 2;
-    if (kg <= 5) return 'S';
-    if (kg <= 10) return 'M';
-    if (kg <= 20) return 'L';
-    if (kg <= 30) return 'XL';
+    const lengthCm = Math.max(1, Number(custom?.l) || 30);
+    const widthCm = Math.max(1, Number(custom?.w) || 20);
+    const heightCm = Math.max(1, Number(custom?.h) || 15);
+    const weightKg = Math.max(0.1, Number(custom?.kg) || 2);
+    for (const tier of ['S', 'M', 'L', 'XL', 'XXL'] as ParcelKey[]) {
+      if (fitsParcelTier(lengthCm, widthCm, heightCm, weightKg, tier)) return tier;
+    }
     return 'XXL';
   }
   return sizeKey;
+}
+
+/** Insurance fee in quote currency (1% of declared cargo EUR + VAT 27%), aligned with server. */
+function insuranceFeeInCurrency(declaredValueEur: number, currencyCode: string) {
+  const net = eurToQuoteCurrency(Math.max(0, declaredValueEur) * INSURANCE_RATE, currencyCode);
+  const withVat = net * 1.27;
+  if (currencyCode === 'HUF') return Math.round(withVat / 10) * 10;
+  return Math.round(withVat * 100) / 100;
 }
 
 function deliveryModeToApi(mode: DeliveryMode): 'locker' | 'branch' | 'address' {
@@ -663,16 +696,31 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
 
   const basePrice = parcelQuotes[apiParcelKey] ?? null;
 
+  const insuranceFee = useMemo(
+    () => insuranceFeeInCurrency(declaredValue, currency),
+    [declaredValue, currency],
+  );
+
   const totalPrice = useMemo(() => {
     if (basePrice == null) return null;
     let t = basePrice;
-    if (fragile) t += eurToQuoteCurrency(FRAGILE_FEE_EUR, currency);
-    if (insurance) t += eurToQuoteCurrency(declaredValue * INSURANCE_RATE, currency);
+    if (fragile) {
+      const fragileNet = eurToQuoteCurrency(FRAGILE_FEE_EUR, currency);
+      const fragileWithVat = fragileNet * 1.27;
+      t += currency === 'HUF' ? Math.round(fragileWithVat / 10) * 10 : Math.round(fragileWithVat * 100) / 100;
+    }
+    if (insurance) t += insuranceFee;
     return currency === 'HUF' ? Math.round(t) : Math.round(t * 100) / 100;
-  }, [basePrice, fragile, insurance, declaredValue, currency]);
+  }, [basePrice, fragile, insurance, insuranceFee, currency]);
 
   const formatMoney = (n: number) => formatQuoteMoney(n, currency);
-  const fragileFeeLabel = formatQuoteMoney(eurToQuoteCurrency(FRAGILE_FEE_EUR, currency), currency);
+  const fragileFeeLabel = formatQuoteMoney(
+    currency === 'HUF'
+      ? Math.round((eurToQuoteCurrency(FRAGILE_FEE_EUR, currency) * 1.27) / 10) * 10
+      : Math.round(eurToQuoteCurrency(FRAGILE_FEE_EUR, currency) * 1.27 * 100) / 100,
+    currency,
+  );
+  const insuranceFeeLabel = formatMoney(insuranceFee);
 
   const pickupLockersForCity = useMemo(() => {
     if (livePickupLockers) return livePickupLockers as typeof PICKUP_LOCKERS;
@@ -1089,7 +1137,7 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
     setError(null);
     try {
       const preset = sizeToPreset(sizeKey, customSize);
-      const boxSize = sizeToApiKey(sizeKey);
+      const boxSize = sizeToApiKey(sizeKey, customSize);
       const declaredForNp = Math.max(insurance ? declaredValue : 100, 50);
       const pickupLabel = buildPickupLine();
       const destLabel = buildDestLine();
@@ -1501,10 +1549,6 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
                 <input type="checkbox" checked={fragile} onChange={(e) => setFragile(e.target.checked)} />
                 <span>{t('calc.fragile', { fee: fragileFeeLabel })}</span>
               </label>
-              <label className="calc-form__check">
-                <input type="checkbox" checked={insurance} onChange={(e) => setInsurance(e.target.checked)} />
-                <span>{t('calc.insurance')}</span>
-              </label>
               {showQuoteWait && step === 4 && (
                 <p className="calc-form__hint calc-form__hint--inline calc-form__hint--wait" aria-live="polite">
                   <span className="calc-form__wait-dot" aria-hidden />
@@ -1560,6 +1604,10 @@ export function CalcForm({ user, initialTo = 'DE', inModal = false }: FormProps)
                   </button>
                 ))}
               </div>
+              <label className="calc-form__check">
+                <input type="checkbox" checked={insurance} onChange={(e) => setInsurance(e.target.checked)} />
+                <span>{t('calc.insurance', { fee: insuranceFeeLabel })}</span>
+              </label>
               <p className="calc-form__group-label">{t('calc.whoPays')}</p>
               <div className="calc-form__options calc-form__options--2">
                 <button

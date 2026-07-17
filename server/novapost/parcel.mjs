@@ -45,10 +45,19 @@ export function inferParcelTier(lengthCm, widthCm, heightCm, weightKg) {
 
 export function resolveParcelLimits(lengthCm, widthCm, heightCm, weightKg, boxSize) {
   const tier = String(boxSize || '').toUpperCase();
-  if (tier in PARCEL_LIMITS_BY_TIER) return PARCEL_LIMITS_BY_TIER[tier];
   const inferred = inferParcelTier(lengthCm, widthCm, heightCm, weightKg);
-  if (inferred !== 'custom') return PARCEL_LIMITS_BY_TIER[inferred];
-  return PARCEL_LIMITS_BY_TIER.XXL;
+  const inferredLimits = inferred !== 'custom'
+    ? PARCEL_LIMITS_BY_TIER[inferred]
+    : PARCEL_LIMITS_BY_TIER.XXL;
+
+  // Prefer explicit tier only when the parcel actually fits it (avoids S + 20 kg false rejects).
+  if (tier in PARCEL_LIMITS_BY_TIER) {
+    const explicit = PARCEL_LIMITS_BY_TIER[tier];
+    const dimErr = validateParcelDimensionsCm(lengthCm, widthCm, heightCm, explicit);
+    if (!dimErr && weightKg <= explicit.maxWeightKg) return explicit;
+    return inferredLimits;
+  }
+  return inferredLimits;
 }
 
 export function normalizeParcelDimensionsMm(lengthCm, widthCm, heightCm) {

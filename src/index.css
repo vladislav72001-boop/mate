@@ -1,7 +1,7 @@
 @import './assets/fonts/fonts.css';
 
 :root {
-  font-size: 11px;
+  font-size: 14px;
 
   /* Mate brand palette вЂ” PDF 3.2 */
   --lime: #E1FF01;
@@ -3477,6 +3477,33 @@ body {
   justify-content: center;
   gap: 10px;
   text-decoration: none;
+}
+
+.about-legal {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.about-legal__title {
+  font-size: 0.72rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--navy);
+  margin-bottom: 10px;
+}
+
+.about-legal p {
+  margin: 0 0 4px;
+}
+
+.about-legal strong {
+  color: var(--navy);
+  font-weight: var(--fw-semibold);
 }
 
 .about-stats {

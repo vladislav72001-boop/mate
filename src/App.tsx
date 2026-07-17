@@ -1053,6 +1053,14 @@ function App() {
                 {t('about.writeUs')}
                 <ArrowIcon size={14} />
               </a>
+              <div className="about-legal">
+                <div className="about-legal__title">{t('about.legalTitle')}</div>
+                <p><strong>{t('about.legalCompany')}</strong></p>
+                <p>{t('about.legalAddress')}</p>
+                <p>{t('about.legalTax')}</p>
+                <p>{t('about.legalReg')}</p>
+                <p>{t('about.legalVat')}</p>
+              </div>
             </aside>
           </section>
 

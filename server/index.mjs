@@ -239,6 +239,16 @@ app.post('/api/auth/social', async (req, res) => {
       return res.status(400).json({ error: 'Неподдерживаемый способ входа' });
     }
 
+    // Real OAuth (Google/Apple token exchange) is not configured yet.
+    // Never create a session without a verified account — that let users "in" without picking email.
+    const stubEnabled = process.env.SOCIAL_AUTH_STUB === 'true';
+    if (!stubEnabled) {
+      const label = provider === 'apple' ? 'Apple' : 'Google';
+      return res.status(501).json({
+        error: `Вход через ${label} пока недоступен. Войдите по email и паролю.`,
+      });
+    }
+
     const profile = provider === 'apple'
       ? { email: 'apple.user@matedelivery.com', name: 'Пользователь Apple' }
       : { email: 'google.user@matedelivery.com', name: 'Пользователь Google' };

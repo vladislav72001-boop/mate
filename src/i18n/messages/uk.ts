@@ -154,6 +154,12 @@ export const uk: MessageTree = {
     support247Sub: 'Ми завжди на зв’язку',
     supportLabel: 'Підтримка 24/7',
     supportValue: 'Ми завжди на зв’язку і готові допомогти.',
+    legalTitle: 'Реквізити компанії',
+    legalCompany: 'Máté Logisztikanetwork Kft.',
+    legalAddress: '1117 Budapest, Karinthy Frigyes út 7. fsz. 8.',
+    legalTax: 'Податковий номер: 32834374-2-43',
+    legalReg: 'Реєстраційний номер: 01-09-445126',
+    legalVat: 'VAT: HU32834374',
   },
   calc: {
     tabCalc: 'Розрахувати',
