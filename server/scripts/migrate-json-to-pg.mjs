@@ -65,62 +65,54 @@ async function main() {
   console.log(`[migrate] users: ${usersOk}`);
 
   let ordersOk = 0;
+  let ordersSkipped = 0;
+  const overwriteOrders = String(process.env.JSON_IMPORT_OVERWRITE_ORDERS || '').toLowerCase() === 'true';
   for (const o of ordersData.orders || []) {
     const userExists = o.userId
       ? Boolean(await prisma.user.findUnique({ where: { id: o.userId }, select: { id: true } }))
       : false;
 
+    const existing = await prisma.order.findUnique({ where: { id: o.id }, select: { id: true } });
+    if (existing && !overwriteOrders) {
+      ordersSkipped += 1;
+      continue;
+    }
+
+    const row = {
+      orderNumber: o.orderNumber,
+      publicToken: o.publicToken,
+      userId: userExists ? o.userId : null,
+      customerEmail: String(o.customerEmail || '').toLowerCase(),
+      senderPhone: o.senderPhone || '',
+      receiverPhone: o.receiverPhone || '',
+      status: o.status || 'pending_payment',
+      amount: Number(o.amount) || 0,
+      currency: o.currency || 'EUR',
+      payload: o.payload ?? {},
+      priceBreakdown: o.priceBreakdown ?? null,
+      priceSource: o.priceSource ?? null,
+      npRef: o.npRef ?? null,
+      npTtn: o.npTtn ?? null,
+      npSnapshot: o.npSnapshot ?? null,
+      paymentMode: o.paymentMode || 'mock',
+      stripeSessionId: o.stripeSessionId ?? null,
+      paidAt: toDate(o.paidAt),
+      cancelledAt: toDate(o.cancelledAt),
+    };
+
     await prisma.order.upsert({
       where: { id: o.id },
       create: {
         id: o.id,
-        orderNumber: o.orderNumber,
-        publicToken: o.publicToken,
-        userId: userExists ? o.userId : null,
-        customerEmail: String(o.customerEmail || '').toLowerCase(),
-        senderPhone: o.senderPhone || '',
-        receiverPhone: o.receiverPhone || '',
-        status: o.status || 'pending_payment',
-        amount: Number(o.amount) || 0,
-        currency: o.currency || 'EUR',
-        payload: o.payload ?? {},
-        priceBreakdown: o.priceBreakdown ?? null,
-        priceSource: o.priceSource ?? null,
-        npRef: o.npRef ?? null,
-        npTtn: o.npTtn ?? null,
-        npSnapshot: o.npSnapshot ?? null,
-        paymentMode: o.paymentMode || 'mock',
-        stripeSessionId: o.stripeSessionId ?? null,
+        ...row,
         createdAt: toDate(o.createdAt) || new Date(),
         updatedAt: toDate(o.updatedAt) || new Date(),
-        paidAt: toDate(o.paidAt),
-        cancelledAt: toDate(o.cancelledAt),
       },
-      update: {
-        orderNumber: o.orderNumber,
-        publicToken: o.publicToken,
-        userId: userExists ? o.userId : null,
-        customerEmail: String(o.customerEmail || '').toLowerCase(),
-        senderPhone: o.senderPhone || '',
-        receiverPhone: o.receiverPhone || '',
-        status: o.status || 'pending_payment',
-        amount: Number(o.amount) || 0,
-        currency: o.currency || 'EUR',
-        payload: o.payload ?? {},
-        priceBreakdown: o.priceBreakdown ?? null,
-        priceSource: o.priceSource ?? null,
-        npRef: o.npRef ?? null,
-        npTtn: o.npTtn ?? null,
-        npSnapshot: o.npSnapshot ?? null,
-        paymentMode: o.paymentMode || 'mock',
-        stripeSessionId: o.stripeSessionId ?? null,
-        paidAt: toDate(o.paidAt),
-        cancelledAt: toDate(o.cancelledAt),
-      },
+      update: row,
     });
     ordersOk += 1;
   }
-  console.log(`[migrate] orders: ${ordersOk}`);
+  console.log(`[migrate] orders: ${ordersOk} upserted, ${ordersSkipped} kept (already in DB)`);
 
   let addressesOk = 0;
   for (const a of addressesData.addresses || []) {

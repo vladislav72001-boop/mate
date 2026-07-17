@@ -38,6 +38,8 @@ B2C shipping platform (React + Express) with Nova Post and Stripe.
 1. Connect this GitHub repo to Railway
 2. Add PostgreSQL plugin (`DATABASE_URL`)
 3. Set env vars (`JWT_SECRET`, `APP_URL`, `CLIENT_ORIGIN`, Stripe, Nova Post, SMTP)
-4. Deploy — Docker build runs `prisma migrate deploy` then starts the server
+4. Deploy — Docker runs `prisma migrate deploy`, imports JSON → PG (`db:import`), then starts the server
 
 Admin seed (created on boot if missing): `admin` / see server logs.
+
+JSON backup lives in `server/data/` (`users`, `orders`, `pricing`, `settings`). Production boot re-applies pricing/settings from these files; existing orders are not overwritten unless `JSON_IMPORT_OVERWRITE_ORDERS=true`.

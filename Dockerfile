@@ -31,4 +31,5 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/server ./server
 COPY --from=build /app/dist ./dist
 EXPOSE 8080
-CMD ["sh", "-c", "npx prisma migrate deploy && node server/index.mjs"]
+# Import checked-in JSON tariffs/users/orders into PG (upsert) so prod matches the old JSON store.
+CMD ["sh", "-c", "npx prisma migrate deploy && node server/scripts/migrate-json-to-pg.mjs && node server/index.mjs"]
