@@ -1,3 +1,5 @@
+import { GoogleSignInButton } from './GoogleSignInButton';
+
 function AppleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -19,13 +21,23 @@ function GoogleIcon() {
 
 type Props = {
   onApple: () => void;
-  onGoogle: () => void;
+  onGoogleCredential: (credential: string) => void;
+  onGoogleError: () => void;
+  googleDisabled?: boolean;
   orLabel: string;
   appleLabel: string;
   googleLabel: string;
 };
 
-export function SocialAuthButtons({ onApple, onGoogle, orLabel, appleLabel, googleLabel }: Props) {
+export function SocialAuthButtons({
+  onApple,
+  onGoogleCredential,
+  onGoogleError,
+  googleDisabled,
+  orLabel,
+  appleLabel,
+  googleLabel,
+}: Props) {
   return (
     <>
       <div className="client-auth__divider"><span>{orLabel}</span></div>
@@ -34,10 +46,13 @@ export function SocialAuthButtons({ onApple, onGoogle, orLabel, appleLabel, goog
           <span className="client-social-btn__icon client-social-btn__icon--apple"><AppleIcon /></span>
           <span>{appleLabel}</span>
         </button>
-        <button type="button" className="client-social-btn" onClick={onGoogle}>
-          <span className="client-social-btn__icon client-social-btn__icon--google"><GoogleIcon /></span>
-          <span>{googleLabel}</span>
-        </button>
+        <GoogleSignInButton
+          onSuccess={onGoogleCredential}
+          onError={onGoogleError}
+          disabled={googleDisabled}
+          label={googleLabel}
+          icon={<GoogleIcon />}
+        />
       </div>
     </>
   );

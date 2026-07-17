@@ -26,6 +26,8 @@ export function mapUser(row) {
     login: row.login || undefined,
     phone: row.phone,
     passwordHash: row.passwordHash,
+    googleId: row.googleId || undefined,
+    authProvider: row.authProvider || 'local',
     type: row.type,
     createdAt: toIso(row.createdAt),
     welcomeDiscountUsed: Boolean(row.welcomeDiscountUsed),

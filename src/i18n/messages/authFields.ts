@@ -61,6 +61,10 @@ const ru: MessageTree = {
   passWeak: 'Слабый пароль',
   passMedium: 'Средний пароль',
   passStrong: 'Надёжный пароль',
+  googlePhoneTitle: 'Почти готово,',
+  googlePhoneSub: 'Укажите телефон для отправок и уведомлений',
+  googlePhoneSubmit: 'Продолжить',
+  phoneRequired: 'Введите номер телефона',
 };
 
 const en: MessageTree = {
@@ -124,6 +128,10 @@ const en: MessageTree = {
   passWeak: 'Weak password',
   passMedium: 'Medium password',
   passStrong: 'Strong password',
+  googlePhoneTitle: 'Almost there,',
+  googlePhoneSub: 'Add your phone number for shipments and notifications',
+  googlePhoneSubmit: 'Continue',
+  phoneRequired: 'Enter your phone number',
 };
 
 const hu: MessageTree = {
@@ -187,6 +195,10 @@ const hu: MessageTree = {
   passWeak: 'Gyenge jelszó',
   passMedium: 'Közepes jelszó',
   passStrong: 'Erős jelszó',
+  googlePhoneTitle: 'Majdnem kész,',
+  googlePhoneSub: 'Adja meg telefonszámát a küldeményekhez és értesítésekhez',
+  googlePhoneSubmit: 'Folytatás',
+  phoneRequired: 'Adja meg a telefonszámot',
 };
 
 const uk: MessageTree = {
@@ -250,6 +262,10 @@ const uk: MessageTree = {
   passWeak: 'Слабкий пароль',
   passMedium: 'Середній пароль',
   passStrong: 'Надійний пароль',
+  googlePhoneTitle: 'Майже готово,',
+  googlePhoneSub: 'Вкажіть телефон для відправлень і сповіщень',
+  googlePhoneSubmit: 'Продовжити',
+  phoneRequired: 'Введіть номер телефону',
 };
 
 export const authFieldMessages: Record<Locale, MessageTree> = { ru, en, hu, uk };

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AuthUser } from '../api/auth';
-import { loginClient, registerClient, socialClient } from '../api/auth';
+import { loginClient, registerClient, socialClient, googleAuthClient, updateClientProfile, storeSession } from '../api/auth';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
 import { getPasswordStrength } from '../utils/password';
@@ -47,6 +47,9 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
   const [terms, setTerms] = useState(false);
   const [error, setError] = useState('');
   const [emailNotice, setEmailNotice] = useState('');
+  const [phonePrompt, setPhonePrompt] = useState(false);
+  const [pendingToken, setPendingToken] = useState('');
+  const [pendingUser, setPendingUser] = useState<AuthUser | null>(null);
 
   const strength = getPasswordStrength(password);
   const strengthLabel =
@@ -109,7 +112,83 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
     }
   }
 
-  async function handleSocial(provider: 'apple' | 'google') {
+  async function handleGoogleCredential(credential: string) {
+    setError('');
+    setEmailNotice('');
+
+    if (mode === 'register' && !terms) {
+      setError(t('auth.termsRequired'));
+      return;
+    }
+
+    onStepChange(1);
+    const started = Date.now();
+
+    try {
+      const res = await googleAuthClient({ credential });
+      const notice = mode === 'register'
+        ? t('auth.emailSocialRegisterNotice', { provider: 'Google' })
+        : t('auth.emailSocialLoginNotice', { provider: 'Google' });
+
+      if (res.user.needsPhone) {
+        storeSession(res.token);
+        setPendingToken(res.token);
+        setPendingUser(res.user);
+        onStepChange(0);
+        setPhonePrompt(true);
+        return;
+      }
+
+      await finishAuth(res, notice, started);
+    } catch (err) {
+      onStepChange(0);
+      setPhonePrompt(false);
+      setError(localizeApiError(
+        err instanceof Error ? err.message : undefined,
+        t,
+        'auth.socialError',
+      ));
+    }
+  }
+
+  async function handleGooglePhoneSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+
+    if (phone.trim().length < 6) {
+      setError(t('auth.phoneRequired'));
+      return;
+    }
+
+    onStepChange(1);
+    const started = Date.now();
+
+    try {
+      const updated = await updateClientProfile({ phone: phone.trim() }, pendingToken);
+      const user = updated.user;
+      const notice = mode === 'register'
+        ? t('auth.emailSocialRegisterNotice', { provider: 'Google' })
+        : t('auth.emailSocialLoginNotice', { provider: 'Google' });
+
+      setPhonePrompt(false);
+      setPendingToken('');
+      setPendingUser(null);
+      await finishAuth(
+        { token: pendingToken, user, emailSent: true, emailPreview: null },
+        notice,
+        started,
+      );
+    } catch (err) {
+      onStepChange(0);
+      setError(localizeApiError(
+        err instanceof Error ? err.message : undefined,
+        t,
+        'auth.socialError',
+      ));
+    }
+  }
+
+  async function handleSocial(provider: 'apple') {
     setError('');
     setEmailNotice('');
 
@@ -123,7 +202,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
 
     try {
       const res = await socialClient(provider);
-      const providerLabel = provider === 'apple' ? 'Apple' : 'Google';
+      const providerLabel = 'Apple';
       await finishAuth(
         res,
         mode === 'register'
@@ -149,7 +228,39 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className={`client-auth client-auth--${mode} client-auth--step${step}`}>
-        {step === 0 && (
+        {step === 0 && phonePrompt && pendingUser && (
+          <>
+            <header className="client-auth__top card">
+              <MateLogo />
+            </header>
+            <div className="client-auth__card card">
+              <button className="reg-close" type="button" onClick={onClose} aria-label={t('auth.close')}>✕</button>
+              <div className="client-auth__badge">{t('auth.badgeLogin')}</div>
+              <h1>{t('auth.googlePhoneTitle')} <span>{pendingUser.name}</span></h1>
+              <p className="client-auth__sub">{t('auth.googlePhoneSub')}</p>
+              <form className="client-auth__form" onSubmit={handleGooglePhoneSubmit}>
+                <label className="client-field">
+                  <span className="client-field__icon"><FieldIcon id="phone" /></span>
+                  <input
+                    name="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder={t('auth.placeholderPhone')}
+                    type="tel"
+                    required
+                  />
+                </label>
+                {error && <p className="client-auth__error">{error}</p>}
+                <button className="btn btn-lime client-auth__submit" type="submit">
+                  {t('auth.googlePhoneSubmit')}
+                </button>
+              </form>
+            </div>
+          </>
+        )}
+
+        {step === 0 && !phonePrompt && (
           <>
             <header className="client-auth__top card">
               <MateLogo />
@@ -241,7 +352,9 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
 
                   <SocialAuthButtons
                     onApple={() => handleSocial('apple')}
-                    onGoogle={() => handleSocial('google')}
+                    onGoogleCredential={handleGoogleCredential}
+                    onGoogleError={() => setError(t('auth.socialError'))}
+                    googleDisabled={mode === 'register' && !terms}
                     orLabel={t('auth.or')}
                     appleLabel={t('auth.continueApple')}
                     googleLabel={t('auth.continueGoogle')}
@@ -289,7 +402,8 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
 
                   <SocialAuthButtons
                     onApple={() => handleSocial('apple')}
-                    onGoogle={() => handleSocial('google')}
+                    onGoogleCredential={handleGoogleCredential}
+                    onGoogleError={() => setError(t('auth.socialError'))}
                     orLabel={t('auth.or')}
                     appleLabel={t('auth.continueApple')}
                     googleLabel={t('auth.continueGoogle')}

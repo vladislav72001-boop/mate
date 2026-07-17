@@ -7,8 +7,9 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createUser, findByEmail, findById, findByIdentifier, publicUser } from './store.mjs';
+import { createUser, findByEmail, findByGoogleId, findById, findByIdentifier, publicUser, updateUser } from './store.mjs';
 import { sendWelcomeEmail, sendLoginEmail } from './mail.mjs';
+import { verifyGoogleCredential, isGoogleAuthConfigured } from './google-auth.mjs';
 import { createShippingRouter } from './shipping.mjs';
 import { createClientRouter } from './client-routes.mjs';
 import { createAdminRouter, ensureAdminUser } from './admin-routes.mjs';
@@ -102,6 +103,13 @@ function resolveLoginEmail(raw) {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get('/api/auth/config', (_req, res) => {
+  res.json({
+    googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '',
+    googleEnabled: isGoogleAuthConfigured(),
+  });
 });
 
 /** Approximate client location by IP (fallback when browser GPS times out). */
@@ -233,6 +241,87 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    if (!isGoogleAuthConfigured()) {
+      return res.status(503).json({ error: 'Вход через Google не настроен на сервере' });
+    }
+
+    const credential = String(req.body.credential || '').trim();
+    if (!credential) {
+      return res.status(400).json({ error: 'Не удалось получить данные Google' });
+    }
+
+    const profile = await verifyGoogleCredential(credential);
+    if (!profile) {
+      return res.status(401).json({ error: 'Не удалось подтвердить аккаунт Google' });
+    }
+
+    const phone = String(req.body.phone || '').trim();
+    let user = await findByGoogleId(profile.sub);
+    let isNew = false;
+
+    if (!user) {
+      const byEmail = await findByEmail(profile.email);
+      if (byEmail) {
+        if (byEmail.googleId && byEmail.googleId !== profile.sub) {
+          return res.status(409).json({ error: 'Этот email уже привязан к другому Google-аккаунту' });
+        }
+        user = await updateUser(byEmail.id, {
+          googleId: profile.sub,
+          authProvider: 'google',
+          name: byEmail.name || profile.name,
+          ...(phone.length >= 6 ? { phone } : {}),
+        });
+      } else {
+        isNew = true;
+        const passwordHash = await bcrypt.hash(randomUUID(), 10);
+        try {
+          user = await createUser({
+            name: profile.name,
+            email: profile.email,
+            phone: phone.length >= 6 ? phone : '',
+            passwordHash,
+            type: 'client',
+            googleId: profile.sub,
+            authProvider: 'google',
+          });
+        } catch (err) {
+          if (err?.code === 'LOGIN_TAKEN') {
+            return res.status(409).json({ error: 'Такой логин уже занят' });
+          }
+          throw err;
+        }
+      }
+    } else if (phone.length >= 6 && String(user.phone || '').trim().length < 6) {
+      user = await updateUser(user.id, { phone });
+    }
+
+    if (!user) {
+      return res.status(500).json({ error: 'Не удалось выполнить вход через Google' });
+    }
+
+    const pub = publicUser(user);
+    const token = signToken(user);
+
+    if (isNew) {
+      sendWelcomeEmail(pub).catch((err) => console.error('[mail] google welcome failed:', err));
+    } else {
+      sendLoginEmail(pub, { ip: req.ip }).catch((err) => console.error('[mail] google login failed:', err));
+    }
+
+    res.json({
+      token,
+      user: pub,
+      emailSent: true,
+      emailPreview: null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Не удалось выполнить вход через Google' });
+  }
+});
+
 app.post('/api/auth/social', async (req, res) => {
   try {
     const provider = req.body.provider;
@@ -240,7 +329,11 @@ app.post('/api/auth/social', async (req, res) => {
       return res.status(400).json({ error: 'Неподдерживаемый способ входа' });
     }
 
-    // Real OAuth (Google/Apple token exchange) is not configured yet.
+    if (provider === 'google') {
+      return res.status(400).json({ error: 'Используйте кнопку Google в приложении' });
+    }
+
+    // Real OAuth (Apple token exchange) is not configured yet.
     // Never create a session without a verified account — that let users "in" without picking email.
     const stubEnabled = process.env.SOCIAL_AUTH_STUB === 'true';
     if (!stubEnabled) {

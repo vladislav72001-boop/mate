@@ -14,6 +14,10 @@ FROM node:20-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public"
+ARG GOOGLE_CLIENT_ID=""
+ARG VITE_GOOGLE_CLIENT_ID=""
+ENV GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+ENV VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID:-$GOOGLE_CLIENT_ID}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate

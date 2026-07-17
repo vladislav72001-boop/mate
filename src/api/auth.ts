@@ -6,6 +6,8 @@ export type AuthUser = {
   phone: string;
   type: 'client' | 'corp' | 'admin';
   createdAt: string;
+  authProvider?: 'local' | 'google';
+  needsPhone?: boolean;
   welcomeDiscountAvailable?: boolean;
 };
 
@@ -89,6 +91,25 @@ export async function socialClient(provider: 'apple' | 'google') {
   return request<AuthResponse>('/api/auth/social', {
     method: 'POST',
     body: JSON.stringify({ provider }),
+  });
+}
+
+export async function googleAuthClient(payload: { credential: string; phone?: string }) {
+  return request<AuthResponse>('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateClientProfile(
+  payload: { phone?: string; name?: string; email?: string },
+  token = getStoredToken(),
+) {
+  if (!token) throw new Error('errors.noSession');
+  return request<{ user: AuthUser }>('/api/client/profile', {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
   });
 }
 

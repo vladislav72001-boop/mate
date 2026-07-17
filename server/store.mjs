@@ -86,6 +86,12 @@ export async function findByEmail(email) {
   return mapUser(await prisma.user.findUnique({ where: { email: normalized } }));
 }
 
+export async function findByGoogleId(googleId) {
+  const id = String(googleId || '').trim();
+  if (!id) return null;
+  return mapUser(await prisma.user.findUnique({ where: { googleId: id } }));
+}
+
 /** Login by email, explicit login, email local-part, or exact name. */
 export async function findByIdentifier(raw) {
   const value = normalizeLogin(raw);
@@ -113,7 +119,16 @@ export async function findByIdentifier(raw) {
   return null;
 }
 
-export async function createUser({ name, email, phone, passwordHash, type = 'client', login }) {
+export async function createUser({
+  name,
+  email,
+  phone,
+  passwordHash,
+  type = 'client',
+  login,
+  googleId,
+  authProvider = 'local',
+}) {
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedLogin = normalizeLogin(login) || loginFromEmail(normalizedEmail);
 
@@ -134,6 +149,8 @@ export async function createUser({ name, email, phone, passwordHash, type = 'cli
       login: normalizedLogin || null,
       phone: phone.trim(),
       passwordHash,
+      googleId: googleId || null,
+      authProvider: authProvider || 'local',
       type,
       welcomeDiscountUsed: false,
     },
@@ -148,6 +165,8 @@ export async function updateUser(id, patch) {
   if (patch.login !== undefined) data.login = patch.login || null;
   if (patch.phone !== undefined) data.phone = patch.phone;
   if (patch.passwordHash !== undefined) data.passwordHash = patch.passwordHash;
+  if (patch.googleId !== undefined) data.googleId = patch.googleId || null;
+  if (patch.authProvider !== undefined) data.authProvider = patch.authProvider;
   if (patch.type !== undefined) data.type = patch.type;
   if (patch.welcomeDiscountUsed !== undefined) data.welcomeDiscountUsed = Boolean(patch.welcomeDiscountUsed);
   if (patch.welcomeDiscountUsedAt !== undefined) {
@@ -172,14 +191,17 @@ export async function deleteUser(id) {
 }
 
 export function publicUser(user) {
+  const phone = String(user.phone || '').trim();
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     login: getUserLogin(user),
-    phone: user.phone,
+    phone,
     type: user.type,
     createdAt: user.createdAt,
+    authProvider: user.authProvider || 'local',
+    needsPhone: phone.length < 6,
     welcomeDiscountAvailable: user.type === 'client' && user.welcomeDiscountUsed !== true,
   };
 }

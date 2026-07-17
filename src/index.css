@@ -4972,6 +4972,15 @@ body {
   color: inherit;
 }
 
+.client-auth__google-hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .client-auth__trust {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
