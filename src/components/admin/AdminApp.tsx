@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuthUser } from '../../api/auth';
 import { fetchMe } from '../../api/auth';
 import {
@@ -26,6 +26,12 @@ import {
 } from '../../api/admin';
 
 type Tab = 'dashboard' | 'orders' | 'users' | 'pricing' | 'settings';
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
 
 const NAV_ITEMS: { id: Tab; label: string; short: string }[] = [
   { id: 'dashboard', label: 'Дашборд', short: 'Главная' },
@@ -153,6 +159,9 @@ export function AdminApp({ onExit }: Props) {
   const [authLoading, setAuthLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [navOpen, setNavOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const goTab = (id: Tab) => {
     setTab(id);
@@ -167,6 +176,66 @@ export function AdminApp({ onExit }: Props) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [navOpen]);
+
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      if (!isEditableTarget(e.target)) return;
+      if (blurTimerRef.current) {
+        clearTimeout(blurTimerRef.current);
+        blurTimerRef.current = null;
+      }
+      setKeyboardOpen(true);
+      const el = e.target as HTMLElement;
+      window.setTimeout(() => {
+        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      }, 120);
+    };
+
+    const onFocusOut = () => {
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = setTimeout(() => {
+        const active = document.activeElement;
+        if (!isEditableTarget(active)) setKeyboardOpen(false);
+      }, 180);
+    };
+
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell || typeof window === 'undefined') return;
+
+    const syncViewport = () => {
+      const vv = window.visualViewport;
+      if (!vv) {
+        shell.style.removeProperty('--admin-vvh');
+        shell.style.removeProperty('--admin-vv-offset');
+        return;
+      }
+      shell.style.setProperty('--admin-vvh', `${Math.round(vv.height)}px`);
+      shell.style.setProperty('--admin-vv-offset', `${Math.round(vv.offsetTop)}px`);
+    };
+
+    syncViewport();
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', syncViewport);
+    vv?.addEventListener('scroll', syncViewport);
+    window.addEventListener('resize', syncViewport);
+    return () => {
+      vv?.removeEventListener('resize', syncViewport);
+      vv?.removeEventListener('scroll', syncViewport);
+      window.removeEventListener('resize', syncViewport);
+      shell.style.removeProperty('--admin-vvh');
+      shell.style.removeProperty('--admin-vv-offset');
+    };
+  }, [user, boot]);
 
   useEffect(() => {
     const token = getAdminToken();
@@ -215,7 +284,7 @@ export function AdminApp({ onExit }: Props) {
 
   if (boot) {
     return (
-      <div className="admin-app admin-app--boot">
+      <div className="admin-app admin-app--boot" ref={shellRef}>
         <p>Загрузка админки…</p>
       </div>
     );
@@ -223,7 +292,7 @@ export function AdminApp({ onExit }: Props) {
 
   if (!user) {
     return (
-      <div className="admin-app admin-login">
+      <div className={`admin-app admin-login${keyboardOpen ? ' admin-app--keyboard' : ''}`} ref={shellRef}>
         <form className="admin-login__card card" onSubmit={handleLogin}>
           <div className="admin-login__brand">MATE<span>.</span> Admin</div>
           <h1>Вход в админку</h1>
@@ -261,7 +330,10 @@ export function AdminApp({ onExit }: Props) {
   };
 
   return (
-    <div className={`admin-app${navOpen ? ' admin-app--nav-open' : ''}`}>
+    <div
+      ref={shellRef}
+      className={`admin-app${navOpen ? ' admin-app--nav-open' : ''}${keyboardOpen ? ' admin-app--keyboard' : ''}`}
+    >
       {navOpen && (
         <button
           type="button"
