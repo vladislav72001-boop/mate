@@ -23,6 +23,7 @@ type Props = {
   onApple: () => void;
   onGoogleCredential: (credential: string) => void;
   onGoogleError: () => void;
+  onGoogleDisabledClick?: () => void;
   googleDisabled?: boolean;
   orLabel: string;
   appleLabel: string;
@@ -33,6 +34,7 @@ export function SocialAuthButtons({
   onApple,
   onGoogleCredential,
   onGoogleError,
+  onGoogleDisabledClick,
   googleDisabled,
   orLabel,
   appleLabel,
@@ -49,6 +51,7 @@ export function SocialAuthButtons({
         <GoogleSignInButton
           onSuccess={onGoogleCredential}
           onError={onGoogleError}
+          onDisabledClick={onGoogleDisabledClick}
           disabled={googleDisabled}
           label={googleLabel}
           icon={<GoogleIcon />}

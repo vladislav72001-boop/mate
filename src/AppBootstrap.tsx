@@ -9,27 +9,44 @@ type AuthConfig = {
 };
 
 export function AppBootstrap() {
-  const [googleClientId, setGoogleClientId] = useState(
-    () => import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
-  );
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (googleClientId) return;
-
     let cancelled = false;
-    fetch('/api/auth/config')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: AuthConfig | null) => {
+
+    async function loadConfig() {
+      const fromBuild = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+      if (fromBuild) {
+        if (!cancelled) {
+          setGoogleClientId(fromBuild);
+          setReady(true);
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/config');
+        const data: AuthConfig | null = res.ok ? await res.json() : null;
         if (!cancelled && data?.googleClientId) {
           setGoogleClientId(data.googleClientId);
         }
-      })
-      .catch(() => {});
+      } catch {
+        // Google sign-in stays unavailable without client id.
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    }
 
+    loadConfig();
     return () => {
       cancelled = true;
     };
-  }, [googleClientId]);
+  }, []);
+
+  if (!ready) {
+    return null;
+  }
 
   const content = (
     <I18nProvider>

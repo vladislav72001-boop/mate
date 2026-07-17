@@ -354,6 +354,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
                     onApple={() => handleSocial('apple')}
                     onGoogleCredential={handleGoogleCredential}
                     onGoogleError={() => setError(t('auth.socialError'))}
+                    onGoogleDisabledClick={() => setError(t('auth.termsRequired'))}
                     googleDisabled={mode === 'register' && !terms}
                     orLabel={t('auth.or')}
                     appleLabel={t('auth.continueApple')}

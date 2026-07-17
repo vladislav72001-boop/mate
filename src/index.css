@@ -4972,13 +4972,35 @@ body {
   color: inherit;
 }
 
-.client-auth__google-hidden {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
+.client-social-btn-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.client-social-btn--visual {
+  width: 100%;
   pointer-events: none;
+}
+
+.client-social-btn__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  opacity: 0.01;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.client-social-btn__overlay--disabled {
+  opacity: 1;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  background: transparent;
 }
 
 .client-auth__trust {
