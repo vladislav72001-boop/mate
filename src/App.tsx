@@ -195,6 +195,11 @@ function ContactIcon({ id, size = 18 }: { id: string; size?: number }) {
     case 'whatsapp': return <svg {...p}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>;
     case 'telegram': return <svg {...p}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>;
     case 'support': return <svg {...p}><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>;
+    case 'company': return <svg {...p}><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/><path d="M9 10h.01M15 10h.01M9 14h.01M15 14h.01"/></svg>;
+    case 'pin': return <svg {...p}><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.2"/></svg>;
+    case 'tax': return <svg {...p}><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>;
+    case 'reg': return <svg {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>;
+    case 'vat': return <svg {...p}><circle cx="12" cy="12" r="9"/><path d="M8 10h5a2.5 2.5 0 0 1 0 5H8V7h4.5"/></svg>;
     default: return <svg {...p}><circle cx="12" cy="12" r="4"/></svg>;
   }
 }
@@ -1054,12 +1059,32 @@ function App() {
                 <ArrowIcon size={14} />
               </a>
               <div className="about-legal">
-                <div className="about-legal__title">{t('about.legalTitle')}</div>
-                <p><strong>{t('about.legalCompany')}</strong></p>
-                <p>{t('about.legalAddress')}</p>
-                <p>{t('about.legalTax')}</p>
-                <p>{t('about.legalReg')}</p>
-                <p>{t('about.legalVat')}</p>
+                <div className="about-legal__head">
+                  <span className="about-legal__badge" aria-hidden>
+                    <ContactIcon id="company" size={16} />
+                  </span>
+                  <div className="about-legal__title">{t('about.legalTitle')}</div>
+                </div>
+                <div className="about-legal__company">
+                  <span className="about-legal__company-mark" aria-hidden />
+                  <strong>{t('about.legalCompany')}</strong>
+                </div>
+                <ul className="about-legal__list">
+                  {([
+                    { id: 'pin', label: t('about.legalAddressLabel'), value: t('about.legalAddress') },
+                    { id: 'tax', label: t('about.legalTaxLabel'), value: t('about.legalTaxValue') },
+                    { id: 'reg', label: t('about.legalRegLabel'), value: t('about.legalRegValue') },
+                    { id: 'vat', label: t('about.legalVatLabel'), value: t('about.legalVatValue') },
+                  ] as const).map((row) => (
+                    <li key={row.id} className="about-legal__row">
+                      <span className="about-legal__icon"><ContactIcon id={row.id} size={15} /></span>
+                      <span className="about-legal__text">
+                        <small>{row.label}</small>
+                        <b>{row.value}</b>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </aside>
           </section>
