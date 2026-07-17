@@ -1058,34 +1058,6 @@ function App() {
                 {t('about.writeUs')}
                 <ArrowIcon size={14} />
               </a>
-              <div className="about-legal">
-                <div className="about-legal__head">
-                  <span className="about-legal__badge" aria-hidden>
-                    <ContactIcon id="company" size={16} />
-                  </span>
-                  <div className="about-legal__title">{t('about.legalTitle')}</div>
-                </div>
-                <div className="about-legal__company">
-                  <span className="about-legal__company-mark" aria-hidden />
-                  <strong>{t('about.legalCompany')}</strong>
-                </div>
-                <ul className="about-legal__list">
-                  {([
-                    { id: 'pin', label: t('about.legalAddressLabel'), value: t('about.legalAddress') },
-                    { id: 'tax', label: t('about.legalTaxLabel'), value: t('about.legalTaxValue') },
-                    { id: 'reg', label: t('about.legalRegLabel'), value: t('about.legalRegValue') },
-                    { id: 'vat', label: t('about.legalVatLabel'), value: t('about.legalVatValue') },
-                  ] as const).map((row) => (
-                    <li key={row.id} className="about-legal__row">
-                      <span className="about-legal__icon"><ContactIcon id={row.id} size={15} /></span>
-                      <span className="about-legal__text">
-                        <small>{row.label}</small>
-                        <b>{row.value}</b>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
             </aside>
           </section>
 
@@ -1136,6 +1108,34 @@ function App() {
               </article>
             </div>
           </section>
+
+          <footer className="about-legal" aria-label={t('about.legalTitle')}>
+            <div className="about-legal__brand">
+              <span className="about-legal__badge" aria-hidden>
+                <ContactIcon id="company" size={16} />
+              </span>
+              <div>
+                <div className="about-legal__title">{t('about.legalTitle')}</div>
+                <strong className="about-legal__company-name">{t('about.legalCompany')}</strong>
+              </div>
+            </div>
+            <ul className="about-legal__list">
+              {([
+                { id: 'pin', label: t('about.legalAddressLabel'), value: t('about.legalAddress') },
+                { id: 'tax', label: t('about.legalTaxLabel'), value: t('about.legalTaxValue') },
+                { id: 'reg', label: t('about.legalRegLabel'), value: t('about.legalRegValue') },
+                { id: 'vat', label: t('about.legalVatLabel'), value: t('about.legalVatValue') },
+              ] as const).map((row) => (
+                <li key={row.id} className="about-legal__row">
+                  <span className="about-legal__icon"><ContactIcon id={row.id} size={15} /></span>
+                  <span className="about-legal__text">
+                    <small>{row.label}</small>
+                    <b>{row.value}</b>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </footer>
         </main>
       ) : null)}
 
