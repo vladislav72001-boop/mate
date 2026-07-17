@@ -173,7 +173,7 @@ export async function detectCityByGeolocation(country?: string): Promise<{ city:
 
   const match = nearestCityFromCoords(coords.lat, coords.lng, preferredCountry)
   if (!match) {
-    throw new Error('Не удалось определить город')
+    throw new Error('errors.cityDetectFail')
   }
   // If "nearest" is still very far (>250km), prefer country capital/first city
   if (preferredCountry && match.distanceKm > 250) {
@@ -510,7 +510,7 @@ export function LockerPicker({
           <span>{t('calc.nearbyPoints')}</span>
           <small>{sortedLockers.length}</small>
         </div>
-        <div className="calc-locker__list" role="listbox" aria-label="Список постаматов">
+        <div className="calc-locker__list" role="listbox" aria-label={t('calc.nearbyPoints')}>
           {sortedLockers.map((locker, i) => {
             const dist = sortOrigin && isValidCoord(locker.lat, locker.lng)
               ? haversineKm(sortOrigin.lat, sortOrigin.lng, locker.lat, locker.lng)

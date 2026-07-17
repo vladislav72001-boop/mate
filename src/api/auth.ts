@@ -36,17 +36,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 502 || res.status === 503) {
-        throw new Error('Сервер не отвечает. Запустите npm run dev');
+        throw new Error('errors.serverDownDev');
       }
-      throw new Error(data.error || 'Произошла ошибка');
+      throw new Error(data.error || 'errors.generic');
     }
     return data as T;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Сервер не отвечает. Убедитесь, что запущен npm run dev');
+      throw new Error('errors.serverDownDev');
     }
     if (err instanceof TypeError) {
-      throw new Error('Не удалось связаться с сервером. Запустите npm run dev');
+      throw new Error('errors.serverDownDev');
     }
     throw err;
   } finally {
@@ -93,7 +93,7 @@ export async function socialClient(provider: 'apple' | 'google') {
 }
 
 export async function fetchMe(token = getStoredToken()) {
-  if (!token) throw new Error('Нет сессии');
+  if (!token) throw new Error('errors.noSession');
   return request<{ user: AuthUser }>('/api/auth/me', {
     headers: { Authorization: `Bearer ${token}` },
   });

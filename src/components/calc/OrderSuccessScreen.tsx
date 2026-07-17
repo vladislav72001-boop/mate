@@ -79,13 +79,13 @@ function CopyIcon() {
 }
 
 export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDashboard }: Props) {
-  const { locale } = useI18n();
+  const { t, locale } = useI18n();
   const [copied, setCopied] = useState(false);
   const trackNo = trackingNumber(order);
-  const status = orderStatusHeadline(order);
-  const carrier = carrierLabel(order);
-  const service = deliveryServiceLabel(order.deliveryMode);
-  const delivery = estimateDeliveryWindow(order);
+  const status = orderStatusHeadline(order, t);
+  const carrier = carrierLabel(order, t);
+  const service = deliveryServiceLabel(order.deliveryMode, t);
+  const delivery = estimateDeliveryWindow(order, t, locale);
   const fromCity = routeCityLine(order.fromCountry, order.senderLine, locale);
   const toCity = routeCityLine(order.toCountry, order.receiverLine, locale);
   const fromAddress = parseAddressLine(order.senderLine);
@@ -113,22 +113,22 @@ export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDash
 
         <header className="order-success__head">
           <h1 id="order-success-title">
-            Посылка <span className="order-success__accent">успешно</span> оформлена!
+            {t('orderSuccess.titleBefore')}
+            <span className="order-success__accent">{t('orderSuccess.titleAccent')}</span>
+            {t('orderSuccess.titleAfter')}
           </h1>
-          <p>
-            Спасибо! Ваша посылка принята. Мы уже передали заказ перевозчику и начинаем обработку.
-          </p>
+          <p>{t('orderSuccess.lead')}</p>
         </header>
 
         <div className="order-success__track card-lite">
           <div className="order-success__track-row">
             <div>
-              <span className="order-success__meta-label">Трек-номер</span>
+              <span className="order-success__meta-label">{t('orderSuccess.trackLabel')}</span>
               <strong className="order-success__track-no">{trackNo}</strong>
             </div>
             <button type="button" className="order-success__copy" onClick={copyTrack}>
               <CopyIcon />
-              {copied ? 'Скопировано' : 'Скопировать'}
+              {copied ? t('orderSuccess.copied') : t('orderSuccess.copy')}
             </button>
           </div>
         </div>
@@ -136,7 +136,7 @@ export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDash
         <div className="order-success__status card-lite">
           <div className="order-success__status-row">
             <div>
-              <span className="order-success__meta-label">Статус</span>
+              <span className="order-success__meta-label">{t('orderSuccess.statusLabel')}</span>
               <p className="order-success__status-label">
                 <span className="order-success__status-dot" aria-hidden />
                 {status.label}
@@ -150,37 +150,37 @@ export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDash
         <div className="order-success__grid">
           <DetailCell
             flag={order.fromCountry || 'HU'}
-            label="Откуда"
+            label={t('orderSuccess.from')}
             title={fromCity}
             hint={fromAddress.streetLine}
           />
           <DetailCell
             flag={order.toCountry}
-            label="Куда"
+            label={t('orderSuccess.to')}
             title={toCity}
             hint={toAddress.streetLine}
           />
           <DetailCell
             icon="🚚"
-            label="Перевозчик"
+            label={t('orderSuccess.carrier')}
             title={carrier.name}
             hint={carrier.hint}
           />
           <DetailCell
             icon="◆"
-            label="Стоимость"
+            label={t('orderSuccess.cost')}
             title={formatOrderMoney(order)}
-            hint={<><span className="order-success__paid">Оплачено картой</span> ✓</>}
+            hint={<><span className="order-success__paid">{t('orderSuccess.paidByCard')}</span> ✓</>}
           />
           <DetailCell
             icon="📅"
-            label="Ориентировочная доставка"
+            label={t('orderSuccess.eta')}
             title={delivery.range}
             hint={delivery.hint}
           />
           <DetailCell
             icon="⚡"
-            label="Услуга"
+            label={t('orderSuccess.service')}
             title={service.title}
             hint={service.hint}
           />
@@ -189,12 +189,12 @@ export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDash
         <div className="order-success__actions">
           <button type="button" className="btn btn-lime order-success__track-btn" onClick={onTrack}>
             <span aria-hidden>📍</span>
-            Отследить посылку
+            {t('orderSuccess.trackCta')}
           </button>
           <div className="order-success__secondary">
             <button type="button" className="btn btn-outline order-success__secondary-btn" onClick={onCreateAnother}>
               <span aria-hidden>＋</span>
-              Создать ещё одну отправку
+              {t('orderSuccess.createAnother')}
             </button>
             <button
               type="button"
@@ -203,17 +203,14 @@ export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDash
               disabled={!onOpenDashboard}
             >
               <span aria-hidden>⎙</span>
-              Скачать накладную PDF
+              {t('orderSuccess.downloadPdf')}
             </button>
           </div>
         </div>
 
         <aside className="order-success__thanks card-lite">
           <span className="order-success__thanks-icon" aria-hidden>♥</span>
-          <p>
-            Спасибо, что выбрали Mate. Мы автоматически подбираем лучшего перевозчика по цене,
-            скорости и качеству доставки, чтобы вам не приходилось сравнивать десятки служб самостоятельно.
-          </p>
+          <p>{t('orderSuccess.thanks')}</p>
         </aside>
       </div>
     </div>

@@ -1,6 +1,9 @@
 import type { MessageTree } from '../types';
+import { authFieldMessages } from './authFields';
 import { calcFieldMessages } from './calcFields';
 import { dashFieldMessages } from './dashFields';
+import { errorFieldMessages } from './errorFields';
+import { orderSuccessFieldMessages } from './orderSuccessFields';
 
 const countries = {
   HU: 'Угорщина',
@@ -208,6 +211,15 @@ export const uk: MessageTree = {
   },
   dash: {
     ...dashFieldMessages.uk,
+  },
+  auth: {
+    ...authFieldMessages.uk,
+  },
+  orderSuccess: {
+    ...orderSuccessFieldMessages.uk,
+  },
+  errors: {
+    ...errorFieldMessages.uk,
   },
   payment: {
     successTitle: 'Оплату успішно завершено',

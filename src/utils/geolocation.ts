@@ -106,18 +106,18 @@ export async function getPositionFromIp(): Promise<GeoCoords> {
 
   throw new GeoError(
     'unavailable',
-    'Не удалось определить местоположение. Выберите город вручную или проверьте интернет.',
+    'errors.geoLocateFail',
   );
 }
 
 async function getPositionFromGps(): Promise<GeoCoords> {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    throw new GeoError('unsupported', 'Геолокация недоступна в этом браузере');
+    throw new GeoError('unsupported', 'errors.geoUnsupported');
   }
   if (typeof window !== 'undefined' && !window.isSecureContext) {
     throw new GeoError(
       'insecure',
-      'Геолокация работает только по HTTPS. Откройте сайт как https://www.matedelivery.com',
+      'errors.geoInsecure',
     );
   }
 
@@ -148,7 +148,7 @@ async function getPositionFromGps(): Promise<GeoCoords> {
       if (code === 1) {
         throw new GeoError(
           'denied',
-          'Доступ к геолокации запрещён. Разрешите местоположение для сайта или мы определим город по сети.',
+          'errors.geoDenied',
         );
       }
     }
@@ -158,9 +158,9 @@ async function getPositionFromGps(): Promise<GeoCoords> {
     ? Number((lastErr as GeolocationPositionError).code)
     : 0;
   if (code === 3) {
-    throw new GeoError('timeout', 'GPS не ответил вовремя');
+    throw new GeoError('timeout', 'errors.geoTimeout');
   }
-  throw new GeoError('unavailable', 'GPS недоступен');
+  throw new GeoError('unavailable', 'errors.geoUnavailable');
 }
 
 /**

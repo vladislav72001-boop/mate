@@ -66,6 +66,7 @@ import {
 import { loadCalcDraft, clearCalcDraft } from './calc/calcDraft';
 import { useCalcDraftPersistence } from './calc/useCalcDraft';
 import { useI18n } from '../i18n/context';
+import { localizeApiError } from '../i18n/localizeApiError';
 
 type FormProps = {
   user?: AuthUser | null;
@@ -583,7 +584,11 @@ export function CalcForm({
       setPickupCityTouched(true);
       resetPickupAddressRefinement();
     } catch (err) {
-      setGeoError(err instanceof Error ? err.message : t('calc.geoFail'));
+      setGeoError(localizeApiError(
+        err instanceof Error ? err.message : undefined,
+        t,
+        'calc.geoFail',
+      ));
     } finally {
       setGeoLoading(false);
     }
@@ -1254,13 +1259,10 @@ export function CalcForm({
       }
       throw new Error(t('calc.payLinkMissing'));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : t('calc.orderFail');
-      const timedOut = /не отвечает|AbortError|timed out|timeout/i.test(msg);
-      setError(timedOut
-        ? t('calc.checkoutTimeout')
-        : (msg.includes('Ошибка запроса') || msg.includes('Временная ошибка')
-          ? t('calc.serverDown')
-          : msg));
+      const msg = err instanceof Error ? err.message : '';
+      const localized = localizeApiError(msg, t, 'calc.orderFail');
+      const timedOut = /serverDown|AbortError|timed out|timeout|не отвечает|nem válaszol|не відповідає/i.test(msg + localized);
+      setError(timedOut ? t('calc.checkoutTimeout') : localized);
     } finally {
       payInFlight.current = false;
       setSubmitting(false);

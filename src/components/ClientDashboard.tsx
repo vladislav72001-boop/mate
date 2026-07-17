@@ -17,6 +17,7 @@ import {
 } from '../api/shipping';
 import { COUNTRIES, countryLabel } from '../constants/shipping';
 import { useI18n } from '../i18n/context';
+import { localizeApiError } from '../i18n/localizeApiError';
 import { FeatureIcon } from './icons';
 import { LanguageSelect } from './LanguageSelect';
 import { ShipmentDetailModal } from './client-dash/ShipmentDetailModal';
@@ -215,7 +216,7 @@ export function ClientDashboard({
       setLoyalty(loy);
       if (!selectedOrderId && o[0]) setSelectedOrderId(o[0].id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('dash.loadError'));
+      setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.loadError'));
     } finally {
       setLoading(false);
       setLoyaltyLoading(false);
@@ -269,7 +270,7 @@ export function ClientDashboard({
       setSelectedOrderId(found.id);
       switchTab('tracking');
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('dash.notFound'));
+      setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.notFound'));
       setTrackOrder(null);
     } finally {
       setTrackLoading(false);
@@ -285,7 +286,7 @@ export function ClientDashboard({
       const a = await fetchAddresses();
       setAddresses(a);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('dash.saveError'));
+      setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.saveError'));
     } finally {
       setAddrSaving(false);
     }
@@ -305,7 +306,7 @@ export function ClientDashboard({
       setSettingsMsg(t('dash.profileSaved'));
       setSettingsForm((f) => ({ ...f, password: '' }));
     } catch (err) {
-      setSettingsMsg(err instanceof Error ? err.message : t('dash.saveProfileError'));
+      setSettingsMsg(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.saveProfileError'));
     } finally {
       setSettingsSaving(false);
     }
@@ -318,7 +319,7 @@ export function ClientDashboard({
       const result = await resumeCheckout(order.publicToken);
       window.location.assign(result.checkoutUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('dash.payError'));
+      setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.payError'));
       setPayingId(null);
     }
   };
@@ -332,7 +333,7 @@ export function ClientDashboard({
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
       setDetailOrder((cur) => (cur?.id === updated.id ? updated : cur));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('dash.cancelError'));
+      setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.cancelError'));
     } finally {
       setCancellingId(null);
     }

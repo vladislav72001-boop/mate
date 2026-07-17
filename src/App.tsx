@@ -792,7 +792,7 @@ function App() {
 
           <PartnersSection />
 
-          <section className="features home-features" aria-label="Преимущества">
+          <section className="features home-features" aria-label={t('home.featuresTitle')}>
             <header className="home-features__head">
               <span className="home-features__eyebrow">{t('home.featuresEyebrow')}</span>
               <h2>{t('home.featuresTitle')}</h2>
@@ -1126,7 +1126,7 @@ function App() {
 
           <PartnersSection about />
 
-          <section className="about-features" aria-label="Преимущества">
+          <section className="about-features" aria-label={t('about.featuresTitle')}>
             <header className="about-features__head">
               <span className="about-features__eyebrow">{t('about.featuresEyebrow')}</span>
               <h2>{t('about.featuresTitle')}</h2>

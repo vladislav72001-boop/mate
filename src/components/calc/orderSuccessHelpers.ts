@@ -1,5 +1,9 @@
 import type { ShippingOrder } from '../../api/client-types';
 import { countryLabel, formatQuoteMoney } from '../../constants/shipping';
+import type { Locale, TranslateVars } from '../../i18n/types';
+import { localeToIntl } from '../../i18n/config';
+
+type TFn = (key: string, vars?: TranslateVars) => string;
 
 export function parseAddressLine(line?: string | null) {
   if (!line?.trim()) {
@@ -29,55 +33,56 @@ function addBusinessDays(from: Date, days: number) {
   return date;
 }
 
-export function estimateDeliveryWindow(order: ShippingOrder) {
+export function estimateDeliveryWindow(order: ShippingOrder, t: TFn, locale: Locale) {
   const base = new Date(order.paidAt || order.createdAt || Date.now());
   const latest = addBusinessDays(base, 3);
-  const weekday = latest.toLocaleDateString('ru-RU', { weekday: 'long' });
-  const dateLabel = latest.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  const intl = localeToIntl(locale);
+  const weekday = latest.toLocaleDateString(intl, { weekday: 'long' });
+  const dateLabel = latest.toLocaleDateString(intl, { day: 'numeric', month: 'long' });
   return {
-    range: '2–3 рабочих дня',
-    hint: `До ${dateLabel}, ${weekday}`,
+    range: t('orderSuccess.etaRange'),
+    hint: t('orderSuccess.etaUntil', { date: dateLabel, weekday }),
   };
 }
 
-export function deliveryServiceLabel(mode?: string | null) {
+export function deliveryServiceLabel(mode: string | null | undefined, t: TFn) {
   switch (mode) {
     case 'home':
     case 'address':
-      return { title: 'Стандартная доставка', hint: 'Доставка до двери' };
+      return { title: t('orderSuccess.serviceHomeTitle'), hint: t('orderSuccess.serviceHomeHint') };
     case 'locker':
-      return { title: 'Доставка в постамат', hint: 'Nova Post / партнёры' };
+      return { title: t('orderSuccess.serviceLockerTitle'), hint: t('orderSuccess.serviceLockerHint') };
     case 'branch':
-      return { title: 'Доставка в филиал', hint: 'Пункт выдачи Mate' };
+      return { title: t('orderSuccess.serviceBranchTitle'), hint: t('orderSuccess.serviceBranchHint') };
     default:
-      return { title: 'Стандартная доставка', hint: 'Доставка по Европе' };
+      return { title: t('orderSuccess.serviceDefaultTitle'), hint: t('orderSuccess.serviceDefaultHint') };
   }
 }
 
-export function orderStatusHeadline(order: ShippingOrder) {
+export function orderStatusHeadline(order: ShippingOrder, t: TFn) {
   if (order.status === 'submitted' || order.npTtn) {
     return {
-      label: 'Ожидает передачи перевозчику',
-      hint: 'После подтверждения перевозчиком статус автоматически обновится.',
+      label: t('orderSuccess.statusSubmitted'),
+      hint: t('orderSuccess.statusSubmittedHint'),
     };
   }
   if (order.status === 'paid') {
     return {
-      label: 'Оплачено, начинаем обработку',
-      hint: 'Мы передали заказ перевозчику и готовим отправление.',
+      label: t('orderSuccess.statusPaid'),
+      hint: t('orderSuccess.statusPaidHint'),
     };
   }
   return {
-    label: 'Заявка принята',
-    hint: 'Мы уже начали обработку вашего заказа.',
+    label: t('orderSuccess.statusAccepted'),
+    hint: t('orderSuccess.statusAcceptedHint'),
   };
 }
 
-export function carrierLabel(order: ShippingOrder) {
+export function carrierLabel(order: ShippingOrder, t: TFn) {
   if (order.npTtn || order.npValid) {
-    return { name: 'Nova Post', hint: 'Выбран автоматически Mate AI' };
+    return { name: 'Nova Post', hint: t('orderSuccess.carrierNpHint') };
   }
-  return { name: 'Mate AI', hint: 'Оптимальный перевозчик подобран автоматически' };
+  return { name: 'Mate AI', hint: t('orderSuccess.carrierMateHint') };
 }
 
 export function trackingNumber(order: ShippingOrder) {
@@ -88,7 +93,7 @@ export function formatOrderMoney(order: ShippingOrder) {
   return formatQuoteMoney(order.amount, order.currency || 'EUR');
 }
 
-export function routeCityLine(countryCode?: string, line?: string | null, locale?: import('../../i18n/types').Locale) {
+export function routeCityLine(countryCode?: string, line?: string | null, locale?: Locale) {
   const parsed = parseAddressLine(line);
   if (countryCode && parsed.cityLine !== '—') {
     const country = countryLabel(countryCode, locale);

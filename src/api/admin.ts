@@ -25,7 +25,7 @@ async function adminRequest<T>(path: string, options: RequestInit = {}): Promise
     },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Ошибка запроса');
+  if (!res.ok) throw new Error(data.error || 'errors.requestFailed');
   return data as T;
 }
 

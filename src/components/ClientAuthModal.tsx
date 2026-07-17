@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { AuthUser } from '../api/auth';
 import { loginClient, registerClient, socialClient } from '../api/auth';
+import { useI18n } from '../i18n/context';
+import { localizeApiError } from '../i18n/localizeApiError';
 import { getPasswordStrength } from '../utils/password';
 import { ServiceSvgIcon } from './icons';
 import { MateLogo } from './MateLogo';
@@ -35,27 +37,8 @@ function FieldIcon({ id }: { id: string }) {
   }
 }
 
-const registerSteps = [
-  'Создаём аккаунт',
-  'Настраиваем рабочее пространство',
-  'Отправляем письмо на почту',
-  'Готово!',
-];
-
-const loginSteps = [
-  'Подгружаем ваш профиль в MATE',
-  'Синхронизируем отправления',
-  'Проверяем настройки',
-  'Готово!',
-];
-
-const clientNextSteps: { icon: string; title: string; desc: string; target: ClientOnboardingTarget }[] = [
-  { icon: 'parcel', title: 'Создайте первую отправку', desc: 'Рассчитайте стоимость и отправьте посылку', target: 'shipment' },
-  { icon: 'tracking', title: 'Добавьте адрес в книгу', desc: 'Сохраните часто используемые адреса доставки', target: 'address' },
-  { icon: 'fulfillment', title: 'Настройте способ оплаты', desc: 'Подключите карту для быстрой оплаты отправлений', target: 'payments' },
-];
-
 export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChange, onSuccess, onNavigate }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -66,7 +49,21 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
   const [emailNotice, setEmailNotice] = useState('');
 
   const strength = getPasswordStrength(password);
-  const progressSteps = mode === 'register' ? registerSteps : loginSteps;
+  const strengthLabel =
+    strength.level === 'weak' ? t('auth.passWeak')
+    : strength.level === 'medium' ? t('auth.passMedium')
+    : strength.level === 'strong' ? t('auth.passStrong')
+    : '';
+
+  const progressSteps = mode === 'register'
+    ? [t('auth.regStep1'), t('auth.regStep2'), t('auth.regStep3'), t('auth.regStep4')]
+    : [t('auth.loginStep1'), t('auth.loginStep2'), t('auth.loginStep3'), t('auth.loginStep4')];
+
+  const nextSteps: { icon: string; title: string; desc: string; target: ClientOnboardingTarget }[] = [
+    { icon: 'parcel', title: t('auth.nextShipmentTitle'), desc: t('auth.nextShipmentDesc'), target: 'shipment' },
+    { icon: 'tracking', title: t('auth.nextAddressTitle'), desc: t('auth.nextAddressDesc'), target: 'address' },
+    { icon: 'fulfillment', title: t('auth.nextPayTitle'), desc: t('auth.nextPayDesc'), target: 'payments' },
+  ];
 
   async function finishAuth(
     res: Awaited<ReturnType<typeof registerClient>>,
@@ -85,7 +82,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
     setEmailNotice('');
 
     if (mode === 'register' && !terms) {
-      setError('Подтвердите согласие с условиями использования');
+      setError(t('auth.termsRequired'));
       return;
     }
 
@@ -99,14 +96,16 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
 
       await finishAuth(
         res,
-        mode === 'register'
-          ? 'Письмо о создании аккаунта отправлено на вашу почту.'
-          : 'Уведомление о входе отправлено на вашу почту.',
+        mode === 'register' ? t('auth.emailRegisterNotice') : t('auth.emailLoginNotice'),
         started,
       );
     } catch (err) {
       onStepChange(0);
-      setError(err instanceof Error ? err.message : (mode === 'register' ? 'Ошибка регистрации' : 'Ошибка входа'));
+      setError(localizeApiError(
+        err instanceof Error ? err.message : undefined,
+        t,
+        mode === 'register' ? 'auth.registerError' : 'auth.loginError',
+      ));
     }
   }
 
@@ -115,7 +114,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
     setEmailNotice('');
 
     if (mode === 'register' && !terms) {
-      setError('Подтвердите согласие с условиями использования');
+      setError(t('auth.termsRequired'));
       return;
     }
 
@@ -128,13 +127,17 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
       await finishAuth(
         res,
         mode === 'register'
-          ? `Аккаунт через ${providerLabel} создан. Письмо отправлено на почту.`
-          : `Вы вошли через ${providerLabel}. Уведомление отправлено на почту.`,
+          ? t('auth.emailSocialRegisterNotice', { provider: providerLabel })
+          : t('auth.emailSocialLoginNotice', { provider: providerLabel }),
         started,
       );
     } catch (err) {
       onStepChange(0);
-      setError(err instanceof Error ? err.message : 'Не удалось войти через соцсеть');
+      setError(localizeApiError(
+        err instanceof Error ? err.message : undefined,
+        t,
+        'auth.socialError',
+      ));
     }
   }
 
@@ -152,21 +155,21 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
               <MateLogo />
               <p className="client-auth__switch">
                 {mode === 'register' ? (
-                  <>Уже есть аккаунт? <button type="button" onClick={() => onSwitchMode('login')}>Войти</button></>
+                  <>{t('auth.hasAccount')} <button type="button" onClick={() => onSwitchMode('login')}>{t('auth.loginLink')}</button></>
                 ) : (
-                  <>Нет аккаунта? <button type="button" onClick={() => onSwitchMode('register')}>Создать аккаунт</button></>
+                  <>{t('auth.noAccount')} <button type="button" onClick={() => onSwitchMode('register')}>{t('auth.registerLink')}</button></>
                 )}
               </p>
             </header>
 
             <div className="client-auth__card card">
-              <button className="reg-close" type="button" onClick={onClose} aria-label="Закрыть">✕</button>
+              <button className="reg-close" type="button" onClick={onClose} aria-label={t('auth.close')}>✕</button>
 
               {mode === 'register' ? (
                 <>
-                  <div className="client-auth__badge">РЕГИСТРАЦИЯ</div>
-                  <h1>Создайте аккаунт <span>за минуту</span></h1>
-                  <p className="client-auth__sub">И начните отправлять посылки уже сегодня</p>
+                  <div className="client-auth__badge">{t('auth.badgeRegister')}</div>
+                  <h1>{t('auth.registerTitle')} <span>{t('auth.registerTitleAccent')}</span></h1>
+                  <p className="client-auth__sub">{t('auth.registerSub')}</p>
 
                   <form className="client-auth__form" onSubmit={handleSubmit}>
                     <label className="client-field">
@@ -176,7 +179,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
                         autoComplete="name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="Имя"
+                        placeholder={t('auth.placeholderName')}
                         required
                       />
                     </label>
@@ -199,7 +202,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
                         autoComplete="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        placeholder="Телефон"
+                        placeholder={t('auth.placeholderPhone')}
                         type="tel"
                         required
                       />
@@ -211,41 +214,44 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
                         autoComplete="new-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Пароль"
+                        placeholder={t('auth.placeholderPassword')}
                         type={showPass ? 'text' : 'password'}
                         minLength={8}
                         required
                       />
-                      <button className="client-field__eye" type="button" onClick={() => setShowPass((v) => !v)} aria-label="Показать пароль">
+                      <button className="client-field__eye" type="button" onClick={() => setShowPass((v) => !v)} aria-label={t('auth.showPassword')}>
                         {showPass ? '🙈' : '👁'}
                       </button>
                     </label>
                     {password && (
                       <div className="client-pass-strength">
                         <div className="client-pass-strength__bar"><span style={{ width: strength.width }} /></div>
-                        <small>{strength.label}</small>
+                        <small>{strengthLabel}</small>
                       </div>
                     )}
                     <label className="client-terms">
                       <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} />
-                      <span>Согласен с условиями использования и политикой конфиденциальности</span>
+                      <span>{t('auth.terms')}</span>
                     </label>
                     {error && <p className="client-auth__error">{error}</p>}
                     <button className="btn btn-lime client-auth__submit" type="submit">
-                      Создать аккаунт
+                      {t('auth.submitRegister')}
                     </button>
                   </form>
 
                   <SocialAuthButtons
                     onApple={() => handleSocial('apple')}
                     onGoogle={() => handleSocial('google')}
+                    orLabel={t('auth.or')}
+                    appleLabel={t('auth.continueApple')}
+                    googleLabel={t('auth.continueGoogle')}
                   />
                 </>
               ) : (
                 <>
-                  <div className="client-auth__badge">ВХОД</div>
-                  <h1>Добро пожаловать <span>обратно</span></h1>
-                  <p className="client-auth__sub">Войдите в личный кабинет MATE</p>
+                  <div className="client-auth__badge">{t('auth.badgeLogin')}</div>
+                  <h1>{t('auth.loginTitle')} <span>{t('auth.loginTitleAccent')}</span></h1>
+                  <p className="client-auth__sub">{t('auth.loginSub')}</p>
 
                   <form className="client-auth__form" onSubmit={handleSubmit}>
                     <label className="client-field">
@@ -267,32 +273,35 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
                         autoComplete="current-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Пароль"
+                        placeholder={t('auth.placeholderPassword')}
                         type={showPass ? 'text' : 'password'}
                         required
                       />
-                      <button className="client-field__eye" type="button" onClick={() => setShowPass((v) => !v)} aria-label="Показать пароль">
+                      <button className="client-field__eye" type="button" onClick={() => setShowPass((v) => !v)} aria-label={t('auth.showPassword')}>
                         {showPass ? '🙈' : '👁'}
                       </button>
                     </label>
                     {error && <p className="client-auth__error">{error}</p>}
                     <button className="btn btn-lime client-auth__submit" type="submit">
-                      Войти
+                      {t('auth.submitLogin')}
                     </button>
                   </form>
 
                   <SocialAuthButtons
                     onApple={() => handleSocial('apple')}
                     onGoogle={() => handleSocial('google')}
+                    orLabel={t('auth.or')}
+                    appleLabel={t('auth.continueApple')}
+                    googleLabel={t('auth.continueGoogle')}
                   />
                 </>
               )}
             </div>
 
             <div className="client-auth__trust">
-              <div><b>⚡</b><span>Быстро</span></div>
-              <div><b>🛡</b><span>Безопасно</span></div>
-              <div><b>✓</b><span>Выгодно</span></div>
+              <div><b>⚡</b><span>{t('auth.trustFast')}</span></div>
+              <div><b>🛡</b><span>{t('auth.trustSafe')}</span></div>
+              <div><b>✓</b><span>{t('auth.trustValue')}</span></div>
             </div>
           </>
         )}
@@ -303,16 +312,12 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
               <MateLogo height={46} />
             </div>
             <h2>
-              {mode === 'register' ? (
-                <>Создаём ваш<br />аккаунт</>
-              ) : (
-                <>Подгружаем ваш<br />профиль в MATE</>
-              )}
+              {mode === 'register' ? t('auth.loadingRegisterTitle') : t('auth.loadingLoginTitle')}
             </h2>
-            <p>Это займёт всего несколько секунд</p>
+            <p>{t('auth.loadingSub')}</p>
             <ul className="reg-checklist client-checklist">
               {progressSteps.map((label, i) => (
-                <li key={label} className={['done', 'anim1', 'anim2', 'anim3'][i] || ''}>
+                <li key={`${mode}-${i}`} className={['done', 'anim1', 'anim2', 'anim3'][i] || ''}>
                   <span className={i < 2 ? 'reg-check-circle' : i === 2 ? 'reg-check-spinner' : 'reg-check-empty'}>
                     {i < 2 ? '✓' : i === 2 ? '' : '○'}
                   </span>
@@ -336,26 +341,20 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
               <MateLogo height={46} className="client-auth__success-logo" />
               <div className="reg-success-icon">✓</div>
               <h2>
-                {mode === 'register' ? (
-                  <>Добро пожаловать<br />в MATE!</>
-                ) : (
-                  <>С возвращением<br />в MATE!</>
-                )}
+                {mode === 'register' ? t('auth.welcomeNew') : t('auth.welcomeBack')}
               </h2>
               <p>
-                {mode === 'register'
-                  ? 'Ваш аккаунт успешно создан.'
-                  : 'Вы успешно вошли в личный кабинет.'}
+                {mode === 'register' ? t('auth.accountCreated') : t('auth.loggedIn')}
               </p>
               {emailNotice && <p className="client-auth__email-note">{emailNotice}</p>}
             </div>
 
             <section className="client-next">
-              <h3 className="client-next__title">Что дальше?</h3>
+              <h3 className="client-next__title">{t('auth.nextTitle')}</h3>
               <div className="client-next__list">
-                {clientNextSteps.map((item, index) => (
+                {nextSteps.map((item, index) => (
                   <button
-                    key={item.title}
+                    key={item.target}
                     type="button"
                     className="client-next__card"
                     onClick={() => onNavigate(item.target)}
@@ -377,7 +376,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
             </section>
 
             <button className="btn btn-lime client-auth__success-btn" type="button" onClick={onClose}>
-              Перейти в личный кабинет
+              {t('auth.goDashboard')}
             </button>
           </div>
         )}

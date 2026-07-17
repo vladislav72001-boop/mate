@@ -25,17 +25,17 @@ async function shippingRequest<T>(path: string, options: RequestInit = {}, timeo
       const msg = data.errors?.length
         ? data.errors.join('\n')
         : (data.error || (res.status === 502 || res.status === 503
-          ? 'Сервер не отвечает. Запустите npm run dev'
-          : 'Временная ошибка сервера'));
+          ? 'errors.serverDownDev'
+          : 'errors.serverTemp'));
       throw new Error(msg);
     }
     return data as T;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Сервер не отвечает. Попробуйте ещё раз через минуту');
+      throw new Error('errors.serverDownRetry');
     }
     if (err instanceof TypeError) {
-      throw new Error('Сервер не отвечает. Запустите npm run dev');
+      throw new Error('errors.serverDownDev');
     }
     throw err;
   } finally {

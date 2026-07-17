@@ -20,20 +20,23 @@ function GoogleIcon() {
 type Props = {
   onApple: () => void;
   onGoogle: () => void;
+  orLabel: string;
+  appleLabel: string;
+  googleLabel: string;
 };
 
-export function SocialAuthButtons({ onApple, onGoogle }: Props) {
+export function SocialAuthButtons({ onApple, onGoogle, orLabel, appleLabel, googleLabel }: Props) {
   return (
     <>
-      <div className="client-auth__divider"><span>или</span></div>
+      <div className="client-auth__divider"><span>{orLabel}</span></div>
       <div className="client-auth__social">
         <button type="button" className="client-social-btn" onClick={onApple}>
           <span className="client-social-btn__icon client-social-btn__icon--apple"><AppleIcon /></span>
-          <span>Продолжить с Apple</span>
+          <span>{appleLabel}</span>
         </button>
         <button type="button" className="client-social-btn" onClick={onGoogle}>
           <span className="client-social-btn__icon client-social-btn__icon--google"><GoogleIcon /></span>
-          <span>Продолжить с Google</span>
+          <span>{googleLabel}</span>
         </button>
       </div>
     </>
