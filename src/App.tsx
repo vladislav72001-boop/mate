@@ -394,11 +394,23 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [heroCalcStep, setHeroCalcStep] = useState(1);
   const [calcResetSignal, setCalcResetSignal] = useState(0);
-  const calcFocused = page === 'home' && heroCalcStep > 1;
+  const [calcFocusDesktop, setCalcFocusDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 901px)').matches : false,
+  );
+  // Focus/blur only on desktop; mobile keeps the calculator in place without overlay.
+  const calcFocused = page === 'home' && heroCalcStep > 1 && calcFocusDesktop;
 
   const dismissCalcFocus = useCallback(() => {
     setCalcResetSignal((n) => n + 1);
     setHeroCalcStep(1);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 901px)');
+    const sync = () => setCalcFocusDesktop(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
   }, []);
 
   useEffect(() => {

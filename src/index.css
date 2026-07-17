@@ -466,101 +466,92 @@ body {
   width: 100%;
 }
 
-.calc-focus-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 240;
-  margin: 0;
-  padding: 0;
-  border: none;
-  cursor: pointer;
-  pointer-events: auto;
-  background:
-    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(18, 32, 35, 0.28), rgba(12, 20, 22, 0.52)),
-    rgba(12, 20, 22, 0.38);
-  backdrop-filter: blur(14px) saturate(1.1);
-  -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  animation: calcFocusIn 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.mate-app--calc-focus .topbar,
-.mate-app--calc-focus .mobile-menu,
-.mate-app--calc-focus main {
-  pointer-events: none;
-  user-select: none;
-}
-
-/*
- * Ancestors of .hero-module must not create stacking contexts or
- * containing blocks (transform/isolation) while the calculator is
- * lifted above the fixed backdrop, otherwise position: fixed and
- * z-index resolve inside `main` and the card ends up under the overlay.
- */
-.mate-app--calc-focus main.page-enter,
-.mate-app--calc-focus .hero-grid,
-.mate-app--calc-focus .hero-module {
-  animation: none;
-}
-
-.mate-app--calc-focus .home-page {
-  isolation: auto;
-}
-
-.mate-app--calc-focus .hero-module {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  z-index: 250;
-  width: min(560px, calc(100vw - 24px));
-  max-height: min(88vh, 900px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  pointer-events: auto;
-  transform: translate(-50%, -50%);
-  animation: calcCardLift 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.mate-app--calc-focus .hero-grid .calc-card.card,
-.mate-app--calc-focus .hero-module .calc-card {
-  background: #fff;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border-color: rgba(18, 32, 35, 0.08);
-  box-shadow:
-    0 32px 80px rgba(18, 32, 35, 0.28),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
-}
-
-@keyframes calcFocusIn {
-  from {
-    opacity: 0;
-    backdrop-filter: blur(0);
-    -webkit-backdrop-filter: blur(0);
+/* Desktop-only calculator focus: soft light overlay + centered card */
+@media (min-width: 901px) {
+  .calc-focus-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 240;
+    margin: 0;
+    padding: 0;
+    border: none;
+    cursor: pointer;
+    pointer-events: auto;
+    background:
+      radial-gradient(ellipse 90% 70% at 50% 42%, rgba(255, 255, 255, 0.72), rgba(232, 236, 234, 0.88)),
+      rgba(244, 246, 245, 0.82);
+    backdrop-filter: blur(12px) saturate(1.05);
+    -webkit-backdrop-filter: blur(12px) saturate(1.05);
+    animation: calcFocusIn 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  to {
-    opacity: 1;
-    backdrop-filter: blur(14px) saturate(1.1);
-    -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  }
-}
 
-@keyframes calcCardLift {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -46%) scale(0.96);
+  .mate-app--calc-focus .topbar,
+  .mate-app--calc-focus .mobile-menu,
+  .mate-app--calc-focus main {
+    pointer-events: none;
+    user-select: none;
   }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
 
-@media (max-width: 900px) {
+  /*
+   * Ancestors of .hero-module must not create stacking contexts or
+   * containing blocks (transform/isolation) while the calculator is
+   * lifted above the fixed backdrop, otherwise position: fixed and
+   * z-index resolve inside `main` and the card ends up under the overlay.
+   */
+  .mate-app--calc-focus main.page-enter,
+  .mate-app--calc-focus .hero-grid,
   .mate-app--calc-focus .hero-module {
-    width: calc(100vw - 32px);
-    max-height: calc(100dvh - 56px);
+    animation: none;
+  }
+
+  .mate-app--calc-focus .home-page {
+    isolation: auto;
+  }
+
+  .mate-app--calc-focus .hero-module {
+    position: fixed;
+    left: 50%;
     top: 50%;
+    z-index: 250;
+    width: min(560px, calc(100vw - 24px));
+    max-height: min(88vh, 900px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: auto;
+    transform: translate(-50%, -50%);
+    animation: calcCardLift 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .mate-app--calc-focus .hero-grid .calc-card.card,
+  .mate-app--calc-focus .hero-module .calc-card {
+    background: #fff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-color: rgba(18, 32, 35, 0.08);
+    box-shadow:
+      0 32px 80px rgba(18, 32, 35, 0.18),
+      0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+
+  @keyframes calcFocusIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes calcCardLift {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -46%) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
   }
 }
 
