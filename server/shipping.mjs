@@ -30,6 +30,7 @@ import {
   computeOrderExtras,
   applyVat,
   roundAmount,
+  convertToSettingsCurrency,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
 import { countNovaPostCoverage, fetchNovaPostDivisions, mapDivisionToPoint } from './novapost/divisions.mjs';
@@ -502,15 +503,39 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           monthlyShipments,
         });
         if (mate.amount != null) {
+          // Same max(matrix net, Nova Post net) as calculate-final (reconcile),
+          // so the price doesn't rise when the user reaches steps 7–8.
+          const matrixNet = Number(mate.breakdown?.beforeVat ?? mate.breakdown?.cost) || 0;
+          let chosenNet = matrixNet;
+          let source = 'mate-matrix';
+          if (npSource === 'novapost' && npTotal != null && Number.isFinite(Number(npTotal))) {
+            const npNet = Math.round(
+              convertToSettingsCurrency(Number(npTotal), npCurrency, settings) * 100,
+            ) / 100;
+            if (npNet > chosenNet) {
+              chosenNet = npNet;
+              source = 'novapost';
+            }
+          }
+          const afterVat = applyVat(chosenNet, settings);
+          const total = roundAmount(afterVat, settings);
           currency = { code: mate.currency, symbol: mate.currency };
           quotes[key] = withWelcomeDiscount({
             ...(typeof raw === 'object' && raw ? raw : {}),
-            total: mate.amount,
+            total,
             currency: mate.currency,
-            priceSource: 'mate-matrix',
-            breakdown: mate.breakdown,
+            priceSource: source,
+            breakdown: {
+              ...mate.breakdown,
+              matrixNet: Math.round(matrixNet * 100) / 100,
+              beforeVat: Math.round(chosenNet * 100) / 100,
+              afterVat: Math.round(afterVat * 100) / 100,
+              total,
+              source,
+            },
           });
-          usedMate += 1;
+          if (source === 'novapost') usedNova += 1;
+          else usedMate += 1;
         } else if (npTotal != null && Number.isFinite(Number(npTotal))) {
           const finalized = finalizeExternalQuote(
             npTotal,
