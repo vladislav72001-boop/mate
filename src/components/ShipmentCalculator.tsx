@@ -696,11 +696,16 @@ export function CalcForm({
       setCurrency(code);
 
       const updates: Partial<Record<ParcelKey, number>> = {};
+      let welcomePct: number | null = null;
       for (const key of keys) {
         const q = data.quotes[key];
         const base = typeof q === 'number' ? q : (q?.total ?? null);
         if (base != null) updates[key] = base;
+        if (typeof q === 'object' && q?.breakdown?.welcomeDiscountPercent) {
+          welcomePct = q.breakdown.welcomeDiscountPercent;
+        }
       }
+      setWelcomeDiscountPercent(welcomePct);
 
       if (Object.keys(updates).length) {
         setParcelQuotes((prev) => {

@@ -28,6 +28,8 @@ import {
   calculateMatePrice,
   finalizeExternalQuote,
   computeOrderExtras,
+  applyVat,
+  roundAmount,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
 import { countNovaPostCoverage, fetchNovaPostDivisions, mapDivisionToPoint } from './novapost/divisions.mjs';
@@ -424,10 +426,35 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       }
       const monthlyShipments = Number(req.body.monthlyShipments)
         || await resolveUserMonthlyShipments(req.userId);
+      const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(req.userId);
       const result = await calculateBatch({ fromCountry, toCountry, declaredValue, sizes });
       const mode = mapDeliveryMode(deliveryMode || 'locker');
       const settings = await getSettings();
       const preferNovaPost = String(process.env.PRICING_PREFER || 'mate').toLowerCase() === 'novapost';
+
+      // Same welcome discount as calculate-final (reconcile), so the price
+      // doesn't jump when the user reaches steps 7–8.
+      const withWelcomeDiscount = (quote) => {
+        const beforeVat = quote?.breakdown?.beforeVat;
+        if (!(welcomeDiscountPercent > 0) || beforeVat == null || !Number.isFinite(Number(beforeVat))) {
+          return quote;
+        }
+        const discounted = Number(beforeVat) * (1 - welcomeDiscountPercent / 100);
+        const afterVat = applyVat(discounted, settings);
+        const total = roundAmount(afterVat, settings);
+        return {
+          ...quote,
+          total,
+          breakdown: {
+            ...quote.breakdown,
+            welcomeDiscountPercent,
+            welcomeDiscountAmount: Math.round((Number(beforeVat) - discounted) * 100) / 100,
+            beforeVat: Math.round(discounted * 100) / 100,
+            afterVat: Math.round(afterVat * 100) / 100,
+            total,
+          },
+        };
+      };
 
       const quotes = { ...result.quotes };
       let currency = result.currency;
@@ -453,7 +480,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         if (canUseNp) {
           const finalized = finalizeExternalQuote(npTotal, npCurrency, settings, 'novapost');
           currency = { code: finalized.currency, symbol: finalized.currency };
-          quotes[key] = {
+          quotes[key] = withWelcomeDiscount({
             ...(typeof raw === 'object' && raw ? raw : {}),
             total: finalized.amount,
             currency: finalized.currency,
@@ -463,7 +490,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
               deliveryMode: mode,
               npServices: typeof raw === 'object' ? raw.breakdown : null,
             },
-          };
+          });
           usedNova += 1;
           continue;
         }
@@ -476,13 +503,13 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         });
         if (mate.amount != null) {
           currency = { code: mate.currency, symbol: mate.currency };
-          quotes[key] = {
+          quotes[key] = withWelcomeDiscount({
             ...(typeof raw === 'object' && raw ? raw : {}),
             total: mate.amount,
             currency: mate.currency,
             priceSource: 'mate-matrix',
             breakdown: mate.breakdown,
-          };
+          });
           usedMate += 1;
         } else if (npTotal != null && Number.isFinite(Number(npTotal))) {
           const finalized = finalizeExternalQuote(
@@ -492,13 +519,13 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             npSource === 'novapost' ? 'novapost' : 'estimate',
           );
           currency = { code: finalized.currency, symbol: finalized.currency };
-          quotes[key] = {
+          quotes[key] = withWelcomeDiscount({
             ...(typeof raw === 'object' && raw ? raw : {}),
             total: finalized.amount,
             currency: finalized.currency,
             priceSource: finalized.breakdown.source,
             breakdown: finalized.breakdown,
-          };
+          });
         }
       }
 
