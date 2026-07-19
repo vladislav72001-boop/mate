@@ -88,8 +88,8 @@ type ValueKey = 'under100' | 'mid' | 'high' | 'over';
 type SizeKey = 'envelope' | ParcelKey | 'custom';
 
 const PARCEL_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL', 'XXL'];
-/** Sizes shown on step 3 — only these need live NP quotes there. */
-const STEP3_QUOTE_KEYS: ParcelKey[] = ['S', 'M', 'L'];
+/** Live quotes for all selectable parcel sizes. */
+const STEP3_QUOTE_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL', 'XXL'];
 const STEP_SUMMARY_KEYS: Record<number, string[]> = {
   1: ['from'],
   2: ['from', 'cities'],
@@ -106,7 +106,17 @@ const TOTAL_STEPS = 9;
 
 const ENVELOPE_PRESET = { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.5 };
 
-const SIZE_OPTION_KEYS: SizeKey[] = ['envelope', 'S', 'M', 'L', 'custom'];
+/** Five parcel choices — same tiers as Nova Post pricing. */
+const SIZE_OPTION_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL', 'XXL'];
+
+const SIZE_ICONS: Record<ParcelKey, string> = {
+  S: '📦',
+  M: '📦',
+  L: '📦',
+  XL: '🗄️',
+  XXL: '🚚',
+};
+
 const CONTENT_KEYS: ContentKey[] = ['documents', 'clothing', 'shoes', 'cosmetics', 'electronics', 'gift', 'other'];
 const VALUE_KEYS: ValueKey[] = ['under100', 'mid', 'high', 'over'];
 const DELIVERY_MODE_KEYS: DeliveryMode[] = ['home', 'branch', 'locker'];
@@ -188,6 +198,15 @@ function sizeToApiKey(
     }
     return 'XXL';
   }
+  return sizeKey;
+}
+
+function normalizeSizeKey(
+  sizeKey: SizeKey,
+  custom?: { l: string; w: string; h: string; kg: string },
+): ParcelKey {
+  if (sizeKey === 'envelope') return 'S';
+  if (sizeKey === 'custom') return sizeToApiKey('custom', custom);
   return sizeKey;
 }
 
@@ -309,7 +328,9 @@ export function CalcForm({
   const [liveDestBranches, setLiveDestBranches] = useState<ShippingPoint[] | null>(null);
   const [pointsLoading, setPointsLoading] = useState(false);
 
-  const [sizeKey, setSizeKey] = useState<SizeKey>(saved?.sizeKey ?? 'M');
+  const [sizeKey, setSizeKey] = useState<ParcelKey>(() => (
+    normalizeSizeKey((saved?.sizeKey as SizeKey) ?? 'M', saved?.customSize)
+  ));
   const [customSize, setCustomSize] = useState(saved?.customSize ?? { l: '30', w: '20', h: '15', kg: '2' });
   const [contents, setContents] = useState<ContentKey>(saved?.contents ?? 'gift');
   const [contentsNote, setContentsNote] = useState(saved?.contentsNote ?? '');
@@ -1183,11 +1204,7 @@ export function CalcForm({
     label: t(`calc.value${key.charAt(0).toUpperCase()}${key.slice(1)}`),
   })), [t]);
 
-  const sizeLabel = sizeKey === 'custom'
-    ? t('calc.sizeCustomFmt', { l: customSize.l, w: customSize.w, h: customSize.h, kg: customSize.kg })
-    : sizeKey === 'envelope'
-      ? t('calc.sizeEnvelope')
-      : sizeKey;
+  const sizeLabel = sizeKey;
 
   const summaryRows: SummaryRow[] = useMemo(() => [
     { key: 'from', label: t('calc.summaryFrom'), value: formatRoute(PICKUP_COUNTRY, toCountry), onEdit: () => goTo(1) },
@@ -1231,10 +1248,7 @@ export function CalcForm({
       }
     }
     if (step === 4) {
-      if (sizeKey === 'custom') {
-        if (!customSize.l || !customSize.w || !customSize.h || !customSize.kg) return t('calc.valCustomSize');
-        if (Number(customSize.kg) > 20) return t('calc.valMaxWeight');
-      }
+      if (!SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
     }
     if (step === 5) {
       if (!contents) return t('calc.valSelectContents');
@@ -1478,21 +1492,22 @@ export function CalcForm({
     icon: DELIVERY_MODE_ICONS[key],
   })), [t]);
 
-  const sizeOptions = useMemo(() => {
-    const presetDesc = (key: ParcelKey) => {
+  const sizeOptions = useMemo(() => (
+    SIZE_OPTION_KEYS.map((key) => {
       const p = PARCEL_PRESETS[key];
-      return t('calc.sizePresetDesc', { l: p.lengthCm, w: p.widthCm, h: p.heightCm, kg: p.weightKg });
-    };
-    return SIZE_OPTION_KEYS.map((key) => {
-      if (key === 'envelope') {
-        return { key, label: t('calc.sizeEnvelope'), icon: '✉️', desc: t('calc.sizeEnvelopeDesc') };
-      }
-      if (key === 'custom') {
-        return { key, label: t('calc.sizeCustom'), icon: '📐', desc: t('calc.sizeCustomDesc') };
-      }
-      return { key, label: key, icon: '📦', desc: presetDesc(key) };
-    });
-  }, [t]);
+      return {
+        key,
+        label: key,
+        icon: SIZE_ICONS[key],
+        desc: t('calc.sizePresetDesc', {
+          l: p.lengthCm,
+          w: p.widthCm,
+          h: p.heightCm,
+          kg: p.weightKg,
+        }),
+      };
+    })
+  ), [t]);
 
   const contentOptions = useMemo(() => CONTENT_KEYS.map((key) => ({
     key,
@@ -1636,22 +1651,15 @@ export function CalcForm({
               <StepHeader step={4} title={stepMeta[4].title} subtitle={stepMeta[4].sub} />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
-                  const priceKey: ParcelKey | null = s.key === 'envelope'
-                    ? 'S'
-                    : s.key === 'custom'
-                      ? (sizeKey === 'custom' ? apiParcelKey : null)
-                      : s.key;
-                  const price = priceKey && PARCEL_KEYS.includes(priceKey)
-                    ? parcelQuotes[priceKey]
-                    : null;
+                  const price = parcelQuotes[s.key];
                   return (
                     <button
                       key={s.key}
                       type="button"
-                      className={`calc-form__size${sizeKey === s.key ? ' active' : ''}${s.key === 'custom' ? ' calc-form__size--wide' : ''}`}
+                      className={`calc-form__size${sizeKey === s.key ? ' active' : ''}`}
                       onClick={() => setSizeKey(s.key)}
                     >
-                      <span className="calc-form__size-icon">{s.icon}</span>
+                      <span className="calc-form__size-icon" aria-hidden>{s.icon}</span>
                       <b>{s.label}</b>
                       <span>{s.desc}</span>
                       {price != null && (
@@ -1663,86 +1671,6 @@ export function CalcForm({
                   );
                 })}
               </div>
-              {sizeKey === 'custom' && (
-                <div className="calc-custom-dims">
-                  <div className="calc-form__grid calc-form__grid--3">
-                    <div className="field-block">
-                      <label>{t('calc.lengthCm')}</label>
-                      <input
-                        inputMode="decimal"
-                        value={customSize.l}
-                        onChange={(e) => setCustomSize((p) => ({ ...p, l: e.target.value }))}
-                      />
-                    </div>
-                    <div className="field-block">
-                      <label>{t('calc.widthCm')}</label>
-                      <input
-                        inputMode="decimal"
-                        value={customSize.w}
-                        onChange={(e) => setCustomSize((p) => ({ ...p, w: e.target.value }))}
-                      />
-                    </div>
-                    <div className="field-block">
-                      <label>{t('calc.heightCm')}</label>
-                      <input
-                        inputMode="decimal"
-                        value={customSize.h}
-                        onChange={(e) => setCustomSize((p) => ({ ...p, h: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="calc-weight-stepper">
-                    <label className="calc-weight-stepper__label">{t('calc.weightKg')}</label>
-                    <div className="calc-weight-stepper__control">
-                      <button
-                        type="button"
-                        className="calc-weight-stepper__btn"
-                        aria-label={t('calc.decreaseWeight')}
-                        disabled={Number(customSize.kg) <= 0.1}
-                        onClick={() => setCustomSize((p) => ({
-                          ...p,
-                          kg: String(Math.max(0.1, Math.round((Number(p.kg) || 0.1) * 10 - 1) / 10)),
-                        }))}
-                      >
-                        −
-                      </button>
-                      <div className="calc-weight-stepper__value">
-                        <input
-                          className="calc-weight-stepper__input"
-                          inputMode="decimal"
-                          value={customSize.kg}
-                          aria-label={t('calc.weightKg')}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(',', '.').replace(/[^\d.]/g, '');
-                            setCustomSize((p) => ({ ...p, kg: raw }));
-                          }}
-                          onBlur={() => {
-                            let n = Number(customSize.kg);
-                            if (!Number.isFinite(n) || n < 0.1) n = 0.1;
-                            if (n > 20) n = 20;
-                            setCustomSize((p) => ({ ...p, kg: String(Math.round(n * 10) / 10) }));
-                          }}
-                        />
-                        <span>kg</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="calc-weight-stepper__btn"
-                        aria-label={t('calc.increaseWeight')}
-                        disabled={Number(customSize.kg) >= 20}
-                        onClick={() => setCustomSize((p) => ({
-                          ...p,
-                          kg: String(Math.min(20, Math.round((Number(p.kg) || 0) * 10 + 1) / 10)),
-                        }))}
-                      >
-                        +
-                      </button>
-                    </div>
-                    <p className="calc-weight-stepper__hint">{t('calc.weightHint')}</p>
-                  </div>
-                </div>
-              )}
               <label className="calc-form__check">
                 <input type="checkbox" checked={fragile} onChange={(e) => setFragile(e.target.checked)} />
                 <span>{t('calc.fragile', { fee: fragileFeeLabel })}</span>

@@ -1,5 +1,9 @@
 import { translateCountry, getRuntimeLocale } from '../i18n/translate';
 import type { Locale } from '../i18n/types';
+import {
+  getCountries,
+  getCountryCallingCode,
+} from 'libphonenumber-js';
 
 export type ParcelKey = 'S' | 'M' | 'L' | 'XL' | 'XXL';
 
@@ -48,32 +52,24 @@ export const PICKUP_TIMES = [
   '17:30-19:00',
 ];
 
-export const PHONE_PREFIXES = [
-  { dial: '+36', code: 'HU', label: 'Венгрия +36' },
-  { dial: '+48', code: 'PL', label: 'Польша +48' },
-  { dial: '+49', code: 'DE', label: 'Германия +49' },
-  { dial: '+420', code: 'CZ', label: 'Чехия +420' },
-  { dial: '+421', code: 'SK', label: 'Словакия +421' },
-  { dial: '+43', code: 'AT', label: 'Австрия +43' },
-  { dial: '+40', code: 'RO', label: 'Румыния +40' },
-  { dial: '+380', code: 'UA', label: 'Украина +380' },
-  { dial: '+370', code: 'LT', label: 'Литва +370' },
-  { dial: '+371', code: 'LV', label: 'Латвия +371' },
-  { dial: '+372', code: 'EE', label: 'Эстония +372' },
-  { dial: '+33', code: 'FR', label: 'Франция +33' },
-  { dial: '+34', code: 'ES', label: 'Испания +34' },
-  { dial: '+39', code: 'IT', label: 'Италия +39' },
-  { dial: '+31', code: 'NL', label: 'Нидерланды +31' },
-  { dial: '+32', code: 'BE', label: 'Бельгия +32' },
-  { dial: '+44', code: 'GB', label: 'Великобритания +44' },
-  { dial: '+373', code: 'MD', label: 'Молдова +373' },
-];
+/**
+ * Complete ISO country/region calling-code catalog from libphonenumber metadata.
+ * Calling codes are sorted numerically (+1, +7, +20, +27, +30...) like Apple's
+ * enrollment form. Regions sharing a calling code remain separate choices.
+ */
+export const PHONE_PREFIXES = getCountries()
+  .map((code) => ({
+    dial: `+${getCountryCallingCode(code)}`,
+    code,
+  }))
+  .sort((a, b) => {
+    const byDial = Number(a.dial.slice(1)) - Number(b.dial.slice(1));
+    return byDial || a.code.localeCompare(b.code);
+  });
 
-export const DIAL_BY_CC: Record<string, string> = {
-  HU: '+36', PL: '+48', DE: '+49', CZ: '+420', SK: '+421',
-  RO: '+40', UA: '+380', LT: '+370', LV: '+371', EE: '+372',
-  FR: '+33', ES: '+34', IT: '+39', NL: '+31', BE: '+32', GB: '+44', MD: '+373', AT: '+43',
-};
+export const DIAL_BY_CC: Record<string, string> = Object.fromEntries(
+  PHONE_PREFIXES.map(({ code, dial }) => [code, dial]),
+);
 
 export const FRAGILE_FEE_EUR = 1.98;
 export const INSURANCE_RATE = 0.01;
@@ -144,33 +140,19 @@ export function composePhone(dial: string, local: string) {
   return `+${cc}${digits}`;
 }
 
-const MAX_NATIONAL_DIGITS: Record<string, number> = {
-  HU: 9, DE: 11, PL: 9, CZ: 9, SK: 9, RO: 9, UA: 9,
-  FR: 9, ES: 9, IT: 10, GB: 10, NL: 9, BE: 9, LT: 8, LV: 8, EE: 8, MD: 8, AT: 10,
-};
-
-const DIAL_TO_COUNTRY: Record<string, string> = {
-  '+36': 'HU', '+48': 'PL', '+49': 'DE', '+420': 'CZ', '+421': 'SK',
-  '+43': 'AT', '+40': 'RO', '+380': 'UA', '+370': 'LT', '+371': 'LV',
-  '+372': 'EE', '+33': 'FR', '+34': 'ES', '+39': 'IT', '+31': 'NL',
-  '+32': 'BE', '+44': 'GB', '+373': 'MD',
-};
-
-export function countryCodeFromDial(dial: string): string {
+export function countryCodeFromDial(dial: string, preferredCountry?: string): string {
   const normalized = String(dial || '').trim();
   if (!normalized) return 'HU';
   const withPlus = normalized.startsWith('+') ? normalized : `+${normalized.replace(/\D/g, '')}`;
-  const sorted = Object.keys(DIAL_TO_COUNTRY).sort((a, b) => b.length - a.length);
-  for (const prefix of sorted) {
-    if (withPlus.startsWith(prefix)) return DIAL_TO_COUNTRY[prefix];
+  const preferred = String(preferredCountry || '').toUpperCase();
+  if (preferred && DIAL_BY_CC[preferred] === withPlus) {
+    return preferred;
   }
   const fromList = PHONE_PREFIXES.find((p) => p.dial === withPlus)?.code;
   return fromList || 'HU';
 }
 
 export function validatePhone(dial: string, local: string, countryCode: string, label: string): string | null {
-  const country = countryCodeFromDial(dial) || countryCode.toUpperCase();
-  const maxNational = MAX_NATIONAL_DIGITS[country] || 10;
   const cc = dial.replace('+', '');
 
   let digits = local.replace(/[\s\u00A0\-().]/g, '').replace(/^0+/, '');
@@ -180,8 +162,9 @@ export function validatePhone(dial: string, local: string, countryCode: string, 
 
   if (!digits) return `${label}: укажите номер телефона`;
   if (digits.length < 6) return `${label}: слишком короткий номер`;
-  if (digits.length > maxNational) {
-    return `${label}: слишком много цифр для ${country} (макс. ${maxNational} без кода ${dial})`;
+  // E.164 allows at most 15 digits including the country calling code.
+  if ((cc + digits).length > 15) {
+    return `${label}: слишком много цифр (максимум 15 вместе с кодом страны)`;
   }
   return null;
 }
@@ -204,5 +187,5 @@ export function validatePersonName(name: string, label: string): string | null {
 }
 
 export function countryFromDial(dial: string) {
-  return DIAL_TO_COUNTRY[dial] || 'HU';
+  return countryCodeFromDial(dial);
 }

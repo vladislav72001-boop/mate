@@ -1,5 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { countryLabel, countryCodeFromDial, PHONE_PREFIXES } from '../../constants/shipping';
+import {
+  countryLabel,
+  countryCodeFromDial,
+  DIAL_BY_CC,
+  PHONE_PREFIXES,
+} from '../../constants/shipping';
 import { useI18n } from '../../i18n/context';
 import { CalcOptionPicker } from './CalcOptionPicker';
 import { CountryFlag } from './CountryFlag';
@@ -40,7 +45,32 @@ export function PhoneDialField({
   const [query, setQuery] = useState('');
   const known = PHONE_PREFIXES.some((p) => p.dial === dial);
   const selectedDial = known ? dial : PHONE_PREFIXES.find((p) => p.code === defaultCountry)?.dial || '+36';
-  const flagCode = countryCodeFromDial(selectedDial) || defaultCountry;
+  const [selectedCountry, setSelectedCountry] = useState(
+    () => countryCodeFromDial(selectedDial, defaultCountry),
+  );
+  const flagCode = selectedCountry || countryCodeFromDial(selectedDial, defaultCountry);
+
+  const displayNames = useMemo(() => {
+    try {
+      return new Intl.DisplayNames([locale], { type: 'region' });
+    } catch {
+      return null;
+    }
+  }, [locale]);
+
+  const regionLabel = (code: string) => (
+    displayNames?.of(code) || countryLabel(code, locale) || code
+  );
+
+  useEffect(() => {
+    const preferred = String(defaultCountry || '').toUpperCase();
+    setSelectedCountry((current) => {
+      if (DIAL_BY_CC[preferred] === selectedDial) return preferred;
+      // Keep the exact region selected by the user for shared codes (+1, +7, +44...).
+      if (DIAL_BY_CC[current] === selectedDial) return current;
+      return countryCodeFromDial(selectedDial, preferred);
+    });
+  }, [defaultCountry, selectedDial]);
 
   useEffect(() => {
     if (!open) {
@@ -55,7 +85,7 @@ export function PhoneDialField({
     const q = fold(query);
     if (!q) return PHONE_PREFIXES;
     return PHONE_PREFIXES.filter((p) => {
-      const label = fold(countryLabel(p.code, locale));
+      const label = fold(regionLabel(p.code));
       const dialDigits = p.dial.replace(/\D/g, '');
       const qDigits = q.replace(/\D/g, '');
       return (
@@ -65,10 +95,11 @@ export function PhoneDialField({
         || (qDigits.length > 0 && dialDigits.includes(qDigits))
       );
     });
-  }, [query, locale]);
+  }, [query, displayNames, locale]);
 
-  const pick = (nextDial: string) => {
-    onDialChange(nextDial);
+  const pick = (next: (typeof PHONE_PREFIXES)[number]) => {
+    setSelectedCountry(next.code);
+    onDialChange(next.dial);
     setOpen(false);
     setQuery('');
   };
@@ -88,7 +119,7 @@ export function PhoneDialField({
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          if (filtered[0]) pick(filtered[0].dial);
+          if (filtered[0]) pick(filtered[0]);
         }
       }}
     />
@@ -127,21 +158,21 @@ export function PhoneDialField({
           </li>
         ) : (
           filtered.map((p) => {
-            const active = p.dial === selectedDial;
+            const active = p.code === flagCode;
             return (
-              <li key={p.dial} role="presentation">
+              <li key={p.code} role="presentation">
                 <button
                   type="button"
                   role="option"
                   aria-selected={active}
                   className={`calc-option-list__item${active ? ' is-active' : ''}`}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(p.dial)}
+                  onClick={() => pick(p)}
                 >
                   <CountryFlag code={p.code} size={20} />
                   <span className="calc-option-list__text calc-phone-dial__option">
                     <b>{p.dial}</b>
-                    <em>{countryLabel(p.code, locale)}</em>
+                    <em>{regionLabel(p.code)}</em>
                   </span>
                   {active && <span className="calc-option-list__check" aria-hidden>✓</span>}
                 </button>
