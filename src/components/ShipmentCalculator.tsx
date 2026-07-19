@@ -305,6 +305,8 @@ export function CalcForm({
   const [coverageError, setCoverageError] = useState<string | null>(null);
   const [livePickupLockers, setLivePickupLockers] = useState<ShippingPoint[] | null>(null);
   const [liveDestLockers, setLiveDestLockers] = useState<ShippingPoint[] | null>(null);
+  const [livePickupBranches, setLivePickupBranches] = useState<ShippingPoint[] | null>(null);
+  const [liveDestBranches, setLiveDestBranches] = useState<ShippingPoint[] | null>(null);
   const [pointsLoading, setPointsLoading] = useState(false);
 
   const [sizeKey, setSizeKey] = useState<SizeKey>(saved?.sizeKey ?? 'M');
@@ -810,18 +812,18 @@ export function CalcForm({
     if (livePickupLockers) return livePickupLockers as typeof PICKUP_LOCKERS;
     return filterPointsByCity(PICKUP_LOCKERS, pickupCity, PICKUP_COUNTRY);
   }, [livePickupLockers, pickupCity]);
-  const pickupBranchesForCity = useMemo(
-    () => filterPointsByCity(PICKUP_BRANCHES, pickupCity, PICKUP_COUNTRY),
-    [pickupCity],
-  );
+  const pickupBranchesForCity = useMemo(() => {
+    if (livePickupBranches?.length) return livePickupBranches as typeof PICKUP_BRANCHES;
+    return filterPointsByCity(PICKUP_BRANCHES, pickupCity, PICKUP_COUNTRY);
+  }, [livePickupBranches, pickupCity]);
   const destLockersForCity = useMemo(() => {
     if (liveDestLockers) return liveDestLockers as typeof DEST_LOCKERS;
     return filterPointsByCity(DEST_LOCKERS, destCity, toCountry);
   }, [liveDestLockers, destCity, toCountry]);
-  const destBranchesForCity = useMemo(
-    () => filterPointsByCity(DEST_BRANCHES, destCity, toCountry),
-    [destCity, toCountry],
-  );
+  const destBranchesForCity = useMemo(() => {
+    if (liveDestBranches?.length) return liveDestBranches as typeof DEST_BRANCHES;
+    return filterPointsByCity(DEST_BRANCHES, destCity, toCountry);
+  }, [liveDestBranches, destCity, toCountry]);
 
   const loadCoverage = useCallback(async () => {
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return null;
@@ -992,7 +994,7 @@ export function CalcForm({
     changeDestCity,
   ]);
 
-  // Load live locker points when entering steps 7/8
+  // Load live locker/branch points when entering steps 7/8
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -1015,6 +1017,22 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
+      if (step === 7 && pickupType === 'branch' && pickupCity.trim()) {
+        setPointsLoading(true);
+        try {
+          const res = await fetchShippingPoints({
+            country: PICKUP_COUNTRY,
+            city: pickupCity.trim(),
+            kind: 'branch',
+            side: 'pickup',
+          });
+          if (!cancelled) setLivePickupBranches(res.points);
+        } catch {
+          if (!cancelled) setLivePickupBranches(null);
+        } finally {
+          if (!cancelled) setPointsLoading(false);
+        }
+      }
       if (step === 8 && deliveryType === 'locker' && destCity.trim() && destAddressReady) {
         setPointsLoading(true);
         try {
@@ -1029,6 +1047,22 @@ export function CalcForm({
           }
         } catch {
           if (!cancelled) setLiveDestLockers(null);
+        } finally {
+          if (!cancelled) setPointsLoading(false);
+        }
+      }
+      if (step === 8 && deliveryType === 'branch' && destCity.trim() && destAddressReady) {
+        setPointsLoading(true);
+        try {
+          const res = await fetchShippingPoints({
+            country: toCountry,
+            city: destCity.trim(),
+            kind: 'branch',
+            side: 'delivery',
+          });
+          if (!cancelled) setLiveDestBranches(res.points);
+        } catch {
+          if (!cancelled) setLiveDestBranches(null);
         } finally {
           if (!cancelled) setPointsLoading(false);
         }
@@ -2045,6 +2079,7 @@ export function CalcForm({
                   {destAddressReady ? (
                     <>
                       <p className="calc-form__group-label">{t('calc.pickupBranchesLabel')}</p>
+                      {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
                       <LockerPicker
                         lockers={destBranchesForCity}
                         selected={destBranch}

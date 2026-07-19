@@ -43,16 +43,16 @@ function buildSideCoverage({ country, city, npCounts, useFallback }) {
   const fallbackLockers = filterCatalogPoints(FALLBACK_LOCKERS, country, city);
 
   let lockerCount = (npCounts?.postomat || 0) + (npCounts?.pudo || 0);
-  let branchCount = mateBranches.length;
+  // Branch mode = Mate branches + live Nova Post branch offices (PostBranch).
+  let branchCount = mateBranches.length + (npCounts?.postBranch || 0);
   let source = npCounts?.source || 'none';
 
   if (useFallback || source === 'mock' || source === 'error') {
     lockerCount = Math.max(lockerCount, fallbackLockers.length);
+    branchCount = Math.max(branchCount, mateBranches.length);
     source = source === 'novapost' ? source : 'fallback';
   }
 
-  // NP PostBranch is partner branch network — count toward branch only if no Mate branch,
-  // but UI label is «Наш филиал» → Mate only. Keep NP PostBranch out of branch mode.
   return {
     home: { available: true, count: null },
     locker: { available: lockerCount > 0, count: lockerCount },
@@ -284,12 +284,51 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         return res.status(400).json({ error: 'kind: locker или branch' });
       }
 
+      const matchesCity = (it) => {
+        const q = city.toLowerCase();
+        const settlement = String(it?.settlement?.name || '').toLowerCase();
+        return !q
+          || settlement === q
+          || settlement.includes(q)
+          || q.includes(settlement);
+      };
+
+      const dedupeById = (list) => {
+        const seen = new Set();
+        return list.filter((p) => {
+          if (seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        });
+      };
+
       if (kind === 'branch') {
+        // branch = Mate branches + live Nova Post branch offices (PostBranch)
         const mate = filterCatalogPoints(MATE_BRANCHES, country, city);
+        let points = [...mate];
+        let source = 'mate';
+
+        if (!isNovaPostMock()) {
+          const branches = await fetchNovaPostDivisions({
+            countryCode: country,
+            city,
+            categories: ['PostBranch'],
+            limit: 40,
+          });
+          if (branches.source === 'novapost') {
+            const npPoints = branches.items
+              .filter(matchesCity)
+              .map(mapDivisionToPoint)
+              .filter((p) => p.lat && p.lng);
+            points = dedupeById([...mate, ...npPoints]);
+            source = npPoints.length ? 'novapost' : 'mate';
+          }
+        }
+
         return res.json({
           data: {
-            points: mate,
-            source: 'mate',
+            points: points.slice(0, 60),
+            source,
             kind,
             side,
           },
@@ -305,24 +344,11 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           fetchNovaPostDivisions({ countryCode: country, city, categories: ['PUDO'], limit: 40 }),
         ]);
         const mapped = [...postomats.items, ...pudos.items]
-          .filter((it) => {
-            const q = city.toLowerCase();
-            const settlement = String(it?.settlement?.name || '').toLowerCase();
-            return !q
-              || settlement === q
-              || settlement.includes(q)
-              || q.includes(settlement);
-          })
+          .filter(matchesCity)
           .map(mapDivisionToPoint)
           .filter((p) => p.lat && p.lng);
 
-        // de-dupe by id
-        const seen = new Set();
-        points = mapped.filter((p) => {
-          if (seen.has(p.id)) return false;
-          seen.add(p.id);
-          return true;
-        });
+        points = dedupeById(mapped);
 
         if (postomats.source === 'error' && pudos.source === 'error') {
           source = 'fallback';
