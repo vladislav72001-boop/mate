@@ -17,6 +17,7 @@ import {
   type AddressSuggestion,
   type CoverageSide,
   type QuoteSettings,
+  type QuoteLocation,
   type ShippingOrder,
   type ShippingPoint,
 } from '../api/shipping';
@@ -94,11 +95,11 @@ const STEP_SUMMARY_KEYS: Record<number, string[]> = {
   1: ['from'],
   2: ['from', 'cities'],
   3: ['from', 'cities', 'type'],
-  4: ['from', 'cities', 'type', 'size'],
-  5: ['from', 'cities', 'type', 'size', 'contents'],
-  6: ['from', 'cities', 'type', 'size', 'contents', 'value', 'pays'],
-  7: ['from', 'cities', 'type', 'size', 'contents', 'value', 'pays', 'sender', 'when'],
-  8: ['from', 'cities', 'type', 'size', 'contents', 'value', 'pays', 'sender', 'recipient', 'when'],
+  4: ['from', 'cities', 'type'],
+  5: ['from', 'cities', 'type', 'sender', 'when'],
+  6: ['from', 'cities', 'type', 'sender', 'recipient', 'when', 'size'],
+  7: ['from', 'cities', 'type', 'sender', 'recipient', 'when', 'size', 'contents'],
+  8: ['from', 'cities', 'type', 'sender', 'recipient', 'when', 'size', 'contents', 'value', 'pays'],
   9: ['from', 'cities', 'type', 'size', 'contents', 'value', 'pays', 'sender', 'recipient', 'when'],
 };
 
@@ -118,6 +119,30 @@ const SIZE_ICONS: Record<ParcelKey, string> = {
 };
 
 const CONTENT_KEYS: ContentKey[] = ['documents', 'clothing', 'shoes', 'cosmetics', 'electronics', 'gift', 'other'];
+
+function addressQuoteLocation(
+  countryCode: string,
+  city: string,
+  streetWithBuilding: string,
+  postCode: string,
+): QuoteLocation | undefined {
+  const value = streetWithBuilding.trim();
+  const match = value.match(/^(.*?)[,\s]+(\d+[a-zA-Z/-]*)$/u);
+  const street = match?.[1]?.trim() || '';
+  const building = match?.[2]?.trim() || '';
+  if (!city.trim() || !street || !building || !postCode.trim()) return undefined;
+  return {
+    kind: 'address',
+    countryCode,
+    addressParts: { city: city.trim(), street, building, postCode: postCode.trim() },
+  };
+}
+
+function divisionQuoteLocation(countryCode: string, id: string): QuoteLocation | undefined {
+  const divisionId = Number(id);
+  if (!Number.isInteger(divisionId) || divisionId <= 0) return undefined;
+  return { kind: 'division', countryCode, divisionId };
+}
 const VALUE_KEYS: ValueKey[] = ['under100', 'mid', 'high', 'over'];
 const DELIVERY_MODE_KEYS: DeliveryMode[] = ['home', 'branch', 'locker'];
 
@@ -649,8 +674,31 @@ export function CalcForm({
   const apiParcelKey = sizeToApiKey(sizeKey, customSize);
   const declaredValue = VALUE_TO_EUR[contentValue];
   const quoteDeliveryMode = deliveryModeToApi(deliveryType);
+  const pickupQuoteLocation = useMemo(() => (
+    pickupType === 'home'
+      ? addressQuoteLocation(PICKUP_COUNTRY, pickupCity, pickupStreet, pickupPostal)
+      : divisionQuoteLocation(PICKUP_COUNTRY, pickupType === 'locker' ? pickupLocker : pickupBranch)
+  ), [pickupType, pickupCity, pickupStreet, pickupPostal, pickupLocker, pickupBranch]);
+  const deliveryQuoteLocation = useMemo(() => (
+    deliveryType === 'home'
+      ? addressQuoteLocation(toCountry, destCity, destStreet, destPostal)
+      : divisionQuoteLocation(toCountry, deliveryType === 'locker' ? destLocker : destBranch)
+  ), [deliveryType, toCountry, destCity, destStreet, destPostal, destLocker, destBranch]);
+  const quoteLocationsReady = Boolean(pickupQuoteLocation && deliveryQuoteLocation);
+  // MATE's Nova Post contract is the carrier payer; the UI payer choice is
+  // handled between customer and recipient and must not change NP contract billing.
+  const quotePayerType = 'Sender' as const;
 
-  const routeCacheKey = `${PICKUP_COUNTRY}:${toCountry}:${declaredValue}:${quoteDeliveryMode}`;
+  const routeCacheKey = [
+    PICKUP_COUNTRY,
+    toCountry,
+    declaredValue,
+    pickupType,
+    deliveryType,
+    quotePayerType,
+    JSON.stringify(pickupQuoteLocation || null),
+    JSON.stringify(deliveryQuoteLocation || null),
+  ].join(':');
 
   const applyCachedRouteQuotes = useCallback(() => {
     const cached = routeQuoteCache.current.get(routeCacheKey);
@@ -688,6 +736,9 @@ export function CalcForm({
         toCountry,
         declaredValue,
         deliveryMode: quoteDeliveryMode,
+        pickupLocation: pickupQuoteLocation,
+        deliveryLocation: deliveryQuoteLocation,
+        payerType: quotePayerType,
         sizes,
       });
       if (reqId !== quoteRequestId.current) return;
@@ -725,23 +776,31 @@ export function CalcForm({
       }
     } catch {
       if (reqId !== quoteRequestId.current) return;
-      applyEstimateFallback(keys);
-      setQuoteWarning(t('calc.quoteEst'));
+      if (quoteLocationsReady) {
+        setQuoteWarning(t('calc.quoteNpFail'));
+      } else {
+        applyEstimateFallback(keys);
+        setQuoteWarning(t('calc.quoteEst'));
+      }
     } finally {
       quoteInFlight.current = false;
       if (reqId === quoteRequestId.current) setQuoteRefreshing(false);
     }
-  }, [toCountry, declaredValue, routeCacheKey, quoteDeliveryMode, applyEstimateFallback, t]);
+  }, [
+    toCountry, declaredValue, routeCacheKey, quoteDeliveryMode,
+    pickupQuoteLocation, deliveryQuoteLocation, quotePayerType,
+    applyEstimateFallback, quoteLocationsReady, t,
+  ]);
 
   useEffect(() => {
-    if (step < 3 || step >= 7) return;
+    if (!quoteLocationsReady || step < 5 || step >= 9) return;
 
     // Prefer cache / API — do not flash crude EUR×HUF estimates (e.g. 13 200 → 8 610).
     if (applyCachedRouteQuotes()) return;
 
     if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
-    if (step <= 3) {
-      quoteDebounce.current = setTimeout(() => { void fetchQuoteKeys(STEP3_QUOTE_KEYS); }, step === 3 ? 80 : 120);
+    if (step <= 6) {
+      quoteDebounce.current = setTimeout(() => { void fetchQuoteKeys(STEP3_QUOTE_KEYS); }, 80);
     } else {
       const preset = sizeToPreset(sizeKey, customSize);
       quoteDebounce.current = setTimeout(() => {
@@ -753,15 +812,15 @@ export function CalcForm({
       if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
     };
   }, [
-    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode,
+    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quoteLocationsReady,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     fragile, insurance,
     applyCachedRouteQuotes, fetchQuoteKeys,
   ]);
 
-  // Steps 7–8: reconcile matrix net vs Nova Post, then VAT (final price before extras)
+  // Steps 8–9: reconcile exact endpoint quote after payer/value selection.
   useEffect(() => {
-    if (step !== 7 && step !== 8) return;
+    if ((step !== 8 && step !== 9) || !quoteLocationsReady) return;
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -774,6 +833,9 @@ export function CalcForm({
           toCountry,
           declaredValue,
           deliveryMode: quoteDeliveryMode,
+          pickupLocation: pickupQuoteLocation,
+          deliveryLocation: deliveryQuoteLocation,
+          payerType: quotePayerType,
           parcel: { boxSize: apiParcelKey, ...preset },
         });
         if (cancelled) return;
@@ -796,6 +858,7 @@ export function CalcForm({
     };
   }, [
     step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode,
+    pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, quoteLocationsReady,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     fetchQuoteKeys,
     t,
@@ -819,7 +882,7 @@ export function CalcForm({
       .filter((v): v is number => v != null);
     return values.length ? Math.min(...values) : null;
   }, [parcelQuotes]);
-  const priceIsMinimum = step <= 3;
+  const priceIsMinimum = step <= 5;
   const basePrice = priceIsMinimum ? minQuote : (parcelQuotes[apiParcelKey] ?? null);
 
   const extras = useMemo(() => {
@@ -971,7 +1034,7 @@ export function CalcForm({
       push('destCity', t('calc.destCity'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
     }
 
-    if (step === 7) {
+    if (step === 4) {
       push('pickupCity', t('calc.city'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
       push(
         'pickupAddress',
@@ -993,7 +1056,7 @@ export function CalcForm({
       }
     }
 
-    if (step === 8) {
+    if (step === 5) {
       push('destCity', t('calc.city'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
       push(
         'destAddress',
@@ -1029,11 +1092,11 @@ export function CalcForm({
     changeDestCity,
   ]);
 
-  // Load live locker/branch points when entering steps 7/8
+  // Load concrete pickup/delivery points immediately after mode selection.
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (step === 7 && pickupType === 'locker' && pickupCity.trim()) {
+      if (step === 4 && pickupType === 'locker' && pickupCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1052,7 +1115,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 7 && pickupType === 'branch' && pickupCity.trim()) {
+      if (step === 4 && pickupType === 'branch' && pickupCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1068,7 +1131,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 8 && deliveryType === 'locker' && destCity.trim() && destAddressReady) {
+      if (step === 5 && deliveryType === 'locker' && destCity.trim() && destAddressReady) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1086,7 +1149,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 8 && deliveryType === 'branch' && destCity.trim() && destAddressReady) {
+      if (step === 5 && deliveryType === 'branch' && destCity.trim() && destAddressReady) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1224,17 +1287,17 @@ export function CalcForm({
     { key: 'from', label: t('calc.summaryFrom'), value: formatRoute(PICKUP_COUNTRY, toCountry), onEdit: () => goTo(1) },
     { key: 'cities', label: t('calc.summaryCities'), value: [cityLabelForValue(PICKUP_COUNTRY, pickupCity, locale), cityLabelForValue(toCountry, destCity, locale)].filter(Boolean).join(' → ') || '—', onEdit: () => goTo(2) },
     { key: 'type', label: t('calc.summaryType'), value: formatDeliveryTypeLocalized(pickupType, deliveryType), onEdit: () => goTo(3) },
-    { key: 'size', label: t('calc.summarySize'), value: sizeLabel, onEdit: () => goTo(4) },
+    { key: 'size', label: t('calc.summarySize'), value: sizeLabel, onEdit: () => goTo(6) },
     {
       key: 'contents',
       label: t('calc.summaryContents'),
       value: contentLabel(contents, contentsNote),
-      onEdit: () => goTo(5),
+      onEdit: () => goTo(7),
     },
-    { key: 'value', label: t('calc.summaryValue'), value: valueOptions.find((v) => v.key === contentValue)?.label || '—', onEdit: () => goTo(6) },
-    { key: 'pays', label: t('calc.summaryPays'), value: payer === 'sender' ? t('calc.payerSender') : t('calc.payerReceiver'), onEdit: () => goTo(6) },
-    { key: 'sender', label: t('calc.summarySender'), value: senderName || pickupLocationObj?.provider || '—', onEdit: () => goTo(7) },
-    { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(8) },
+    { key: 'value', label: t('calc.summaryValue'), value: valueOptions.find((v) => v.key === contentValue)?.label || '—', onEdit: () => goTo(8) },
+    { key: 'pays', label: t('calc.summaryPays'), value: payer === 'sender' ? t('calc.payerSender') : t('calc.payerReceiver'), onEdit: () => goTo(8) },
+    { key: 'sender', label: t('calc.summarySender'), value: senderName || pickupLocationObj?.provider || '—', onEdit: () => goTo(4) },
+    { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(5) },
     { key: 'when', label: t('calc.summaryWhen'), value: pickupDate ? `${pickupDate}, ${pickupTime}` : '—' },
   ], [
     t, toCountry, pickupCity, destCity, pickupType, deliveryType, sizeLabel, contents, contentsNote, contentValue, payer,
@@ -1262,14 +1325,6 @@ export function CalcForm({
       }
     }
     if (step === 4) {
-      if (!SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
-    }
-    if (step === 5) {
-      if (!contents) return t('calc.valSelectContents');
-      if (contents === 'other' && !contentsNote.trim()) return t('calc.valDescribeContents');
-    }
-    if (step === 6 && (!contentValue || !payer)) return t('calc.valValuePayer');
-    if (step === 7) {
       const nameErr = validatePersonName(senderName, t('calc.fieldSenderName'));
       if (nameErr) return nameErr;
       const emailErr = validateEmail(senderEmail, t('calc.fieldSenderEmail'));
@@ -1286,8 +1341,11 @@ export function CalcForm({
       }
       if (pickupType === 'locker' && !pickupLocker) return t('calc.valSelectPickupLocker');
       if (pickupType === 'branch' && !pickupBranch) return t('calc.valSelectPickupBranch');
+      if (!pickupQuoteLocation) {
+        return pickupType === 'home' ? t('calc.valPickupAddress') : t('calc.valSelectPickupPointNp');
+      }
     }
-    if (step === 8) {
+    if (step === 5) {
       const firstErr = validatePersonName(receiverFirst, t('calc.fieldReceiverFirst'));
       const lastErr = validatePersonName(receiverLast, t('calc.fieldReceiverLast'));
       if (firstErr && lastErr) return t('calc.valReceiverName');
@@ -1300,7 +1358,16 @@ export function CalcForm({
       if ((deliveryType === 'locker' || deliveryType === 'branch') && !destAddressReady) return t('calc.valSelectAddressHint');
       if (deliveryType === 'locker' && !destLocker) return t('calc.valSelectDestLocker');
       if (deliveryType === 'branch' && !destBranch) return t('calc.valSelectDestBranch');
+      if (!deliveryQuoteLocation) {
+        return deliveryType === 'home' ? t('calc.valDeliveryAddress') : t('calc.valSelectDeliveryPointNp');
+      }
     }
+    if (step === 6 && !SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
+    if (step === 7) {
+      if (!contents) return t('calc.valSelectContents');
+      if (contents === 'other' && !contentsNote.trim()) return t('calc.valDescribeContents');
+    }
+    if (step === 8 && (!contentValue || !payer)) return t('calc.valValuePayer');
     if (step === 9) {
       if (!termsAccepted) return t('calc.valAcceptTerms');
       if (totalPrice == null) return t('calc.valWaitQuote');
@@ -1319,7 +1386,7 @@ export function CalcForm({
     senderName, senderEmail, senderDial, senderPhone, pickupStreet, pickupCity, pickupPostal, pickupLocker, pickupBranch,
     pickupNeedsAddressRefinement, pickupAddressReady,
     receiverFirst, receiverLast, receiverDial, receiverPhone, destStreet, destCity, destPostal, destLocker, destBranch,
-    destAddressReady, termsAccepted, totalPrice, coverage,
+    destAddressReady, termsAccepted, totalPrice, coverage, pickupQuoteLocation, deliveryQuoteLocation,
   ]);
 
   const handleNext = async () => {
@@ -1353,7 +1420,7 @@ export function CalcForm({
     const emailErr = validateEmail(payEmail, t('calc.fieldSenderEmail'));
     if (emailErr) {
       setError(emailErr);
-      goTo(7);
+      goTo(4);
       return;
     }
 
@@ -1412,6 +1479,9 @@ export function CalcForm({
           pickupMode: pickupType,
           deliveryMode: deliveryType,
           payer,
+          payerType: quotePayerType,
+          pickupLocation: pickupQuoteLocation,
+          deliveryLocation: deliveryQuoteLocation,
         },
       });
 
@@ -1470,7 +1540,7 @@ export function CalcForm({
 
   /* Mobile + desktop: hide «Итого» until cities step, then show it above «Далее» */
   const showSummary = step >= 2;
-  const summaryCompact = step === 4;
+  const summaryCompact = step === 6;
   const navAfterLayout = inModal || showSummary;
 
   const summaryEl = showSummary ? (
@@ -1493,11 +1563,11 @@ export function CalcForm({
     1: { title: t('calc.step1Title'), sub: t('calc.step1Sub') },
     2: { title: t('calc.step2Title'), sub: t('calc.step2Sub') },
     3: { title: t('calc.step3Title'), sub: t('calc.step3Sub') },
-    4: { title: t('calc.step4Title'), sub: t('calc.step4Sub') },
-    5: { title: t('calc.step5Title'), sub: t('calc.step5Sub') },
-    6: { title: t('calc.step6Title'), sub: t('calc.step6Sub') },
-    7: { title: t('calc.step7Title'), sub: t('calc.step7Sub') },
-    8: { title: t('calc.step8Title'), sub: t('calc.step8Sub') },
+    4: { title: t('calc.step7Title'), sub: t('calc.step7Sub') },
+    5: { title: t('calc.step8Title'), sub: t('calc.step8Sub') },
+    6: { title: t('calc.step4Title'), sub: t('calc.step4Sub') },
+    7: { title: t('calc.step5Title'), sub: t('calc.step5Sub') },
+    8: { title: t('calc.step6Title'), sub: t('calc.step6Sub') },
     9: { title: t('calc.step9Title'), sub: t('calc.step9Sub') },
   }), [t]);
 
@@ -1661,9 +1731,9 @@ export function CalcForm({
             </>
           )}
 
-          {step === 4 && (
+          {step === 6 && (
             <>
-              <StepHeader step={4} title={stepMeta[4].title} subtitle={stepMeta[4].sub} />
+              <StepHeader step={6} title={stepMeta[6].title} subtitle={stepMeta[6].sub} />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
                   const price = parcelQuotes[s.key];
@@ -1694,7 +1764,7 @@ export function CalcForm({
                 <input type="checkbox" checked={insurance} onChange={(e) => setInsurance(e.target.checked)} />
                 <span>{t('calc.insurance', { percent: insurancePercentLabel, fee: insuranceFeeLabel })}</span>
               </label>
-              {showQuoteWait && step === 4 && (
+              {showQuoteWait && step === 6 && (
                 <p className="calc-form__hint calc-form__hint--inline calc-form__hint--wait" aria-live="polite">
                   <span className="calc-form__wait-dot" aria-hidden />
                   {t('calc.waiting')}
@@ -1703,9 +1773,9 @@ export function CalcForm({
             </>
           )}
 
-          {step === 5 && (
+          {step === 7 && (
             <>
-              <StepHeader step={5} title={stepMeta[5].title} subtitle={stepMeta[5].sub} />
+              <StepHeader step={7} title={stepMeta[7].title} subtitle={stepMeta[7].sub} />
               <div className="calc-form__options calc-form__options--2">
                 {contentOptions.map((c) => (
                   <button
@@ -1734,9 +1804,9 @@ export function CalcForm({
             </>
           )}
 
-          {step === 6 && (
+          {step === 8 && (
             <>
-              <StepHeader step={6} title={stepMeta[6].title} subtitle={stepMeta[6].sub} />
+              <StepHeader step={8} title={stepMeta[8].title} subtitle={stepMeta[8].sub} />
               <div className="calc-form__options calc-form__options--2">
                 {valueOptions.map((v) => (
                   <button
@@ -1769,11 +1839,11 @@ export function CalcForm({
             </>
           )}
 
-          {step === 7 && (
+          {step === 4 && (
             <>
               <StepHeader
-                step={7}
-                title={stepMeta[7].title}
+                step={4}
+                title={stepMeta[4].title}
                 subtitle={
                   pickupType === 'locker'
                     ? t('calc.senderSubLocker')
@@ -1926,11 +1996,11 @@ export function CalcForm({
             </>
           )}
 
-          {step === 8 && (
+          {step === 5 && (
             <>
               <StepHeader
-                step={8}
-                title={stepMeta[8].title}
+                step={5}
+                title={stepMeta[5].title}
                 subtitle={
                   deliveryType === 'locker'
                     ? t('calc.receiverSubLocker')
@@ -2134,7 +2204,7 @@ export function CalcForm({
         <div className="calc-form__main">
           <div className="calc-form__step-body">
             {stepContent}
-            {(step === 2 || step === 7 || step === 8) && <CalcDraftHints items={draftHintItems} />}
+            {(step === 2 || step === 4 || step === 5) && <CalcDraftHints items={draftHintItems} />}
           </div>
           {!navAfterLayout && nav()}
         </div>

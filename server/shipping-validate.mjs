@@ -56,6 +56,25 @@ function validateEmail(email, label) {
   return null;
 }
 
+function validateQuoteLocation(location, expectedCountry, label) {
+  if (!location || typeof location !== 'object') return `${label}: выберите точный адрес или точку Nova Post`;
+  const country = normalizeCountryCode(location.countryCode);
+  if (country !== normalizeCountryCode(expectedCountry)) return `${label}: страна точки не совпадает с маршрутом`;
+  if (location.kind === 'division') {
+    const divisionId = Number(location.divisionId);
+    return Number.isInteger(divisionId) && divisionId > 0
+      ? null
+      : `${label}: некорректный ID точки Nova Post`;
+  }
+  if (location.kind === 'address') {
+    const p = location.addressParts || {};
+    return p.city && p.street && p.postCode && p.building
+      ? null
+      : `${label}: укажите город, улицу, дом и индекс`;
+  }
+  return `${label}: неизвестный тип точки`;
+}
+
 export function validateCheckoutBody(body) {
   const errors = [];
   const sender = body.sender || {};
@@ -110,6 +129,18 @@ export function validateCheckoutBody(body) {
   if (!toCountry || toCountry.length !== 2) {
     errors.push('Укажите страну получателя');
   }
+  const pickupLocationErr = validateQuoteLocation(
+    tariff.pickupLocation,
+    tariff.fromCountry || sender.country || 'HU',
+    'Забор',
+  );
+  if (pickupLocationErr) errors.push(pickupLocationErr);
+  const deliveryLocationErr = validateQuoteLocation(
+    tariff.deliveryLocation,
+    tariff.toCountry || receiver.country,
+    'Доставка',
+  );
+  if (deliveryLocationErr) errors.push(deliveryLocationErr);
 
   return { ok: errors.length === 0, errors };
 }

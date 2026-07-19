@@ -70,6 +70,35 @@ function validateParcelInput(input) {
   }
 }
 
+function normalizeQuoteParty(location, fallbackCountryCode, fallbackDivisionId) {
+  const countryCode = normalizeCountryCode(location?.countryCode || fallbackCountryCode);
+  if (location?.kind === 'division') {
+    const divisionId = Number(location.divisionId);
+    if (!Number.isInteger(divisionId) || divisionId <= 0) {
+      throw new Error(`Invalid Nova Post division ID for ${countryCode}`);
+    }
+    return { countryCode, divisionId };
+  }
+  if (location?.kind === 'address') {
+    const source = location.addressParts || {};
+    const addressParts = {
+      city: String(source.city || '').trim(),
+      street: String(source.street || '').trim(),
+      postCode: String(source.postCode || '').trim(),
+      building: String(source.building || '').trim(),
+    };
+    if (!addressParts.city || !addressParts.street || !addressParts.postCode || !addressParts.building) {
+      throw new Error(`Incomplete courier address for ${countryCode}`);
+    }
+    for (const key of ['region', 'flat', 'block', 'note']) {
+      const value = String(source[key] || '').trim();
+      if (value) addressParts[key] = value;
+    }
+    return { countryCode, addressParts };
+  }
+  return { countryCode, divisionId: fallbackDivisionId };
+}
+
 async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDivisionId, toDivisionId, input) {
   const lengthCm = Math.max(1, Number(input.lengthCm) || 30);
   const widthCm = Math.max(1, Number(input.widthCm) || 20);
@@ -78,7 +107,7 @@ async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDiv
   const dims = normalizeParcelDimensionsMm(lengthCm, widthCm, heightCm);
 
   const payload = {
-    payerType: 'Sender',
+    payerType: input.payerType === 'Recipient' ? 'Recipient' : 'Sender',
     parcels: [{
       rowNumber: 1,
       cargoCategory: 'parcel',
@@ -90,15 +119,13 @@ async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDiv
       actualWeight: Math.max(1, Math.round(input.weightKg * 1000)),
     }],
     sender: {
-      countryCode: fromCountryCode,
-      divisionId: fromDivisionId,
+      ...normalizeQuoteParty(input.pickupLocation, fromCountryCode, fromDivisionId),
       name: 'Mate Sender',
       phone: '380991111111',
       email: 'sender@example.com',
     },
     recipient: {
-      countryCode: toCountryCode,
-      divisionId: toDivisionId,
+      ...normalizeQuoteParty(input.deliveryLocation, toCountryCode, toDivisionId),
       name: 'Mate Recipient',
       phone: '491111111111',
       email: 'recipient@example.com',
@@ -132,8 +159,27 @@ async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDiv
 const quoteCache = new Map();
 const QUOTE_CACHE_MS = Number(process.env.NOVAPOST_QUOTE_CACHE_MS ?? 15 * 60 * 1000);
 
+function quoteLocationKey(location) {
+  if (location?.kind === 'division') return `division:${location.countryCode}:${location.divisionId}`;
+  if (location?.kind === 'address') {
+    const p = location.addressParts || {};
+    return `address:${location.countryCode}:${p.city}:${p.street}:${p.building}:${p.postCode}`;
+  }
+  return 'default';
+}
+
 function quoteCacheKey(fromCode, toCode, declaredValue, input) {
-  return `${fromCode}:${toCode}:${declaredValue}:${input.boxSize}:${input.weightKg}:${input.lengthCm}x${input.widthCm}x${input.heightCm}`;
+  return [
+    fromCode,
+    toCode,
+    declaredValue,
+    input.boxSize,
+    input.weightKg,
+    `${input.lengthCm}x${input.widthCm}x${input.heightCm}`,
+    input.payerType || 'Sender',
+    quoteLocationKey(input.pickupLocation),
+    quoteLocationKey(input.deliveryLocation),
+  ].join(':');
 }
 
 function getCachedQuote(key) {
@@ -150,7 +196,15 @@ function setCachedQuote(key, value) {
   quoteCache.set(key, { at: Date.now(), value });
 }
 
-export async function calculateBatch({ fromCountry, toCountry, declaredValue, sizes }) {
+export async function calculateBatch({
+  fromCountry,
+  toCountry,
+  declaredValue,
+  sizes,
+  pickupLocation,
+  deliveryLocation,
+  payerType,
+}) {
   const fromCode = normalizeCountryCode(fromCountry);
   const toCode = normalizeCountryCode(toCountry);
   const inputs = (sizes || []).map((s) => ({
@@ -162,6 +216,9 @@ export async function calculateBatch({ fromCountry, toCountry, declaredValue, si
     heightCm: s.heightCm,
     declaredValue: declaredValue ?? 100,
     boxSize: s.boxSize,
+    pickupLocation,
+    deliveryLocation,
+    payerType,
   }));
 
   for (const input of inputs) validateParcelInput(input);

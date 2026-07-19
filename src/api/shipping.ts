@@ -74,11 +74,33 @@ export type PriceBreakdown = {
   log?: PriceLogStep[];
 };
 
+export type QuoteLocation =
+  | {
+      kind: 'division';
+      countryCode: string;
+      divisionId: number;
+    }
+  | {
+      kind: 'address';
+      countryCode: string;
+      addressParts: {
+        city: string;
+        street: string;
+        postCode: string;
+        building: string;
+        region?: string;
+        flat?: string;
+      };
+    };
+
 export async function calculateFinal(payload: {
   fromCountry: string;
   toCountry: string;
   declaredValue?: number;
   deliveryMode?: 'home' | 'branch' | 'locker' | 'address';
+  pickupLocation?: QuoteLocation;
+  deliveryLocation?: QuoteLocation;
+  payerType?: 'Sender' | 'Recipient';
   parcel: {
     boxSize: string;
     lengthCm: number;
@@ -107,6 +129,9 @@ export async function calculateBatch(payload: {
   toCountry: string;
   declaredValue?: number;
   deliveryMode?: 'home' | 'branch' | 'locker' | 'address';
+  pickupLocation?: QuoteLocation;
+  deliveryLocation?: QuoteLocation;
+  payerType?: 'Sender' | 'Recipient';
   sizes: Array<{ boxSize: string; lengthCm: number; widthCm: number; heightCm: number; weightKg: number }>;
 }) {
   const res = await shippingRequest<ApiData<{

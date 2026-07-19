@@ -4,7 +4,7 @@ export type CalcDraftValueKey = 'under100' | 'mid' | 'high' | 'over';
 export type CalcDraftSizeKey = 'envelope' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'custom';
 
 export type CalcDraft = {
-  v: 1;
+  v: 2;
   savedAt: number;
   step: number;
   toCountry: string;
@@ -50,7 +50,7 @@ export type CalcDraft = {
   termsAccepted: boolean;
 };
 
-const DRAFT_VERSION = 1 as const;
+const DRAFT_VERSION = 2 as const;
 const MAX_AGE_MS = 1000 * 60 * 60 * 24; // 24 h — guest session
 const MAX_CART_AGE_MS = 1000 * 60 * 60 * 24 * 14; // 14 d — logged-in cart
 

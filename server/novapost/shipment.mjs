@@ -83,6 +83,39 @@ function buildRecipient(body, divisionId) {
   };
 }
 
+function applyShipmentLocation(party, location) {
+  if (location?.kind === 'division') {
+    const divisionId = Number(location.divisionId);
+    if (!Number.isInteger(divisionId) || divisionId <= 0) {
+      throw new Error('Некорректный ID отделения Nova Post');
+    }
+    return { ...party, countryCode: normalizeCountryCode(location.countryCode), divisionId };
+  }
+  if (location?.kind === 'address') {
+    const source = location.addressParts || {};
+    const addressParts = {
+      city: String(source.city || '').trim(),
+      street: String(source.street || '').trim(),
+      postCode: String(source.postCode || '').trim(),
+      building: String(source.building || '').trim(),
+    };
+    if (!addressParts.city || !addressParts.street || !addressParts.postCode || !addressParts.building) {
+      throw new Error('Заполните полный адрес для курьерской доставки');
+    }
+    for (const key of ['region', 'flat', 'block', 'note']) {
+      const value = String(source[key] || '').trim();
+      if (value) addressParts[key] = value;
+    }
+    const { divisionId: _ignored, ...withoutDivision } = party;
+    return {
+      ...withoutDivision,
+      countryCode: normalizeCountryCode(location.countryCode),
+      addressParts,
+    };
+  }
+  return party;
+}
+
 function formatNovaPostShipmentError(err) {
   const raw = String(err?.message || err);
   if (raw.includes('validation.phone')) {
@@ -155,14 +188,20 @@ export async function createInternationalShipment(body, clientOrder) {
     getNovaPostDivisionId(jwt, recipientCountry),
   ]);
 
-  const sender = buildSender(body, senderDivisionId);
-  const recipient = buildRecipient(body, recipientDivisionId);
+  const sender = applyShipmentLocation(
+    buildSender(body, senderDivisionId),
+    body.tariff?.pickupLocation,
+  );
+  const recipient = applyShipmentLocation(
+    buildRecipient(body, recipientDivisionId),
+    body.tariff?.deliveryLocation,
+  );
 
   const payload = {
     status: 'ReadyToShip',
     clientOrder: clientOrder.slice(0, 50),
     note: `Mate B2C ${clientOrder}`.slice(0, 255),
-    payerType: 'Sender',
+    payerType: body.tariff?.payerType === 'Recipient' ? 'Recipient' : 'Sender',
     parcels: [{
       rowNumber: 1,
       cargoCategory: 'parcel',

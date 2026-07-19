@@ -137,6 +137,9 @@ export async function resolveCheckoutAmount(body, userId = null) {
     boxSize: parcel.boxSize,
     monthlyShipments: Number(body.monthlyShipments) || 1,
     welcomeDiscountPercent,
+    pickupLocation: tariff.pickupLocation,
+    deliveryLocation: tariff.deliveryLocation,
+    payerType: tariff.payerType,
   });
 
   if (reconciled.amount == null) {
@@ -421,14 +424,31 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
   router.post('/calculate-batch', optionalAuth, async (req, res) => {
     try {
-      const { fromCountry, toCountry, declaredValue, sizes, deliveryMode } = req.body;
+      const {
+        fromCountry,
+        toCountry,
+        declaredValue,
+        sizes,
+        deliveryMode,
+        pickupLocation,
+        deliveryLocation,
+        payerType,
+      } = req.body;
       if (!fromCountry || !toCountry || !Array.isArray(sizes) || !sizes.length) {
         return res.status(400).json({ error: 'Укажите страны и размеры посылки' });
       }
       const monthlyShipments = Number(req.body.monthlyShipments)
         || await resolveUserMonthlyShipments(req.userId);
       const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(req.userId);
-      const result = await calculateBatch({ fromCountry, toCountry, declaredValue, sizes });
+      const result = await calculateBatch({
+        fromCountry,
+        toCountry,
+        declaredValue,
+        sizes,
+        pickupLocation,
+        deliveryLocation,
+        payerType,
+      });
       const mode = mapDeliveryMode(deliveryMode || 'locker');
       const settings = await getSettings();
       const preferNovaPost = String(process.env.PRICING_PREFER || 'mate').toLowerCase() === 'novapost';
@@ -586,7 +606,16 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
   /** Final price: max(matrix net, Nova Post net) + VAT — for steps 7–8 and checkout */
   router.post('/calculate-final', optionalAuth, async (req, res) => {
     try {
-      const { fromCountry, toCountry, deliveryMode, declaredValue, parcel } = req.body;
+      const {
+        fromCountry,
+        toCountry,
+        deliveryMode,
+        declaredValue,
+        parcel,
+        pickupLocation,
+        deliveryLocation,
+        payerType,
+      } = req.body;
       if (!toCountry || !parcel) {
         return res.status(400).json({ error: 'Укажите направление и параметры посылки' });
       }
@@ -605,6 +634,9 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         boxSize: parcel.boxSize,
         monthlyShipments,
         welcomeDiscountPercent,
+        pickupLocation,
+        deliveryLocation,
+        payerType,
       });
       if (result.amount == null) {
         return res.status(422).json({ error: 'Не удалось рассчитать стоимость' });

@@ -23,6 +23,9 @@ export async function reconcileParcelPrice({
   boxSize,
   monthlyShipments = 1,
   welcomeDiscountPercent = 0,
+  pickupLocation,
+  deliveryLocation,
+  payerType = 'Sender',
 }) {
   const settings = await getSettings();
   const currency = String(settings.currency || 'HUF').toUpperCase();
@@ -55,6 +58,9 @@ export async function reconcileParcelPrice({
       heightCm,
       declaredValue,
       boxSize,
+      pickupLocation,
+      deliveryLocation,
+      payerType,
     });
     if (quote?.total != null && Number.isFinite(Number(quote.total))) {
       npCurrency = quote.currency?.code || 'EUR';
