@@ -811,7 +811,16 @@ export function CalcForm({
     prevRouteKey.current = routeCacheKey;
   }, [routeCacheKey]);
 
-  const basePrice = parcelQuotes[apiParcelKey] ?? null;
+  // Before the size step the user hasn't picked a parcel yet, so the summary
+  // shows the cheapest available size ("от …") instead of the default preset.
+  const minQuote = useMemo(() => {
+    const values = STEP3_QUOTE_KEYS
+      .map((key) => parcelQuotes[key])
+      .filter((v): v is number => v != null);
+    return values.length ? Math.min(...values) : null;
+  }, [parcelQuotes]);
+  const priceIsMinimum = step <= 3;
+  const basePrice = priceIsMinimum ? minQuote : (parcelQuotes[apiParcelKey] ?? null);
 
   const extras = useMemo(() => {
     if (basePrice == null || !quoteSettings) {
@@ -1471,6 +1480,7 @@ export function CalcForm({
       currency={currency}
       compact={summaryCompact}
       pricePending={quoteRefreshing && totalPrice == null}
+      priceIsMinimum={priceIsMinimum}
       welcomeDiscountPercent={welcomeDiscountPercent}
       deliveryAmount={basePrice}
       fragileFee={extras.fragileFee}

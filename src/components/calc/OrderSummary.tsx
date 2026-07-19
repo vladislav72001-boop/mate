@@ -16,6 +16,7 @@ type Props = {
   deliveryEstimate?: string;
   compact?: boolean;
   pricePending?: boolean;
+  priceIsMinimum?: boolean;
   welcomeDiscountPercent?: number | null;
   deliveryAmount?: number | null;
   fragileFee?: number;
@@ -30,6 +31,7 @@ export function OrderSummary({
   deliveryEstimate,
   compact = false,
   pricePending = false,
+  priceIsMinimum = false,
   welcomeDiscountPercent = null,
   deliveryAmount = null,
   fragileFee = 0,
@@ -95,7 +97,9 @@ export function OrderSummary({
 
       <div className="calc-summary__price">
         <strong className={pricePending ? 'calc-summary__price--pending' : undefined}>
-          {price != null ? formatMoney(price) : pricePending ? t('calc.summaryCalculating') : '—'}
+          {price != null
+            ? (priceIsMinimum ? t('calc.summaryPriceFrom', { price: formatMoney(price) }) : formatMoney(price))
+            : pricePending ? t('calc.summaryCalculating') : '—'}
         </strong>
         {welcomeDiscountPercent != null && welcomeDiscountPercent > 0 && (
           <span className="calc-summary__discount">{t('dash.welcomeDiscountTitle', { percent: welcomeDiscountPercent })}</span>
