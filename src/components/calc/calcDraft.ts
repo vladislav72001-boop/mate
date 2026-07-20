@@ -51,6 +51,8 @@ export type CalcDraft = {
 };
 
 const DRAFT_VERSION = 3 as const;
+/** Banner + persisted cart only after the user passes mode selection (step 4). */
+export const MIN_DRAFT_BANNER_STEP = 4;
 const MAX_AGE_MS = 1000 * 60 * 60 * 24; // 24 h — guest session
 const MAX_CART_AGE_MS = 1000 * 60 * 60 * 24 * 14; // 14 d — logged-in cart
 
@@ -200,9 +202,19 @@ export function loadCalcDraft(inModal: boolean, userId?: string | null): CalcDra
 export function loadActiveCalcDraft(userId?: string | null): CalcDraft | null {
   if (userId) {
     const cart = readFromStorage(localStorage, calcCartKey(userId), MAX_CART_AGE_MS);
+    if (cart && cart.step < MIN_DRAFT_BANNER_STEP) {
+      localStorage.removeItem(calcCartKey(userId));
+      return null;
+    }
     if (cart) return cart;
   }
-  return latestSessionDraft(true);
+  const session = latestSessionDraft(true);
+  if (session && session.step < MIN_DRAFT_BANNER_STEP) {
+    sessionStorage.removeItem(calcDraftKey(true));
+    sessionStorage.removeItem(calcDraftKey(false));
+    return null;
+  }
+  return session;
 }
 
 function readExistingDraft(inModal: boolean, userId?: string | null): CalcDraft | null {
@@ -239,6 +251,7 @@ export function saveCalcDraft(
   userId?: string | null,
 ) {
   try {
+    if (draft.step < MIN_DRAFT_BANNER_STEP) return;
     const payload = mergeDraftStep(draft, inModal, userId);
     if (userId) {
       writePayload(localStorage, calcCartKey(userId), payload);

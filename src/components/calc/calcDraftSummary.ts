@@ -1,20 +1,11 @@
 import type { CalcDraft } from './calcDraft';
+import { MIN_DRAFT_BANNER_STEP } from './calcDraft';
 import { PICKUP_COUNTRY, countryLabel } from '../../constants/shipping';
 
+export { MIN_DRAFT_BANNER_STEP };
+
 export function isMeaningfulCalcDraft(draft: CalcDraft): boolean {
-  // Step 1 is country only — auto-filled cities there should not surface as "unfinished shipment".
-  if (draft.step < 2) return false;
-  if (draft.step > 2) return true;
-  return Boolean(
-    draft.destCity.trim()
-    || draft.pickupCity.trim()
-    || draft.senderPhone.trim()
-    || draft.receiverPhone.trim()
-    || draft.pickupAddressQuery.trim()
-    || draft.pickupStreet.trim()
-    || draft.destAddressQuery.trim()
-    || draft.destStreet.trim(),
-  );
+  return draft.step >= MIN_DRAFT_BANNER_STEP;
 }
 
 export function calcDraftRouteLine(draft: CalcDraft, locale: string): string {

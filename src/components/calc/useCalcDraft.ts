@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
-import { saveCalcDraft, type CalcDraft } from './calcDraft';
+import { MIN_DRAFT_BANNER_STEP, saveCalcDraft, type CalcDraft } from './calcDraft';
 
 export function useCalcDraftPersistence(
   inModal: boolean,
@@ -23,7 +23,7 @@ export function useCalcDraftPersistence(
       return;
     }
     const data = snapshotRef.current();
-    if (data.step < 2) return;
+    if (data.step < MIN_DRAFT_BANNER_STEP) return;
     saveCalcDraft(inModalRef.current, data, userIdRef.current);
   }, [enabled]);
 
