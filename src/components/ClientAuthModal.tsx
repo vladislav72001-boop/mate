@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AuthUser } from '../api/auth';
-import { loginClient, registerClient, socialClient, googleAuthClient, updateClientProfile, storeSession } from '../api/auth';
+import { loginClient, registerClient, appleAuthClient, googleAuthClient, fetchAuthConfig, updateClientProfile, storeSession } from '../api/auth';
+import { signInWithApple } from '../lib/appleSignIn';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
 import { getPasswordStrength } from '../utils/password';
@@ -50,6 +51,21 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
   const [phonePrompt, setPhonePrompt] = useState(false);
   const [pendingToken, setPendingToken] = useState('');
   const [pendingUser, setPendingUser] = useState<AuthUser | null>(null);
+  const [pendingProvider, setPendingProvider] = useState<'google' | 'apple'>('google');
+  const [appleClientId, setAppleClientId] = useState('');
+  const [appleRedirectUri, setAppleRedirectUri] = useState('https://www.matedelivery.com/api/auth/apple/callback');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthConfig()
+      .then((cfg) => {
+        if (cancelled) return;
+        if (cfg.appleClientId) setAppleClientId(cfg.appleClientId);
+        if (cfg.appleRedirectUri) setAppleRedirectUri(cfg.appleRedirectUri);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const strength = getPasswordStrength(password);
   const strengthLabel =
@@ -134,6 +150,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
         storeSession(res.token);
         setPendingToken(res.token);
         setPendingUser(res.user);
+        setPendingProvider('google');
         onStepChange(0);
         setPhonePrompt(true);
         return;
@@ -166,9 +183,10 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
     try {
       const updated = await updateClientProfile({ phone: phone.trim() }, pendingToken);
       const user = updated.user;
+      const providerLabel = pendingProvider === 'apple' ? 'Apple' : 'Google';
       const notice = mode === 'register'
-        ? t('auth.emailSocialRegisterNotice', { provider: 'Google' })
-        : t('auth.emailSocialLoginNotice', { provider: 'Google' });
+        ? t('auth.emailSocialRegisterNotice', { provider: providerLabel })
+        : t('auth.emailSocialLoginNotice', { provider: providerLabel });
 
       setPhonePrompt(false);
       setPendingToken('');
@@ -197,19 +215,41 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
       return;
     }
 
+    if (!appleClientId) {
+      setError(t('auth.socialError'));
+      return;
+    }
+
     onStepChange(1);
     const started = Date.now();
 
     try {
-      const res = await socialClient(provider);
+      const apple = await signInWithApple({
+        clientId: appleClientId,
+        redirectUri: appleRedirectUri,
+      });
+      const res = await appleAuthClient({
+        idToken: apple.idToken,
+        name: apple.name,
+        givenName: apple.givenName,
+        familyName: apple.familyName,
+      });
       const providerLabel = 'Apple';
-      await finishAuth(
-        res,
-        mode === 'register'
-          ? t('auth.emailSocialRegisterNotice', { provider: providerLabel })
-          : t('auth.emailSocialLoginNotice', { provider: providerLabel }),
-        started,
-      );
+      const notice = mode === 'register'
+        ? t('auth.emailSocialRegisterNotice', { provider: providerLabel })
+        : t('auth.emailSocialLoginNotice', { provider: providerLabel });
+
+      if (res.user.needsPhone) {
+        storeSession(res.token);
+        setPendingToken(res.token);
+        setPendingUser(res.user);
+        setPendingProvider('apple');
+        onStepChange(0);
+        setPhonePrompt(true);
+        return;
+      }
+
+      await finishAuth(res, notice, started);
     } catch (err) {
       onStepChange(0);
       setError(localizeApiError(

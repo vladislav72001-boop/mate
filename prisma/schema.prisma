@@ -18,6 +18,7 @@ model User {
   phone                  String
   passwordHash           String
   googleId               String?   @unique
+  appleId                String?   @unique
   authProvider           String    @default("local")
   type                   String    @default("client")
   welcomeDiscountUsed    Boolean   @default(false)

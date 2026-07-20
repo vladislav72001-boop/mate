@@ -7,9 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createUser, findByEmail, findByGoogleId, findById, findByIdentifier, publicUser, updateUser } from './store.mjs';
+import { createUser, findByAppleId, findByEmail, findByGoogleId, findById, findByIdentifier, publicUser, updateUser } from './store.mjs';
 import { sendWelcomeEmail, sendLoginEmail } from './mail.mjs';
 import { verifyGoogleCredential, isGoogleAuthConfigured } from './google-auth.mjs';
+import { getAppleAuthPublicConfig, isAppleAuthConfigured, verifyAppleIdToken } from './apple-auth.mjs';
 import { createShippingRouter } from './shipping.mjs';
 import { createClientRouter } from './client-routes.mjs';
 import { createAdminRouter, ensureAdminUser } from './admin-routes.mjs';
@@ -25,6 +26,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // Avoid mixed-content warnings on HTTPS (e.g. accidental http:// subresources)
 if (String(process.env.APP_URL || '').startsWith('https://')) {
@@ -109,6 +111,7 @@ app.get('/api/auth/config', (_req, res) => {
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '',
     googleEnabled: isGoogleAuthConfigured(),
+    ...getAppleAuthPublicConfig(),
   });
 });
 
@@ -322,6 +325,124 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
+app.post('/api/auth/apple', async (req, res) => {
+  try {
+    if (!isAppleAuthConfigured()) {
+      return res.status(503).json({ error: 'Вход через Apple не настроен на сервере' });
+    }
+
+    const idToken = String(req.body.idToken || req.body.credential || '').trim();
+    if (!idToken) {
+      return res.status(400).json({ error: 'Не удалось получить данные Apple' });
+    }
+
+    const profile = await verifyAppleIdToken(idToken);
+    if (!profile) {
+      return res.status(401).json({ error: 'Не удалось подтвердить аккаунт Apple' });
+    }
+
+    const phone = String(req.body.phone || '').trim();
+    const givenName = String(req.body.givenName || req.body.firstName || '').trim();
+    const familyName = String(req.body.familyName || req.body.lastName || '').trim();
+    const fullName = String(req.body.name || '').trim()
+      || [givenName, familyName].filter(Boolean).join(' ');
+
+    let user = await findByAppleId(profile.sub);
+    let isNew = false;
+
+    if (!user) {
+      const email = profile.email;
+      if (!email) {
+        return res.status(400).json({
+          error: 'Apple не передал email. Разрешите доступ к email при входе или войдите по почте.',
+        });
+      }
+
+      const byEmail = await findByEmail(email);
+      if (byEmail) {
+        if (byEmail.appleId && byEmail.appleId !== profile.sub) {
+          return res.status(409).json({ error: 'Этот email уже привязан к другому Apple-аккаунту' });
+        }
+        user = await updateUser(byEmail.id, {
+          appleId: profile.sub,
+          authProvider: byEmail.authProvider === 'local' ? 'apple' : byEmail.authProvider,
+          name: byEmail.name || fullName || byEmail.email.split('@')[0],
+          ...(phone.length >= 6 ? { phone } : {}),
+        });
+      } else {
+        isNew = true;
+        const passwordHash = await bcrypt.hash(randomUUID(), 10);
+        const name = fullName || email.split('@')[0] || 'Apple user';
+        try {
+          user = await createUser({
+            name,
+            email,
+            phone: phone.length >= 6 ? phone : '',
+            passwordHash,
+            type: 'client',
+            appleId: profile.sub,
+            authProvider: 'apple',
+          });
+        } catch (err) {
+          if (err?.code === 'LOGIN_TAKEN') {
+            return res.status(409).json({ error: 'Такой логин уже занят' });
+          }
+          throw err;
+        }
+      }
+    } else {
+      const patch = {};
+      if (phone.length >= 6 && String(user.phone || '').trim().length < 6) {
+        patch.phone = phone;
+      }
+      if (fullName && (!user.name || user.name === user.email?.split('@')[0])) {
+        patch.name = fullName;
+      }
+      if (Object.keys(patch).length) {
+        user = await updateUser(user.id, patch);
+      }
+    }
+
+    if (!user) {
+      return res.status(500).json({ error: 'Не удалось выполнить вход через Apple' });
+    }
+
+    const pub = publicUser(user);
+    const token = signToken(user);
+
+    if (isNew) {
+      sendWelcomeEmail(pub).catch((err) => console.error('[mail] apple welcome failed:', err));
+    } else {
+      sendLoginEmail(pub, { ip: req.ip }).catch((err) => console.error('[mail] apple login failed:', err));
+    }
+
+    res.json({
+      token,
+      user: pub,
+      emailSent: true,
+      emailPreview: null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Не удалось выполнить вход через Apple' });
+  }
+});
+
+/** Apple may POST here for non-popup / form_post flows. */
+function appleCallbackPage() {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Apple</title></head>
+<body><p>Sign in with Apple — you can close this window.</p>
+<script>try{window.close();}catch(e){}</script></body></html>`;
+}
+
+app.get('/api/auth/apple/callback', (_req, res) => {
+  res.type('html').send(appleCallbackPage());
+});
+
+app.post('/api/auth/apple/callback', (_req, res) => {
+  res.type('html').send(appleCallbackPage());
+});
+
 app.post('/api/auth/social', async (req, res) => {
   try {
     const provider = req.body.provider;
@@ -333,42 +454,11 @@ app.post('/api/auth/social', async (req, res) => {
       return res.status(400).json({ error: 'Используйте кнопку Google в приложении' });
     }
 
-    // Real OAuth (Apple token exchange) is not configured yet.
-    // Never create a session without a verified account — that let users "in" without picking email.
-    const stubEnabled = process.env.SOCIAL_AUTH_STUB === 'true';
-    if (!stubEnabled) {
-      const label = provider === 'apple' ? 'Apple' : 'Google';
-      return res.status(501).json({
-        error: `Вход через ${label} пока недоступен. Войдите по email и паролю.`,
-      });
+    if (provider === 'apple') {
+      return res.status(400).json({ error: 'Используйте кнопку Apple в приложении' });
     }
 
-    const profile = provider === 'apple'
-      ? { email: 'apple.user@matedelivery.com', name: 'Пользователь Apple' }
-      : { email: 'google.user@matedelivery.com', name: 'Пользователь Google' };
-
-    let user = await findByEmail(profile.email);
-    if (!user) {
-      const passwordHash = await bcrypt.hash(randomUUID(), 10);
-      user = await createUser({
-        name: profile.name,
-        email: profile.email,
-        phone: '+36 705 549 233',
-        passwordHash,
-        type: 'client',
-      });
-      sendWelcomeEmail(publicUser(user)).catch((err) => console.error('[mail] social welcome failed:', err));
-    } else {
-      sendLoginEmail(publicUser(user), { ip: req.ip }).catch((err) => console.error('[mail] social login failed:', err));
-    }
-
-    const token = signToken(user);
-    res.json({
-      token,
-      user: publicUser(user),
-      emailSent: true,
-      emailPreview: null,
-    });
+    return res.status(400).json({ error: 'Неподдерживаемый способ входа' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Не удалось выполнить вход через соцсеть' });

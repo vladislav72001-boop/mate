@@ -92,6 +92,12 @@ export async function findByGoogleId(googleId) {
   return mapUser(await prisma.user.findUnique({ where: { googleId: id } }));
 }
 
+export async function findByAppleId(appleId) {
+  const id = String(appleId || '').trim();
+  if (!id) return null;
+  return mapUser(await prisma.user.findUnique({ where: { appleId: id } }));
+}
+
 /** Login by email, explicit login, email local-part, or exact name. */
 export async function findByIdentifier(raw) {
   const value = normalizeLogin(raw);
@@ -127,6 +133,7 @@ export async function createUser({
   type = 'client',
   login,
   googleId,
+  appleId,
   authProvider = 'local',
 }) {
   const normalizedEmail = email.trim().toLowerCase();
@@ -150,6 +157,7 @@ export async function createUser({
       phone: phone.trim(),
       passwordHash,
       googleId: googleId || null,
+      appleId: appleId || null,
       authProvider: authProvider || 'local',
       type,
       welcomeDiscountUsed: false,
@@ -166,6 +174,7 @@ export async function updateUser(id, patch) {
   if (patch.phone !== undefined) data.phone = patch.phone;
   if (patch.passwordHash !== undefined) data.passwordHash = patch.passwordHash;
   if (patch.googleId !== undefined) data.googleId = patch.googleId || null;
+  if (patch.appleId !== undefined) data.appleId = patch.appleId || null;
   if (patch.authProvider !== undefined) data.authProvider = patch.authProvider;
   if (patch.type !== undefined) data.type = patch.type;
   if (patch.welcomeDiscountUsed !== undefined) data.welcomeDiscountUsed = Boolean(patch.welcomeDiscountUsed);

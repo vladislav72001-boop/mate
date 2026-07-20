@@ -27,6 +27,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.1.0",
     "google-auth-library": "^10.9.0",
+    "jose": "^6.2.3",
     "jsonwebtoken": "^9.0.2",
     "leaflet": "^1.9.4",
     "libphonenumber-js": "^1.13.9",

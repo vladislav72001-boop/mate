@@ -6,7 +6,7 @@ export type AuthUser = {
   phone: string;
   type: 'client' | 'corp' | 'admin';
   createdAt: string;
-  authProvider?: 'local' | 'google';
+  authProvider?: 'local' | 'google' | 'apple';
   needsPhone?: boolean;
   welcomeDiscountAvailable?: boolean;
 };
@@ -99,6 +99,29 @@ export async function googleAuthClient(payload: { credential: string; phone?: st
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export async function appleAuthClient(payload: {
+  idToken: string;
+  phone?: string;
+  name?: string;
+  givenName?: string;
+  familyName?: string;
+}) {
+  return request<AuthResponse>('/api/auth/apple', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAuthConfig() {
+  return request<{
+    googleClientId: string;
+    googleEnabled: boolean;
+    appleClientId: string;
+    appleRedirectUri: string;
+    appleEnabled: boolean;
+  }>('/api/auth/config');
 }
 
 export async function updateClientProfile(

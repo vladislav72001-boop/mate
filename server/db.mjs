@@ -27,6 +27,7 @@ export function mapUser(row) {
     phone: row.phone,
     passwordHash: row.passwordHash,
     googleId: row.googleId || undefined,
+    appleId: row.appleId || undefined,
     authProvider: row.authProvider || 'local',
     type: row.type,
     createdAt: toIso(row.createdAt),
