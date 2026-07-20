@@ -161,6 +161,20 @@ async function fetchFirstDivisionLocation(
   return id ? divisionQuoteLocation(country, id) : undefined;
 }
 
+function placeholderAddressQuoteLocation(countryCode: string, city: string): QuoteLocation | undefined {
+  if (!city.trim()) return undefined;
+  return {
+    kind: 'address',
+    countryCode,
+    addressParts: {
+      city: city.trim(),
+      street: 'Main',
+      building: '1',
+      postCode: '00000',
+    },
+  };
+}
+
 async function resolvePreliminaryQuoteLocations(
   pickupType: DeliveryMode,
   deliveryType: DeliveryMode,
@@ -168,29 +182,31 @@ async function resolvePreliminaryQuoteLocations(
   destCity: string,
   toCountry: string,
 ): Promise<{ pickup?: QuoteLocation; delivery?: QuoteLocation }> {
-  const pickupKinds: Array<'locker' | 'branch'> = pickupType === 'home'
-    ? ['locker', 'branch']
-    : [pickupType === 'branch' ? 'branch' : 'locker'];
-  const destKinds: Array<'locker' | 'branch'> = deliveryType === 'home'
-    ? ['locker', 'branch']
-    : [deliveryType === 'branch' ? 'branch' : 'locker'];
-
   const firstInCity = async (
     country: string,
     city: string,
-    kinds: Array<'locker' | 'branch'>,
+    kind: 'locker' | 'branch',
+    side: 'pickup' | 'delivery',
+  ) => fetchFirstDivisionLocation(country, city, kind, side);
+
+  const resolveSide = async (
+    mode: DeliveryMode,
+    country: string,
+    city: string,
     side: 'pickup' | 'delivery',
   ) => {
-    for (const kind of kinds) {
-      const loc = await fetchFirstDivisionLocation(country, city, kind, side);
-      if (loc) return loc;
+    if (mode === 'home') {
+      return placeholderAddressQuoteLocation(country, city);
     }
-    return undefined;
+    const primary = await firstInCity(country, city, mode === 'branch' ? 'branch' : 'locker', side);
+    if (primary) return primary;
+    const fallbackKind = mode === 'branch' ? 'locker' : 'branch';
+    return firstInCity(country, city, fallbackKind, side);
   };
 
   const [pickup, delivery] = await Promise.all([
-    firstInCity(PICKUP_COUNTRY, pickupCity, pickupKinds, 'pickup'),
-    firstInCity(toCountry, destCity, destKinds, 'delivery'),
+    resolveSide(pickupType, PICKUP_COUNTRY, pickupCity, 'pickup'),
+    resolveSide(deliveryType, toCountry, destCity, 'delivery'),
   ]);
   return { pickup, delivery };
 }
