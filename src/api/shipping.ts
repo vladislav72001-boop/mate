@@ -98,6 +98,7 @@ export async function calculateFinal(payload: {
   toCountry: string;
   declaredValue?: number;
   deliveryMode?: 'home' | 'branch' | 'locker' | 'address';
+  pickupMode?: 'home' | 'branch' | 'locker' | 'address';
   pickupLocation?: QuoteLocation;
   deliveryLocation?: QuoteLocation;
   payerType?: 'Sender' | 'Recipient';
@@ -129,6 +130,7 @@ export async function calculateBatch(payload: {
   toCountry: string;
   declaredValue?: number;
   deliveryMode?: 'home' | 'branch' | 'locker' | 'address';
+  pickupMode?: 'home' | 'branch' | 'locker' | 'address';
   pickupLocation?: QuoteLocation;
   deliveryLocation?: QuoteLocation;
   payerType?: 'Sender' | 'Recipient';

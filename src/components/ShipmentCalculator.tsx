@@ -143,6 +143,57 @@ function divisionQuoteLocation(countryCode: string, id: string): QuoteLocation |
   if (!Number.isInteger(divisionId) || divisionId <= 0) return undefined;
   return { kind: 'division', countryCode, divisionId };
 }
+
+function firstNpDivisionId(points: ShippingPoint[]): string {
+  const hit = points.find((p) => /^\d+$/.test(String(p.id)));
+  return hit ? String(hit.id) : '';
+}
+
+async function fetchFirstDivisionLocation(
+  country: string,
+  city: string,
+  kind: 'locker' | 'branch',
+  side: 'pickup' | 'delivery',
+): Promise<QuoteLocation | undefined> {
+  if (!city.trim()) return undefined;
+  const res = await fetchShippingPoints({ country, city: city.trim(), kind, side });
+  const id = firstNpDivisionId(res.points || []);
+  return id ? divisionQuoteLocation(country, id) : undefined;
+}
+
+async function resolvePreliminaryQuoteLocations(
+  pickupType: DeliveryMode,
+  deliveryType: DeliveryMode,
+  pickupCity: string,
+  destCity: string,
+  toCountry: string,
+): Promise<{ pickup?: QuoteLocation; delivery?: QuoteLocation }> {
+  const pickupKinds: Array<'locker' | 'branch'> = pickupType === 'home'
+    ? ['locker', 'branch']
+    : [pickupType === 'branch' ? 'branch' : 'locker'];
+  const destKinds: Array<'locker' | 'branch'> = deliveryType === 'home'
+    ? ['locker', 'branch']
+    : [deliveryType === 'branch' ? 'branch' : 'locker'];
+
+  const firstInCity = async (
+    country: string,
+    city: string,
+    kinds: Array<'locker' | 'branch'>,
+    side: 'pickup' | 'delivery',
+  ) => {
+    for (const kind of kinds) {
+      const loc = await fetchFirstDivisionLocation(country, city, kind, side);
+      if (loc) return loc;
+    }
+    return undefined;
+  };
+
+  const [pickup, delivery] = await Promise.all([
+    firstInCity(PICKUP_COUNTRY, pickupCity, pickupKinds, 'pickup'),
+    firstInCity(toCountry, destCity, destKinds, 'delivery'),
+  ]);
+  return { pickup, delivery };
+}
 const VALUE_KEYS: ValueKey[] = ['under100', 'mid', 'high', 'over'];
 const DELIVERY_MODE_KEYS: DeliveryMode[] = ['home', 'branch', 'locker'];
 
@@ -673,6 +724,7 @@ export function CalcForm({
 
   const apiParcelKey = sizeToApiKey(sizeKey, customSize);
   const declaredValue = VALUE_TO_EUR[contentValue];
+  const quotePickupMode = deliveryModeToApi(pickupType);
   const quoteDeliveryMode = deliveryModeToApi(deliveryType);
   const pickupQuoteLocation = useMemo(() => (
     pickupType === 'home'
@@ -706,6 +758,8 @@ export function CalcForm({
     pickupCity.trim().toLowerCase(),
     destCity.trim().toLowerCase(),
     declaredValue,
+    pickupType,
+    deliveryType,
   ].join(':');
 
   const applyCachedRouteQuotes = useCallback(() => {
@@ -743,6 +797,7 @@ export function CalcForm({
     sizeOverrides?: Array<{ boxSize: string; lengthCm: number; widthCm: number; heightCm: number; weightKg: number }>,
     options?: {
       deliveryMode?: 'locker' | 'branch' | 'address';
+      pickupMode?: 'locker' | 'branch' | 'address';
       pickupLocation?: QuoteLocation;
       deliveryLocation?: QuoteLocation;
       cacheKey?: string;
@@ -753,6 +808,7 @@ export function CalcForm({
     const usePickup = options?.pickupLocation ?? pickupQuoteLocation;
     const useDelivery = options?.deliveryLocation ?? deliveryQuoteLocation;
     const useMode = options?.deliveryMode ?? quoteDeliveryMode;
+    const usePickupMode = options?.pickupMode ?? quotePickupMode;
     if (!options?.allowWithoutLocations && !(usePickup && useDelivery)) return;
 
     quoteInFlight.current = true;
@@ -765,6 +821,7 @@ export function CalcForm({
         toCountry,
         declaredValue,
         deliveryMode: useMode,
+        pickupMode: usePickupMode,
         pickupLocation: usePickup,
         deliveryLocation: useDelivery,
         payerType: quotePayerType,
@@ -818,12 +875,12 @@ export function CalcForm({
       if (reqId === quoteRequestId.current) setQuoteRefreshing(false);
     }
   }, [
-    toCountry, declaredValue, routeCacheKey, quoteDeliveryMode,
+    toCountry, declaredValue, routeCacheKey, quoteDeliveryMode, quotePickupMode,
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType,
     applyEstimateFallback, t,
   ]);
 
-  // Steps 2–5: cheapest city-to-city estimate ("от …") before exact endpoints are chosen.
+  // Steps 2–5: city-pair quotes that follow selected pickup/delivery modes.
   useEffect(() => {
     if (step < 2 || step > 5) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
@@ -833,40 +890,18 @@ export function CalcForm({
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const [pickupBranchPts, pickupLockerPts, destBranchPts, destLockerPts] = await Promise.all([
-          fetchShippingPoints({ country: PICKUP_COUNTRY, city: pickupCity.trim(), kind: 'branch', side: 'pickup' }),
-          fetchShippingPoints({ country: PICKUP_COUNTRY, city: pickupCity.trim(), kind: 'locker', side: 'pickup' }),
-          fetchShippingPoints({ country: toCountry, city: destCity.trim(), kind: 'branch', side: 'delivery' }),
-          fetchShippingPoints({ country: toCountry, city: destCity.trim(), kind: 'locker', side: 'delivery' }),
-        ]);
+        const { pickup: pickupLoc, delivery: deliveryLoc } = await resolvePreliminaryQuoteLocations(
+          pickupType,
+          deliveryType,
+          pickupCity,
+          destCity,
+          toCountry,
+        );
         if (cancelled) return;
 
-        const firstNpId = (points: ShippingPoint[]) => {
-          const hit = points.find((p) => /^\d+$/.test(String(p.id)));
-          return hit ? String(hit.id) : '';
-        };
-
-        const pickupBranchId = firstNpId(pickupBranchPts.points || []);
-        const destBranchId = firstNpId(destBranchPts.points || []);
-        const pickupLockerId = firstNpId(pickupLockerPts.points || []);
-        const destLockerId = firstNpId(destLockerPts.points || []);
-
-        // Prefer branch→branch (usually cheapest matrix mode), else locker→locker.
-        let mode: 'branch' | 'locker' = 'locker';
-        let pickupLoc: QuoteLocation | undefined;
-        let deliveryLoc: QuoteLocation | undefined;
-        if (pickupBranchId && destBranchId) {
-          mode = 'branch';
-          pickupLoc = divisionQuoteLocation(PICKUP_COUNTRY, pickupBranchId);
-          deliveryLoc = divisionQuoteLocation(toCountry, destBranchId);
-        } else if (pickupLockerId && destLockerId) {
-          mode = 'locker';
-          pickupLoc = divisionQuoteLocation(PICKUP_COUNTRY, pickupLockerId);
-          deliveryLoc = divisionQuoteLocation(toCountry, destLockerId);
-        }
-
         await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
-          deliveryMode: mode,
+          deliveryMode: quoteDeliveryMode,
+          pickupMode: quotePickupMode,
           pickupLocation: pickupLoc,
           deliveryLocation: deliveryLoc,
           cacheKey: `prelim:${preliminaryRouteKey}`,
@@ -875,7 +910,8 @@ export function CalcForm({
       } catch {
         if (cancelled) return;
         await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
-          deliveryMode: 'branch',
+          deliveryMode: quoteDeliveryMode,
+          pickupMode: quotePickupMode,
           cacheKey: `prelim:${preliminaryRouteKey}`,
           allowWithoutLocations: true,
         });
@@ -887,7 +923,8 @@ export function CalcForm({
       clearTimeout(timer);
     };
   }, [
-    step, pickupCity, destCity, toCountry, quoteLocationsReady, preliminaryRouteKey,
+    step, pickupCity, destCity, toCountry, pickupType, deliveryType,
+    quoteDeliveryMode, quotePickupMode, quoteLocationsReady, preliminaryRouteKey,
     applyCachedPreliminaryQuotes, fetchQuoteKeys,
   ]);
 
@@ -911,10 +948,12 @@ export function CalcForm({
       if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
     };
   }, [
-    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quoteLocationsReady,
+    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quotePickupMode,
+    quoteLocationsReady,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     fragile, insurance,
     applyCachedRouteQuotes, fetchQuoteKeys,
+    pickupType, deliveryType,
   ]);
 
   // Steps 8–9: reconcile exact endpoint quote after payer/value selection.
@@ -932,6 +971,7 @@ export function CalcForm({
           toCountry,
           declaredValue,
           deliveryMode: quoteDeliveryMode,
+          pickupMode: quotePickupMode,
           pickupLocation: pickupQuoteLocation,
           deliveryLocation: deliveryQuoteLocation,
           payerType: quotePayerType,
@@ -956,7 +996,7 @@ export function CalcForm({
       clearTimeout(timer);
     };
   }, [
-    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode,
+    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quotePickupMode,
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, quoteLocationsReady,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     fetchQuoteKeys,

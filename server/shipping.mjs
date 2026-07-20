@@ -115,6 +115,14 @@ function mapDeliveryMode(type) {
   return 'locker';
 }
 
+/** Matrix tier: address > branch > locker — use the higher of pickup and delivery. */
+function resolvePricingMode(pickupRaw, deliveryRaw) {
+  const rank = { locker: 0, branch: 1, address: 2 };
+  const pickup = mapDeliveryMode(pickupRaw);
+  const delivery = mapDeliveryMode(deliveryRaw);
+  return rank[pickup] >= rank[delivery] ? pickup : delivery;
+}
+
 export async function resolveCheckoutAmount(body, userId = null) {
   const parcel = body.parcel || {};
   const tariff = body.tariff || {};
@@ -122,7 +130,10 @@ export async function resolveCheckoutAmount(body, userId = null) {
   const toCountry = tariff.toCountry || body.receiver?.country || 'DE';
   const fromCountry = tariff.fromCountry || body.sender?.country || 'HU';
   const weightKg = Number(parcel.weightKg) || 2;
-  const deliveryMode = mapDeliveryMode(tariff.deliveryType || tariff.deliveryMode || body.deliveryType);
+  const deliveryMode = resolvePricingMode(
+    tariff.pickupType || tariff.pickupMode || body.pickupMode,
+    tariff.deliveryType || tariff.deliveryMode || body.deliveryType,
+  );
   const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(userId || body.userId);
 
   const reconciled = await reconcileParcelPrice({
@@ -430,6 +441,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         declaredValue,
         sizes,
         deliveryMode,
+        pickupMode,
         pickupLocation,
         deliveryLocation,
         payerType,
@@ -449,7 +461,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         deliveryLocation,
         payerType,
       });
-      const mode = mapDeliveryMode(deliveryMode || 'locker');
+      const mode = resolvePricingMode(pickupMode, deliveryMode || 'locker');
       const settings = await getSettings();
       const preferNovaPost = String(process.env.PRICING_PREFER || 'mate').toLowerCase() === 'novapost';
 
@@ -610,6 +622,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         fromCountry,
         toCountry,
         deliveryMode,
+        pickupMode,
         declaredValue,
         parcel,
         pickupLocation,
@@ -626,7 +639,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         fromCountry: fromCountry || 'HU',
         toCountry,
         weightKg: Number(parcel.weightKg) || 2,
-        deliveryMode: mapDeliveryMode(deliveryMode || 'locker'),
+        deliveryMode: resolvePricingMode(pickupMode, deliveryMode || 'locker'),
         lengthCm: parcel.lengthCm,
         widthCm: parcel.widthCm,
         heightCm: parcel.heightCm,
