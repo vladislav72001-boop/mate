@@ -266,6 +266,12 @@ export function clearCalcDraft(inModal: boolean, userId?: string | null) {
   }
 }
 
+/** Clear logged-in cart and both session drafts (hero + modal). */
+export function clearAllCalcDrafts(userId?: string | null) {
+  clearCalcDraft(true, userId);
+  clearCalcDraft(false, userId);
+}
+
 /** Merge guest session draft into user cart after login (keeps newest). */
 export function mergeGuestDraftIntoCart(userId: string) {
   const modal = readFromStorage(sessionStorage, calcDraftKey(true), MAX_AGE_MS);

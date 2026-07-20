@@ -26,6 +26,7 @@ import { PaymentCard } from './client-dash/PaymentCard';
 import { TrackingMap } from './client-dash/TrackingMap';
 import { LoyaltyCard, loyaltyTierLabel } from './client-dash/LoyaltyCard';
 import { trackingEventLabel } from './client-dash/trackingLabels';
+import { clearAllCalcDrafts } from './calc/calcDraft';
 
 type Tab = 'home' | 'shipments' | 'tracking' | 'address' | 'payments' | 'settings';
 export type ClientDashTab = Tab;
@@ -333,6 +334,7 @@ export function ClientDashboard({
       const updated = await cancelOrder(order.publicToken);
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
       setDetailOrder((cur) => (cur?.id === updated.id ? updated : cur));
+      clearAllCalcDrafts(user.id);
     } catch (err) {
       setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.cancelError'));
     } finally {

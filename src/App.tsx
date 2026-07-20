@@ -5,7 +5,7 @@ import { ClientDashboard, type ClientDashTab } from './components/ClientDashboar
 import { ShipmentCalculator, resumePaymentFromUrl } from './components/ShipmentCalculator';
 import {
   loadActiveCalcDraft,
-  clearCalcDraft,
+  clearAllCalcDrafts,
   mergeGuestDraftIntoCart,
   CALC_DRAFT_EVENT,
 } from './components/calc/calcDraft';
@@ -446,8 +446,7 @@ function App() {
   }, []);
 
   const handleDismissDraft = useCallback(() => {
-    clearCalcDraft(true, user?.id);
-    clearCalcDraft(false, user?.id);
+    clearAllCalcDrafts(user?.id);
     setDraftTick((n) => n + 1);
   }, [user?.id]);
 
@@ -1399,8 +1398,7 @@ function App() {
           }}
           onCreateAnother={() => {
             setPaymentNotice(null);
-            clearCalcDraft(false, user?.id);
-            clearCalcDraft(true, user?.id);
+            clearAllCalcDrafts(user?.id);
             goPage('home');
             openCalcFresh();
           }}

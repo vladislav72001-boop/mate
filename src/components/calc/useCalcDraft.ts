@@ -23,9 +23,7 @@ export function useCalcDraftPersistence(
       return;
     }
     const data = snapshotRef.current();
-    if (data.step <= 1 && !data.destCity.trim() && !data.senderPhone.trim() && !data.receiverPhone.trim()) {
-      return;
-    }
+    if (data.step < 2) return;
     saveCalcDraft(inModalRef.current, data, userIdRef.current);
   }, [enabled]);
 
