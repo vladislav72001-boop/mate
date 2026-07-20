@@ -26,11 +26,11 @@ export function CalcDraftHints({ items }: Props) {
             key={item.id}
             type="button"
             className="calc-draft-hints__chip"
-            title={t('calc.draftHintApply')}
+            title={`${t('calc.draftHintApply')}: ${item.value}`}
             onClick={item.onApply}
           >
-            <span className="calc-draft-hints__chip-label">{item.label}</span>
             <span className="calc-draft-hints__chip-value">{item.value}</span>
+            <span className="calc-draft-hints__chip-label">{item.label}</span>
           </button>
         ))}
       </div>

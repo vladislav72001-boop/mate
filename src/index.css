@@ -10601,10 +10601,10 @@ body.calc-option-sheet-open {
 }
 
 .calc-draft-hints__chip-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--muted, #6b7364);
 }
 

@@ -177,7 +177,7 @@ const ru: MessageTree = {
   draftCartContinue: 'Продолжить',
   draftCartDismiss: 'Удалить черновик',
   draftCartStep: 'Шаг {{current}} из {{total}}',
-  draftHintsTitle: 'Уже вводили',
+  draftHintsTitle: 'Нажмите, чтобы подставить',
   draftHintApply: 'Подставить',
   scrollToTop: 'Наверх',
 };
@@ -359,7 +359,7 @@ const en: MessageTree = {
   draftCartContinue: 'Continue',
   draftCartDismiss: 'Discard draft',
   draftCartStep: 'Step {{current}} of {{total}}',
-  draftHintsTitle: 'You already entered',
+  draftHintsTitle: 'Tap to fill in',
   draftHintApply: 'Use this',
   scrollToTop: 'Back to top',
 };
@@ -541,7 +541,7 @@ const hu: MessageTree = {
   draftCartContinue: 'Folytatás',
   draftCartDismiss: 'Piszkozat törlése',
   draftCartStep: '{{current}}. lépés / {{total}}',
-  draftHintsTitle: 'Korábban megadva',
+  draftHintsTitle: 'Koppintson a beillesztéshez',
   draftHintApply: 'Beillesztés',
   scrollToTop: 'Vissza a tetejére',
 };
@@ -723,7 +723,7 @@ const uk: MessageTree = {
   draftCartContinue: 'Продовжити',
   draftCartDismiss: 'Видалити чернетку',
   draftCartStep: 'Крок {{current}} з {{total}}',
-  draftHintsTitle: 'Вже вводили',
+  draftHintsTitle: 'Натисніть, щоб підставити',
   draftHintApply: 'Підставити',
   scrollToTop: 'Нагору',
 };

@@ -1184,12 +1184,12 @@ export function CalcForm({
     };
 
     if (step === 2) {
-      push('pickupCity', t('calc.pickupCity'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
-      push('destCity', t('calc.destCity'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
+      push('pickupCity', t('calc.pickupCityAria'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
+      push('destCity', t('calc.destCityAria'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
     }
 
     if (step === 5) {
-      push('pickupCity', t('calc.city'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
+      push('pickupCity', t('calc.pickupCityAria'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
       push(
         'pickupAddress',
         t('calc.senderAddress'),
@@ -1200,18 +1200,10 @@ export function CalcForm({
           setPickupStreet(hints.pickupAddress);
         },
       );
-      if (hints.destCity.trim()) {
-        items.push({
-          id: 'destCityCtx',
-          label: t('calc.destCity'),
-          value: hints.destCity.trim(),
-          onApply: () => changeDestCity(hints.destCity),
-        });
-      }
     }
 
     if (step === 6) {
-      push('destCity', t('calc.city'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
+      push('destCity', t('calc.destCityAria'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
       push(
         'destAddress',
         t('calc.deliveryAddress'),
@@ -1222,14 +1214,6 @@ export function CalcForm({
           setDestStreet(hints.destAddress);
         },
       );
-      if (hints.pickupCity.trim()) {
-        items.push({
-          id: 'pickupCityCtx',
-          label: t('calc.pickupCity'),
-          value: hints.pickupCity.trim(),
-          onApply: () => changePickupCity(hints.pickupCity),
-        });
-      }
     }
 
     return items;
