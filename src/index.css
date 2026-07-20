@@ -10555,66 +10555,6 @@ body.calc-option-sheet-open {
   background: rgba(255, 80, 80, 0.12);
 }
 
-/* ── Draft field hints in calculator ── */
-.calc-draft-hints {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--line, rgba(0, 0, 0, 0.12));
-}
-
-.calc-draft-hints__label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 0.72rem;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted, #6b7364);
-}
-
-.calc-draft-hints__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.calc-draft-hints__chip {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  max-width: 100%;
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(180, 240, 90, 0.35);
-  background: rgba(180, 240, 90, 0.08);
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-
-.calc-draft-hints__chip:hover {
-  background: rgba(180, 240, 90, 0.16);
-  border-color: rgba(180, 240, 90, 0.55);
-  transform: translateY(-1px);
-}
-
-.calc-draft-hints__chip-label {
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--muted, #6b7364);
-}
-
-.calc-draft-hints__chip-value {
-  font-size: 0.88rem;
-  font-weight: 600;
-  line-height: 1.25;
-  word-break: break-word;
-}
-
 /* ── Scroll to top ── */
 .scroll-to-top {
   position: fixed;

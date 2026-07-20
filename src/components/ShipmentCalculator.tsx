@@ -65,7 +65,6 @@ import {
   type SummaryRow,
 } from './calc/OrderSummary';
 import { loadCalcDraft, clearCalcDraft } from './calc/calcDraft';
-import { CalcDraftHints, type DraftHintItem } from './calc/CalcDraftHints';
 import { useCalcDraftPersistence } from './calc/useCalcDraft';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
@@ -396,12 +395,6 @@ export function CalcForm({
     initialRef.current.restored = Boolean(initialRef.current.draft);
   }
   const saved = initialRef.current.draft;
-  const restoredHintsRef = useRef({
-    pickupCity: saved?.pickupCity ?? '',
-    pickupAddress: saved?.pickupAddressQuery || saved?.pickupStreet || '',
-    destCity: saved?.destCity ?? '',
-    destAddress: saved?.destAddressQuery || saved?.destStreet || '',
-  });
 
   const [step, setStep] = useState(startFromStep1 ? 1 : (saved?.step ?? 1));
   const [submitting, setSubmitting] = useState(false);
@@ -474,16 +467,6 @@ export function CalcForm({
   const [quotesFromNp, setQuotesFromNp] = useState(false);
   const [currency, setCurrency] = useState(DEFAULT_QUOTE_CURRENCY);
   const [bookAddresses, setBookAddresses] = useState<AddressEntry[]>([]);
-
-  useEffect(() => {
-    const h = restoredHintsRef.current;
-    if (pickupCity.trim()) h.pickupCity = pickupCity.trim();
-    if (destCity.trim()) h.destCity = destCity.trim();
-    const pickupAddr = (pickupAddressQuery || pickupStreet).trim();
-    if (pickupAddr) h.pickupAddress = pickupAddr;
-    const destAddr = (destAddressQuery || destStreet).trim();
-    if (destAddr) h.destAddress = destAddr;
-  }, [pickupCity, destCity, pickupAddressQuery, pickupStreet, destAddressQuery, destStreet]);
 
   const quoteDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quoteWaitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1166,69 +1149,6 @@ export function CalcForm({
     setDestLocker('');
     setDestBranch('');
   }, []);
-
-  const draftHintItems = useMemo((): DraftHintItem[] => {
-    const hints = restoredHintsRef.current;
-    const items: DraftHintItem[] = [];
-    const push = (
-      id: string,
-      label: string,
-      restored: string,
-      current: string,
-      apply: () => void,
-    ) => {
-      const value = restored.trim();
-      const now = current.trim();
-      if (!value || value === now) return;
-      items.push({ id, label, value, onApply: apply });
-    };
-
-    if (step === 2) {
-      push('pickupCity', t('calc.pickupCityAria'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
-      push('destCity', t('calc.destCityAria'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
-    }
-
-    if (step === 5) {
-      push('pickupCity', t('calc.pickupCityAria'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
-      push(
-        'pickupAddress',
-        t('calc.senderAddress'),
-        hints.pickupAddress,
-        pickupAddressQuery || pickupStreet,
-        () => {
-          setPickupAddressQuery(hints.pickupAddress);
-          setPickupStreet(hints.pickupAddress);
-        },
-      );
-    }
-
-    if (step === 6) {
-      push('destCity', t('calc.destCityAria'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
-      push(
-        'destAddress',
-        t('calc.deliveryAddress'),
-        hints.destAddress,
-        destAddressQuery || destStreet,
-        () => {
-          setDestAddressQuery(hints.destAddress);
-          setDestStreet(hints.destAddress);
-        },
-      );
-    }
-
-    return items;
-  }, [
-    step,
-    t,
-    pickupCity,
-    destCity,
-    pickupAddressQuery,
-    pickupStreet,
-    destAddressQuery,
-    destStreet,
-    changePickupCity,
-    changeDestCity,
-  ]);
 
   // Load concrete pickup/delivery points immediately after mode selection.
   useEffect(() => {
@@ -2342,7 +2262,6 @@ export function CalcForm({
         <div className="calc-form__main">
           <div className="calc-form__step-body">
             {stepContent}
-            {(step === 2 || step === 5 || step === 6) && <CalcDraftHints items={draftHintItems} />}
           </div>
           {!navAfterLayout && nav()}
         </div>
