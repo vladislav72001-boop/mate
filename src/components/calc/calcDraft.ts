@@ -4,7 +4,7 @@ export type CalcDraftValueKey = 'under100' | 'mid' | 'high' | 'over';
 export type CalcDraftSizeKey = 'envelope' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'custom';
 
 export type CalcDraft = {
-  v: 2;
+  v: 3;
   savedAt: number;
   step: number;
   toCountry: string;
@@ -50,9 +50,17 @@ export type CalcDraft = {
   termsAccepted: boolean;
 };
 
-const DRAFT_VERSION = 2 as const;
+const DRAFT_VERSION = 3 as const;
 const MAX_AGE_MS = 1000 * 60 * 60 * 24; // 24 h — guest session
 const MAX_CART_AGE_MS = 1000 * 60 * 60 * 24 * 14; // 14 d — logged-in cart
+
+/** v2: modes=3, sender=4, recipient=5, size=6 → v3: size=3, modes=4, sender=5, recipient=6 */
+function remapStepFromV2(step: number): number {
+  const map: Record<number, number> = {
+    1: 1, 2: 2, 3: 4, 4: 5, 5: 6, 6: 3, 7: 7, 8: 8, 9: 9,
+  };
+  return map[step] ?? step;
+}
 
 export const CALC_DRAFT_EVENT = 'mate-calc-draft-change';
 
@@ -77,7 +85,7 @@ function isDeliveryMode(v: unknown): v is CalcDraftDeliveryMode {
 }
 
 function parseDraft(raw: unknown, maxAgeMs: number): CalcDraft | null {
-  if (!isRecord(raw) || raw.v !== DRAFT_VERSION) return null;
+  if (!isRecord(raw) || (raw.v !== 2 && raw.v !== DRAFT_VERSION)) return null;
   if (typeof raw.savedAt !== 'number' || Date.now() - raw.savedAt > maxAgeMs) return null;
   if (typeof raw.step !== 'number' || raw.step < 1 || raw.step > 9) return null;
   if (typeof raw.toCountry !== 'string') return null;
@@ -97,10 +105,12 @@ function parseDraft(raw: unknown, maxAgeMs: number): CalcDraft | null {
     pickupAddressFocus = { lat: pickupFocus.lat, lng: pickupFocus.lng };
   }
 
+  const step = raw.v === 2 ? remapStepFromV2(raw.step) : raw.step;
+
   return {
     v: DRAFT_VERSION,
     savedAt: raw.savedAt,
-    step: raw.step,
+    step,
     toCountry: raw.toCountry,
     pickupType: raw.pickupType,
     deliveryType: raw.deliveryType,

@@ -94,12 +94,12 @@ const STEP3_QUOTE_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL', 'XXL'];
 const STEP_SUMMARY_KEYS: Record<number, string[]> = {
   1: ['from'],
   2: ['from', 'cities'],
-  3: ['from', 'cities', 'type'],
-  4: ['from', 'cities', 'type'],
-  5: ['from', 'cities', 'type', 'sender', 'when'],
-  6: ['from', 'cities', 'type', 'sender', 'recipient', 'when', 'size'],
-  7: ['from', 'cities', 'type', 'sender', 'recipient', 'when', 'size', 'contents'],
-  8: ['from', 'cities', 'type', 'sender', 'recipient', 'when', 'size', 'contents', 'value', 'pays'],
+  3: ['from', 'cities', 'size'],
+  4: ['from', 'cities', 'size', 'type'],
+  5: ['from', 'cities', 'size', 'type', 'sender', 'when'],
+  6: ['from', 'cities', 'size', 'type', 'sender', 'recipient', 'when'],
+  7: ['from', 'cities', 'size', 'type', 'sender', 'recipient', 'when', 'contents'],
+  8: ['from', 'cities', 'size', 'type', 'sender', 'recipient', 'when', 'contents', 'value', 'pays'],
   9: ['from', 'cities', 'type', 'size', 'contents', 'value', 'pays', 'sender', 'recipient', 'when'],
 };
 
@@ -827,7 +827,7 @@ export function CalcForm({
   useEffect(() => {
     if (step < 2 || step > 5) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
-    if (quoteLocationsReady && step >= 5) return;
+    if (quoteLocationsReady && step >= 6) return;
     if (applyCachedPreliminaryQuotes()) return;
 
     let cancelled = false;
@@ -892,7 +892,7 @@ export function CalcForm({
   ]);
 
   useEffect(() => {
-    if (!quoteLocationsReady || step < 5 || step >= 9) return;
+    if (!quoteLocationsReady || step < 6 || step >= 9) return;
 
     // Prefer cache / API — do not flash crude EUR×HUF estimates (e.g. 13 200 → 8 610).
     if (applyCachedRouteQuotes()) return;
@@ -980,7 +980,7 @@ export function CalcForm({
       .filter((v): v is number => v != null);
     return values.length ? Math.min(...values) : null;
   }, [parcelQuotes]);
-  const priceIsMinimum = step < 6;
+  const priceIsMinimum = step < 3;
   const basePrice = priceIsMinimum ? minQuote : (parcelQuotes[apiParcelKey] ?? null);
 
   const extras = useMemo(() => {
@@ -1132,7 +1132,7 @@ export function CalcForm({
       push('destCity', t('calc.destCity'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
     }
 
-    if (step === 4) {
+    if (step === 5) {
       push('pickupCity', t('calc.city'), hints.pickupCity, pickupCity, () => changePickupCity(hints.pickupCity));
       push(
         'pickupAddress',
@@ -1154,7 +1154,7 @@ export function CalcForm({
       }
     }
 
-    if (step === 5) {
+    if (step === 6) {
       push('destCity', t('calc.city'), hints.destCity, destCity, () => changeDestCity(hints.destCity));
       push(
         'destAddress',
@@ -1194,7 +1194,7 @@ export function CalcForm({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (step === 4 && pickupType === 'locker' && pickupCity.trim()) {
+      if (step === 5 && pickupType === 'locker' && pickupCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1213,7 +1213,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 4 && pickupType === 'branch' && pickupCity.trim()) {
+      if (step === 5 && pickupType === 'branch' && pickupCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1229,7 +1229,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 5 && deliveryType === 'locker' && destCity.trim() && destAddressReady) {
+      if (step === 6 && deliveryType === 'locker' && destCity.trim() && destAddressReady) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1247,7 +1247,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 5 && deliveryType === 'branch' && destCity.trim() && destAddressReady) {
+      if (step === 6 && deliveryType === 'branch' && destCity.trim() && destAddressReady) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1270,7 +1270,7 @@ export function CalcForm({
 
   // If user lands mid-flow without coverage (e.g. after restoring draft), load it
   useEffect(() => {
-    if (step >= 3 && step <= 9 && !coverage && !coverageLoading && pickupCity.trim() && destCity.trim()) {
+    if (step >= 4 && step <= 9 && !coverage && !coverageLoading && pickupCity.trim() && destCity.trim()) {
       void loadCoverage();
     }
   }, [step, coverage, coverageLoading, pickupCity, destCity, loadCoverage]);
@@ -1384,8 +1384,8 @@ export function CalcForm({
   const summaryRows: SummaryRow[] = useMemo(() => [
     { key: 'from', label: t('calc.summaryFrom'), value: formatRoute(PICKUP_COUNTRY, toCountry), onEdit: () => goTo(1) },
     { key: 'cities', label: t('calc.summaryCities'), value: [cityLabelForValue(PICKUP_COUNTRY, pickupCity, locale), cityLabelForValue(toCountry, destCity, locale)].filter(Boolean).join(' → ') || '—', onEdit: () => goTo(2) },
-    { key: 'type', label: t('calc.summaryType'), value: formatDeliveryTypeLocalized(pickupType, deliveryType), onEdit: () => goTo(3) },
-    { key: 'size', label: t('calc.summarySize'), value: sizeLabel, onEdit: () => goTo(6) },
+    { key: 'type', label: t('calc.summaryType'), value: formatDeliveryTypeLocalized(pickupType, deliveryType), onEdit: () => goTo(4) },
+    { key: 'size', label: t('calc.summarySize'), value: sizeLabel, onEdit: () => goTo(3) },
     {
       key: 'contents',
       label: t('calc.summaryContents'),
@@ -1394,8 +1394,8 @@ export function CalcForm({
     },
     { key: 'value', label: t('calc.summaryValue'), value: valueOptions.find((v) => v.key === contentValue)?.label || '—', onEdit: () => goTo(8) },
     { key: 'pays', label: t('calc.summaryPays'), value: payer === 'sender' ? t('calc.payerSender') : t('calc.payerReceiver'), onEdit: () => goTo(8) },
-    { key: 'sender', label: t('calc.summarySender'), value: senderName || pickupLocationObj?.provider || '—', onEdit: () => goTo(4) },
-    { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(5) },
+    { key: 'sender', label: t('calc.summarySender'), value: senderName || pickupLocationObj?.provider || '—', onEdit: () => goTo(5) },
+    { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(6) },
     { key: 'when', label: t('calc.summaryWhen'), value: pickupDate ? `${pickupDate}, ${pickupTime}` : '—' },
   ], [
     t, toCountry, pickupCity, destCity, pickupType, deliveryType, sizeLabel, contents, contentsNote, contentValue, payer,
@@ -1415,14 +1415,15 @@ export function CalcForm({
       if (!pickupCity.trim()) return t('calc.valPickupCity');
       if (!destCity.trim()) return t('calc.valDestCity');
     }
-    if (step === 3) {
+    if (step === 3 && !SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
+    if (step === 4) {
       if (!pickupType || !deliveryType) return t('calc.valSelectModes');
       if (coverage) {
         if (!coverage.pickup[pickupType]?.available) return t('calc.valPickupMode');
         if (!coverage.delivery[deliveryType]?.available) return t('calc.valDeliveryMode');
       }
     }
-    if (step === 4) {
+    if (step === 5) {
       const nameErr = validatePersonName(senderName, t('calc.fieldSenderName'));
       if (nameErr) return nameErr;
       const emailErr = validateEmail(senderEmail, t('calc.fieldSenderEmail'));
@@ -1443,7 +1444,7 @@ export function CalcForm({
         return pickupType === 'home' ? t('calc.valPickupAddress') : t('calc.valSelectPickupPointNp');
       }
     }
-    if (step === 5) {
+    if (step === 6) {
       const firstErr = validatePersonName(receiverFirst, t('calc.fieldReceiverFirst'));
       const lastErr = validatePersonName(receiverLast, t('calc.fieldReceiverLast'));
       if (firstErr && lastErr) return t('calc.valReceiverName');
@@ -1460,7 +1461,6 @@ export function CalcForm({
         return deliveryType === 'home' ? t('calc.valDeliveryAddress') : t('calc.valSelectDeliveryPointNp');
       }
     }
-    if (step === 6 && !SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
     if (step === 7) {
       if (!contents) return t('calc.valSelectContents');
       if (contents === 'other' && !contentsNote.trim()) return t('calc.valDescribeContents');
@@ -1518,7 +1518,7 @@ export function CalcForm({
     const emailErr = validateEmail(payEmail, t('calc.fieldSenderEmail'));
     if (emailErr) {
       setError(emailErr);
-      goTo(4);
+      goTo(5);
       return;
     }
 
@@ -1638,7 +1638,7 @@ export function CalcForm({
 
   /* Mobile + desktop: hide «Итого» until cities step, then show it above «Далее» */
   const showSummary = step >= 2;
-  const summaryCompact = step === 6;
+  const summaryCompact = step === 3;
   const navAfterLayout = inModal || showSummary;
 
   const summaryEl = showSummary ? (
@@ -1660,10 +1660,10 @@ export function CalcForm({
   const stepMeta = useMemo(() => ({
     1: { title: t('calc.step1Title'), sub: t('calc.step1Sub') },
     2: { title: t('calc.step2Title'), sub: t('calc.step2Sub') },
-    3: { title: t('calc.step3Title'), sub: t('calc.step3Sub') },
-    4: { title: t('calc.step7Title'), sub: t('calc.step7Sub') },
-    5: { title: t('calc.step8Title'), sub: t('calc.step8Sub') },
-    6: { title: t('calc.step4Title'), sub: t('calc.step4Sub') },
+    3: { title: t('calc.step4Title'), sub: t('calc.step4Sub') },
+    4: { title: t('calc.step3Title'), sub: t('calc.step3Sub') },
+    5: { title: t('calc.step7Title'), sub: t('calc.step7Sub') },
+    6: { title: t('calc.step8Title'), sub: t('calc.step8Sub') },
     7: { title: t('calc.step5Title'), sub: t('calc.step5Sub') },
     8: { title: t('calc.step6Title'), sub: t('calc.step6Sub') },
     9: { title: t('calc.step9Title'), sub: t('calc.step9Sub') },
@@ -1784,9 +1784,9 @@ export function CalcForm({
             </>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <>
-              <StepHeader step={3} title={stepMeta[3].title} subtitle={stepMeta[3].sub} />
+              <StepHeader step={4} title={stepMeta[4].title} subtitle={stepMeta[4].sub} />
               {coverageLoading && (
                 <p className="calc-form__hint calc-form__hint--inline calc-form__hint--wait" aria-live="polite">
                   <span className="calc-user-loc__pulse" aria-hidden />
@@ -1829,9 +1829,9 @@ export function CalcForm({
             </>
           )}
 
-          {step === 6 && (
+          {step === 3 && (
             <>
-              <StepHeader step={6} title={stepMeta[6].title} subtitle={stepMeta[6].sub} />
+              <StepHeader step={3} title={stepMeta[3].title} subtitle={stepMeta[3].sub} />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
                   const price = parcelQuotes[s.key];
@@ -1862,7 +1862,7 @@ export function CalcForm({
                 <input type="checkbox" checked={insurance} onChange={(e) => setInsurance(e.target.checked)} />
                 <span>{t('calc.insurance', { percent: insurancePercentLabel, fee: insuranceFeeLabel })}</span>
               </label>
-              {showQuoteWait && step === 6 && (
+              {showQuoteWait && step === 3 && (
                 <p className="calc-form__hint calc-form__hint--inline calc-form__hint--wait" aria-live="polite">
                   <span className="calc-form__wait-dot" aria-hidden />
                   {t('calc.waiting')}
@@ -1937,11 +1937,11 @@ export function CalcForm({
             </>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <>
               <StepHeader
-                step={4}
-                title={stepMeta[4].title}
+                step={5}
+                title={stepMeta[5].title}
                 subtitle={
                   pickupType === 'locker'
                     ? t('calc.senderSubLocker')
@@ -2094,11 +2094,11 @@ export function CalcForm({
             </>
           )}
 
-          {step === 5 && (
+          {step === 6 && (
             <>
               <StepHeader
-                step={5}
-                title={stepMeta[5].title}
+                step={6}
+                title={stepMeta[6].title}
                 subtitle={
                   deliveryType === 'locker'
                     ? t('calc.receiverSubLocker')
@@ -2302,7 +2302,7 @@ export function CalcForm({
         <div className="calc-form__main">
           <div className="calc-form__step-body">
             {stepContent}
-            {(step === 2 || step === 4 || step === 5) && <CalcDraftHints items={draftHintItems} />}
+            {(step === 2 || step === 5 || step === 6) && <CalcDraftHints items={draftHintItems} />}
           </div>
           {!navAfterLayout && nav()}
         </div>
