@@ -24,6 +24,10 @@ export const WEIGHT_ROWS = [
   { key: '20', label: '20', maxKg: 20, avgKg: 17.5 },
   { key: '25', label: '25', maxKg: 25, avgKg: 22.5 },
   { key: '30', label: '30', maxKg: 30, avgKg: 27.5 },
+  { key: '40', label: '40', maxKg: 40, avgKg: 35 },
+  { key: '50', label: '50', maxKg: 50, avgKg: 45 },
+  { key: '70', label: '70', maxKg: 70, avgKg: 60 },
+  { key: '100', label: '100', maxKg: 100, avgKg: 85 },
 ];
 
 export const DELIVERY_MODES = ['branch', 'locker', 'address'];
@@ -122,14 +126,46 @@ function mapSettingsRow(row) {
   };
 }
 
+/** Fill missing high-weight cells so XXL (100 kg) does not reuse the 30 kg tier. */
+function fillMissingWeightCosts(costPrices, fallbackCosts = buildCostMatrix()) {
+  const next = { ...(costPrices || {}) };
+  for (const mode of DELIVERY_MODES) {
+    next[mode] = { ...(next[mode] || {}) };
+    for (const row of WEIGHT_ROWS) {
+      if (next[mode][row.key]) continue;
+      if (fallbackCosts?.[mode]?.[row.key]) {
+        next[mode][row.key] = { ...fallbackCosts[mode][row.key] };
+        continue;
+      }
+      const base30 = next[mode]['30'] || {};
+      next[mode][row.key] = {};
+      for (const dest of DESTINATIONS) {
+        const sample = base30[dest];
+        next[mode][row.key][dest] = sample != null
+          ? Math.round(Number(sample) * (row.avgKg / 27.5))
+          : Math.round((1600 + row.avgKg * 280) * MODE_FACTOR[mode] * (DEST_FACTOR[dest] || 1.5));
+      }
+    }
+  }
+  return next;
+}
+
+function mergeWeightRows(existing) {
+  const byKey = new Map((existing || []).map((row) => [row.key, row]));
+  for (const row of WEIGHT_ROWS) {
+    if (!byKey.has(row.key)) byKey.set(row.key, row);
+  }
+  return WEIGHT_ROWS.map((row) => byKey.get(row.key) || row);
+}
+
 function mapPricingRow(row) {
   const defaults = defaultPricing();
   if (!row) return defaults;
   return {
     version: row.version ?? defaults.version,
     destinations: row.destinations || DESTINATIONS,
-    weightRows: row.weightRows || WEIGHT_ROWS,
-    costPrices: row.costPrices || defaults.costPrices,
+    weightRows: mergeWeightRows(row.weightRows || defaults.weightRows),
+    costPrices: fillMissingWeightCosts(row.costPrices || defaults.costPrices, defaults.costPrices),
     weightMarkups: row.weightMarkups || defaults.weightMarkups,
     tiers: row.tiers || defaults.tiers,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
@@ -152,8 +188,8 @@ async function jsonSeedPricing() {
     return {
       version: fromFile.version || 1,
       destinations: fromFile.destinations || DESTINATIONS,
-      weightRows: fromFile.weightRows || WEIGHT_ROWS,
-      costPrices: fromFile.costPrices,
+      weightRows: mergeWeightRows(fromFile.weightRows || WEIGHT_ROWS),
+      costPrices: fillMissingWeightCosts(fromFile.costPrices),
       weightMarkups: fromFile.weightMarkups || defaultPricing().weightMarkups,
       tiers: fromFile.tiers || defaultPricing().tiers,
     };
@@ -195,6 +231,10 @@ function needsJsonResync(pricing, jsonPricing) {
     if (dbSample === jsonSample) return true;
   }
   return false;
+}
+
+function needsHighWeightMerge(pricing) {
+  return !pricing?.costPrices?.locker?.['100'];
 }
 
 export async function ensurePricingDefaults() {
@@ -239,38 +279,52 @@ export async function syncPricingFromJsonIfNeeded() {
   await ensurePricingDefaults();
   const force = String(process.env.PRICING_SYNC_FROM_JSON || '').toLowerCase() === 'true';
   const seed = await jsonSeedPricing();
-  const current = await getPricing();
-  if (!force && !needsJsonResync(current, seed)) return current;
-
-  const settingsSeed = await jsonSeedSettings();
-  await prisma.pricingConfig.update({
-    where: { id: 1 },
-    data: {
-      version: seed.version,
-      destinations: seed.destinations,
-      weightRows: seed.weightRows,
-      costPrices: seed.costPrices,
-      weightMarkups: seed.weightMarkups,
-      tiers: seed.tiers,
-    },
-  });
-  if (force) {
-    await prisma.appSettings.update({
+  const raw = await prisma.pricingConfig.findUnique({ where: { id: 1 } });
+  let current = mapPricingRow(raw);
+  if (force || needsJsonResync(current, seed)) {
+    const settingsSeed = await jsonSeedSettings();
+    await prisma.pricingConfig.update({
       where: { id: 1 },
       data: {
-        vatEnabled: settingsSeed.vatEnabled,
-        vatPercent: settingsSeed.vatPercent,
-        roundingEnabled: settingsSeed.roundingEnabled,
-        roundingStep: settingsSeed.roundingStep,
-        currency: settingsSeed.currency,
-        fxFromEur: settingsSeed.fxFromEur,
-        fragileFeeEur: settingsSeed.fragileFeeEur,
-        insurancePercent: settingsSeed.insurancePercent,
+        version: seed.version,
+        destinations: seed.destinations,
+        weightRows: seed.weightRows,
+        costPrices: seed.costPrices,
+        weightMarkups: seed.weightMarkups,
+        tiers: seed.tiers,
       },
     });
+    if (force) {
+      await prisma.appSettings.update({
+        where: { id: 1 },
+        data: {
+          vatEnabled: settingsSeed.vatEnabled,
+          vatPercent: settingsSeed.vatPercent,
+          roundingEnabled: settingsSeed.roundingEnabled,
+          roundingStep: settingsSeed.roundingStep,
+          currency: settingsSeed.currency,
+          fxFromEur: settingsSeed.fxFromEur,
+          fragileFeeEur: settingsSeed.fragileFeeEur,
+          insurancePercent: settingsSeed.insurancePercent,
+        },
+      });
+    }
+    console.log(`[pricing] synced matrix from JSON (force=${force})`);
+    current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
+  } else if (needsHighWeightMerge({ costPrices: raw?.costPrices || {} })) {
+    const mergedCosts = fillMissingWeightCosts(raw?.costPrices || {}, seed.costPrices);
+    const mergedRows = mergeWeightRows(raw?.weightRows || []);
+    await prisma.pricingConfig.update({
+      where: { id: 1 },
+      data: {
+        weightRows: mergedRows,
+        costPrices: mergedCosts,
+      },
+    });
+    console.log('[pricing] merged high-weight tiers (40–100 kg) into matrix');
+    current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
   }
-  console.log(`[pricing] synced matrix from JSON (force=${force})`);
-  return mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
+  return current;
 }
 
 /**
@@ -387,7 +441,7 @@ export function weightKeyForKg(weightKg) {
   for (const row of WEIGHT_ROWS) {
     if (w <= row.maxKg) return row.key;
   }
-  return '30';
+  return WEIGHT_ROWS[WEIGHT_ROWS.length - 1].key;
 }
 
 export function markupPercentForWeight(weightMarkups, weightKg) {

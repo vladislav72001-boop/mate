@@ -700,6 +700,14 @@ export function CalcForm({
     JSON.stringify(deliveryQuoteLocation || null),
   ].join(':');
 
+  const preliminaryRouteKey = [
+    PICKUP_COUNTRY,
+    toCountry,
+    pickupCity.trim().toLowerCase(),
+    destCity.trim().toLowerCase(),
+    declaredValue,
+  ].join(':');
+
   const applyCachedRouteQuotes = useCallback(() => {
     const cached = routeQuoteCache.current.get(routeCacheKey);
     if (!cached) return false;
@@ -708,6 +716,15 @@ export function CalcForm({
     setQuotesFromNp(true);
     return true;
   }, [routeCacheKey]);
+
+  const applyCachedPreliminaryQuotes = useCallback(() => {
+    const cached = routeQuoteCache.current.get(`prelim:${preliminaryRouteKey}`);
+    if (!cached) return false;
+    setParcelQuotes((prev) => ({ ...prev, ...cached.quotes }));
+    setCurrency(cached.currency);
+    setQuotesFromNp(true);
+    return true;
+  }, [preliminaryRouteKey]);
 
   const applyEstimateFallback = useCallback((keys: ParcelKey[] = STEP3_QUOTE_KEYS) => {
     setParcelQuotes((prev) => {
@@ -724,8 +741,20 @@ export function CalcForm({
   const fetchQuoteKeys = useCallback(async (
     keys: ParcelKey[],
     sizeOverrides?: Array<{ boxSize: string; lengthCm: number; widthCm: number; heightCm: number; weightKg: number }>,
+    options?: {
+      deliveryMode?: 'locker' | 'branch' | 'address';
+      pickupLocation?: QuoteLocation;
+      deliveryLocation?: QuoteLocation;
+      cacheKey?: string;
+      allowWithoutLocations?: boolean;
+    },
   ) => {
     if (!keys.length) return;
+    const usePickup = options?.pickupLocation ?? pickupQuoteLocation;
+    const useDelivery = options?.deliveryLocation ?? deliveryQuoteLocation;
+    const useMode = options?.deliveryMode ?? quoteDeliveryMode;
+    if (!options?.allowWithoutLocations && !(usePickup && useDelivery)) return;
+
     quoteInFlight.current = true;
     const reqId = ++quoteRequestId.current;
     setQuoteRefreshing(true);
@@ -735,9 +764,9 @@ export function CalcForm({
         fromCountry: PICKUP_COUNTRY,
         toCountry,
         declaredValue,
-        deliveryMode: quoteDeliveryMode,
-        pickupLocation: pickupQuoteLocation,
-        deliveryLocation: deliveryQuoteLocation,
+        deliveryMode: useMode,
+        pickupLocation: usePickup,
+        deliveryLocation: useDelivery,
         payerType: quotePayerType,
         sizes,
       });
@@ -761,8 +790,10 @@ export function CalcForm({
       if (Object.keys(updates).length) {
         setParcelQuotes((prev) => {
           const merged = { ...prev, ...updates };
-          if (keys.every((k) => STEP3_QUOTE_KEYS.includes(k))) {
-            routeQuoteCache.current.set(routeCacheKey, { quotes: merged, currency: code });
+          const cacheKey = options?.cacheKey
+            || (keys.every((k) => STEP3_QUOTE_KEYS.includes(k)) ? routeCacheKey : null);
+          if (cacheKey) {
+            routeQuoteCache.current.set(cacheKey, { quotes: merged, currency: code });
           }
           return merged;
         });
@@ -776,7 +807,7 @@ export function CalcForm({
       }
     } catch {
       if (reqId !== quoteRequestId.current) return;
-      if (quoteLocationsReady) {
+      if (usePickup && useDelivery) {
         setQuoteWarning(t('calc.quoteNpFail'));
       } else {
         applyEstimateFallback(keys);
@@ -789,7 +820,75 @@ export function CalcForm({
   }, [
     toCountry, declaredValue, routeCacheKey, quoteDeliveryMode,
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType,
-    applyEstimateFallback, quoteLocationsReady, t,
+    applyEstimateFallback, t,
+  ]);
+
+  // Steps 2–5: cheapest city-to-city estimate ("от …") before exact endpoints are chosen.
+  useEffect(() => {
+    if (step < 2 || step > 5) return;
+    if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
+    if (quoteLocationsReady && step >= 5) return;
+    if (applyCachedPreliminaryQuotes()) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const [pickupBranchPts, pickupLockerPts, destBranchPts, destLockerPts] = await Promise.all([
+          fetchShippingPoints({ country: PICKUP_COUNTRY, city: pickupCity.trim(), kind: 'branch', side: 'pickup' }),
+          fetchShippingPoints({ country: PICKUP_COUNTRY, city: pickupCity.trim(), kind: 'locker', side: 'pickup' }),
+          fetchShippingPoints({ country: toCountry, city: destCity.trim(), kind: 'branch', side: 'delivery' }),
+          fetchShippingPoints({ country: toCountry, city: destCity.trim(), kind: 'locker', side: 'delivery' }),
+        ]);
+        if (cancelled) return;
+
+        const firstNpId = (points: ShippingPoint[]) => {
+          const hit = points.find((p) => /^\d+$/.test(String(p.id)));
+          return hit ? String(hit.id) : '';
+        };
+
+        const pickupBranchId = firstNpId(pickupBranchPts.points || []);
+        const destBranchId = firstNpId(destBranchPts.points || []);
+        const pickupLockerId = firstNpId(pickupLockerPts.points || []);
+        const destLockerId = firstNpId(destLockerPts.points || []);
+
+        // Prefer branch→branch (usually cheapest matrix mode), else locker→locker.
+        let mode: 'branch' | 'locker' = 'locker';
+        let pickupLoc: QuoteLocation | undefined;
+        let deliveryLoc: QuoteLocation | undefined;
+        if (pickupBranchId && destBranchId) {
+          mode = 'branch';
+          pickupLoc = divisionQuoteLocation(PICKUP_COUNTRY, pickupBranchId);
+          deliveryLoc = divisionQuoteLocation(toCountry, destBranchId);
+        } else if (pickupLockerId && destLockerId) {
+          mode = 'locker';
+          pickupLoc = divisionQuoteLocation(PICKUP_COUNTRY, pickupLockerId);
+          deliveryLoc = divisionQuoteLocation(toCountry, destLockerId);
+        }
+
+        await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
+          deliveryMode: mode,
+          pickupLocation: pickupLoc,
+          deliveryLocation: deliveryLoc,
+          cacheKey: `prelim:${preliminaryRouteKey}`,
+          allowWithoutLocations: true,
+        });
+      } catch {
+        if (cancelled) return;
+        await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
+          deliveryMode: 'branch',
+          cacheKey: `prelim:${preliminaryRouteKey}`,
+          allowWithoutLocations: true,
+        });
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    step, pickupCity, destCity, toCountry, quoteLocationsReady, preliminaryRouteKey,
+    applyCachedPreliminaryQuotes, fetchQuoteKeys,
   ]);
 
   useEffect(() => {
@@ -865,14 +964,13 @@ export function CalcForm({
   ]);
 
   useEffect(() => {
-    if (prevRouteKey.current && prevRouteKey.current !== routeCacheKey) {
-      routeQuoteCache.current.delete(prevRouteKey.current);
+    if (prevRouteKey.current && prevRouteKey.current !== preliminaryRouteKey) {
+      routeQuoteCache.current.delete(`prelim:${prevRouteKey.current}`);
       setQuotesFromNp(false);
-      // Drop previous route/mode prices so the summary doesn't briefly show a stale total.
       setParcelQuotes({});
     }
-    prevRouteKey.current = routeCacheKey;
-  }, [routeCacheKey]);
+    prevRouteKey.current = preliminaryRouteKey;
+  }, [preliminaryRouteKey]);
 
   // Before the size step the user hasn't picked a parcel yet, so the summary
   // shows the cheapest available size ("от …") instead of the default preset.
@@ -882,7 +980,7 @@ export function CalcForm({
       .filter((v): v is number => v != null);
     return values.length ? Math.min(...values) : null;
   }, [parcelQuotes]);
-  const priceIsMinimum = step <= 5;
+  const priceIsMinimum = step < 6;
   const basePrice = priceIsMinimum ? minQuote : (parcelQuotes[apiParcelKey] ?? null);
 
   const extras = useMemo(() => {
