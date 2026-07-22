@@ -237,6 +237,49 @@ function needsHighWeightMerge(pricing) {
   return !pricing?.costPrices?.locker?.['100'];
 }
 
+/**
+ * Fix accidental spikes where a weight tier costs more than both neighbours
+ * (e.g. locker/1kg/DE was 5500 while 0.5kg=2796 and 1.5kg=3264).
+ */
+export function repairWeightCostSpikes(costPrices) {
+  const next = JSON.parse(JSON.stringify(costPrices || {}));
+  const keys = WEIGHT_ROWS.map((row) => row.key);
+  let fixed = 0;
+
+  for (const mode of DELIVERY_MODES) {
+    if (!next[mode]) continue;
+    for (const dest of DESTINATIONS) {
+      for (let i = 1; i < keys.length - 1; i += 1) {
+        const prevKey = keys[i - 1];
+        const curKey = keys[i];
+        const nextKey = keys[i + 1];
+        const prev = Number(next[mode][prevKey]?.[dest]);
+        const cur = Number(next[mode][curKey]?.[dest]);
+        const nxt = Number(next[mode][nextKey]?.[dest]);
+        if (![prev, cur, nxt].every(Number.isFinite)) continue;
+        if (!(cur > prev && cur > nxt)) continue;
+
+        const prevAvg = WEIGHT_ROWS[i - 1].avgKg;
+        const curAvg = WEIGHT_ROWS[i].avgKg;
+        const nextAvg = WEIGHT_ROWS[i + 1].avgKg;
+        const span = nextAvg - prevAvg;
+        const t = span > 0 ? (curAvg - prevAvg) / span : 0.5;
+        const repaired = Math.round(prev + (nxt - prev) * t);
+        if (!next[mode][curKey]) next[mode][curKey] = {};
+        next[mode][curKey][dest] = repaired;
+        fixed += 1;
+      }
+    }
+  }
+
+  return { costPrices: next, fixed };
+}
+
+function needsWeightSpikeRepair(pricing) {
+  const { fixed } = repairWeightCostSpikes(pricing?.costPrices || {});
+  return fixed > 0;
+}
+
 export async function ensurePricingDefaults() {
   const settingsSeed = await jsonSeedSettings();
   await prisma.appSettings.upsert({
@@ -322,6 +365,16 @@ export async function syncPricingFromJsonIfNeeded() {
       },
     });
     console.log('[pricing] merged high-weight tiers (40–100 kg) into matrix');
+    current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
+  }
+
+  if (needsWeightSpikeRepair(current)) {
+    const { costPrices: repaired, fixed } = repairWeightCostSpikes(current.costPrices);
+    await prisma.pricingConfig.update({
+      where: { id: 1 },
+      data: { costPrices: repaired },
+    });
+    console.log(`[pricing] repaired ${fixed} non-monotonic weight cost spike(s)`);
     current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
   }
   return current;
