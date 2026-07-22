@@ -891,12 +891,14 @@ export function CalcForm({
       allowWithoutLocations?: boolean;
     },
   ) => {
-    const key = sizeToApiKey('custom', {
+    const tier = sizeToApiKey('custom', {
       l: String(preset.lengthCm),
       w: String(preset.widthCm),
       h: String(preset.heightCm),
       kg: String(preset.weightKg),
     });
+    // Dedicated response key so custom quotes never collide with preset S/M/L/XL cache.
+    const quoteKey = `CUSTOM:${preset.weightKg}:${preset.lengthCm}x${preset.widthCm}x${preset.heightCm}`;
     const usePickup = options?.pickupLocation ?? pickupQuoteLocation;
     const useDelivery = options?.deliveryLocation ?? deliveryQuoteLocation;
     const useMode = options?.deliveryMode ?? quoteDeliveryMode;
@@ -915,14 +917,14 @@ export function CalcForm({
         pickupLocation: usePickup,
         deliveryLocation: useDelivery,
         payerType: quotePayerType,
-        sizes: [{ boxSize: key, ...preset }],
+        sizes: [{ boxSize: quoteKey, lengthCm: preset.lengthCm, widthCm: preset.widthCm, heightCm: preset.heightCm, weightKg: preset.weightKg }],
       });
       if (reqId !== customQuoteRequestId.current) return;
 
       const code = (data.currency?.code || DEFAULT_QUOTE_CURRENCY).toUpperCase();
       setCurrency(code);
 
-      const q = data.quotes[key];
+      const q = data.quotes[quoteKey] ?? data.quotes[tier] ?? Object.values(data.quotes || {})[0];
       const total = typeof q === 'number' ? q : (q?.total ?? null);
       setCustomQuote(total);
 
@@ -1019,6 +1021,8 @@ export function CalcForm({
     let cancelled = false;
     if (customQuoteDebounce.current) clearTimeout(customQuoteDebounce.current);
     customQuoteDebounce.current = setTimeout(async () => {
+      const weightKg = Number(customSize.kg);
+      if (!Number.isFinite(weightKg) || weightKg < 0.1) return;
       const preset = sizeToPreset('custom', customSize);
       try {
         const { pickup: pickupLoc, delivery: deliveryLoc } = await resolvePreliminaryQuoteLocations(
@@ -1060,15 +1064,15 @@ export function CalcForm({
   useEffect(() => {
     if (!quoteLocationsReady || step < 6 || step >= 9) return;
 
-    // Prefer cache / API — do not flash crude EUR×HUF estimates (e.g. 13 200 → 8 610).
-    if (applyCachedRouteQuotes()) return;
-
     if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
     if (sizeKey === 'custom') {
+      // Never reuse preset-size route cache for custom weight/dims.
       const preset = sizeToPreset(sizeKey, customSize);
       quoteDebounce.current = setTimeout(() => {
         void fetchCustomQuote(preset);
       }, 120);
+    } else if (applyCachedRouteQuotes()) {
+      return;
     } else if (step <= 6) {
       quoteDebounce.current = setTimeout(() => { void fetchQuoteKeys(STEP3_QUOTE_KEYS); }, 80);
     } else {

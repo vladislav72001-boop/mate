@@ -497,6 +497,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
       for (const size of sizes) {
         const key = size.boxSize;
+        const isCustomQuote = String(key || '').startsWith('CUSTOM:');
         const raw = quotes[key];
         const npTotal = typeof raw === 'number' ? raw : raw?.total;
         const npCurrency = typeof raw === 'object' && raw?.currency?.code
@@ -506,6 +507,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         const weightKg = Number(size.weightKg) || 2;
 
         const canUseNp = preferNovaPost
+          && !isCustomQuote
           && npSource === 'novapost'
           && npTotal != null
           && Number.isFinite(Number(npTotal));
@@ -537,10 +539,16 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         if (mate.amount != null) {
           // Same max(matrix net, Nova Post net) as calculate-final (reconcile),
           // so the price doesn't rise when the user reaches steps 7–8.
+          // Custom weight quotes stay on the matrix ladder so +/- kg never inverts.
           const matrixNet = Number(mate.breakdown?.beforeVat ?? mate.breakdown?.cost) || 0;
           let chosenNet = matrixNet;
           let source = 'mate-matrix';
-          if (npSource === 'novapost' && npTotal != null && Number.isFinite(Number(npTotal))) {
+          if (
+            !isCustomQuote
+            && npSource === 'novapost'
+            && npTotal != null
+            && Number.isFinite(Number(npTotal))
+          ) {
             const npNet = Math.round(
               convertToSettingsCurrency(Number(npTotal), npCurrency, settings) * 100,
             ) / 100;
