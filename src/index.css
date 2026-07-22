@@ -1157,7 +1157,9 @@ body {
   font-weight:var(--fw-semibold);
   border-color:#e1ff01}
 .field-block {
-  margin-bottom:10px}
+  margin-bottom:10px;
+  min-width:0;
+  max-width:100%}
 .field-block label {
   font-weight:var(--fw-semibold);
   color:var(--navy);
@@ -1168,6 +1170,9 @@ body {
   border:1px solid var(--line);
   background:var(--panel);
   width:100%;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
   color:var(--text);
   border-radius:10px;
   padding:10px 12px;
@@ -1181,7 +1186,18 @@ body {
 .field-block input[type=date] {
   --lightningcss-light:initial;
   --lightningcss-dark: ;
-  color-scheme:light}
+  color-scheme:light;
+  display:block;
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  box-sizing:border-box}
+.field-block input[type=date]::-webkit-date-and-time-value {
+  text-align:left;
+  min-width:0}
+.field-block:has(> input[type=date]) {
+  min-width:0;
+  max-width:100%}
 .p-logo-chip {
   cursor:default;
   border-radius:10px;
@@ -7716,6 +7732,8 @@ body {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .calc-form__main {
@@ -7893,7 +7911,7 @@ body {
 
 .calc-form__sizes {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -8068,6 +8086,11 @@ body {
   background: #f6f6f4;
   border-radius: 8px;
   line-height: 1.35;
+}
+
+.calc-address > .calc-form__hint {
+  margin-top: 8px;
+  margin-bottom: 0;
 }
 
 .calc-form__hint--inline {
@@ -8900,6 +8923,13 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.calc-form__grid > .field-block {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .calc-form__grid--3 {
@@ -9607,7 +9637,7 @@ body.calc-option-sheet-open {
   font-size: 0.95rem;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 640px) {
   .calc-form__grid,
   .calc-form__grid--3,
   .calc-form__grid--4 {
@@ -9637,7 +9667,7 @@ body.calc-option-sheet-open {
   }
 
   .calc-form__sizes {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .calc-form--with-summary .calc-form__layout {
@@ -9913,7 +9943,7 @@ body.calc-option-sheet-open {
   }
 
   .calc-form__sizes {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
   }
 
@@ -9960,6 +9990,13 @@ body.calc-option-sheet-open {
   .calc-form__static {
     min-height: 48px;
     font-size: 16px;
+  }
+
+  /* iOS: native date control ignores width and overflows the form */
+  .field-block input[type=date] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 48px;
   }
 
   .calc-locker__map {

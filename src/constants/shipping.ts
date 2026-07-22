@@ -5,7 +5,7 @@ import {
   getCountryCallingCode,
 } from 'libphonenumber-js';
 
-export type ParcelKey = 'S' | 'M' | 'L' | 'XL' | 'XXL';
+export type ParcelKey = 'S' | 'M' | 'L' | 'XL';
 
 export const PICKUP_COUNTRY = 'HU';
 
@@ -19,7 +19,6 @@ export const PARCEL_PRESETS: Record<ParcelKey, {
   M: { lengthCm: 19, widthCm: 38, heightCm: 64, weightKg: 10 },
   L: { lengthCm: 39, widthCm: 38, heightCm: 64, weightKg: 20 },
   XL: { lengthCm: 150, widthCm: 50, heightCm: 25, weightKg: 30 },
-  XXL: { lengthCm: 250, widthCm: 50, heightCm: 25, weightKg: 100 },
 };
 
 export const COUNTRIES = [

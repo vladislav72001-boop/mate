@@ -3,7 +3,6 @@ const PARCEL_LIMITS_BY_TIER = {
   M: { maxLongestCm: 64, maxGirthCm: 220, maxWeightKg: 10 },
   L: { maxLongestCm: 64, maxGirthCm: 240, maxWeightKg: 20 },
   XL: { maxLongestCm: 150, maxGirthCm: 300, maxWeightKg: 30 },
-  XXL: { maxLongestCm: 250, maxGirthCm: 400, maxWeightKg: 100 },
 };
 
 export function sortedSidesCm(lengthCm, widthCm, heightCm) {
@@ -31,7 +30,7 @@ export function validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits) 
 }
 
 export function inferParcelTier(lengthCm, widthCm, heightCm, weightKg) {
-  for (const tier of ['S', 'M', 'L', 'XL', 'XXL']) {
+  for (const tier of ['S', 'M', 'L', 'XL']) {
     const limits = PARCEL_LIMITS_BY_TIER[tier];
     if (
       validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits) === null &&
@@ -48,7 +47,7 @@ export function resolveParcelLimits(lengthCm, widthCm, heightCm, weightKg, boxSi
   const inferred = inferParcelTier(lengthCm, widthCm, heightCm, weightKg);
   const inferredLimits = inferred !== 'custom'
     ? PARCEL_LIMITS_BY_TIER[inferred]
-    : PARCEL_LIMITS_BY_TIER.XXL;
+    : PARCEL_LIMITS_BY_TIER.XL;
 
   // Prefer explicit tier only when the parcel actually fits it (avoids S + 20 kg false rejects).
   if (tier in PARCEL_LIMITS_BY_TIER) {

@@ -85,11 +85,11 @@ type FormProps = {
 type DeliveryMode = 'home' | 'branch' | 'locker';
 type ContentKey = 'documents' | 'clothing' | 'shoes' | 'cosmetics' | 'electronics' | 'gift' | 'other';
 type ValueKey = 'under100' | 'mid' | 'high' | 'over';
-type SizeKey = 'envelope' | ParcelKey | 'custom';
+type SizeKey = 'envelope' | ParcelKey | 'XXL' | 'custom';
 
-const PARCEL_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL', 'XXL'];
+const PARCEL_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL'];
 /** Live quotes for all selectable parcel sizes. */
-const STEP3_QUOTE_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL', 'XXL'];
+const STEP3_QUOTE_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL'];
 const STEP_SUMMARY_KEYS: Record<number, string[]> = {
   1: ['from'],
   2: ['from', 'cities'],
@@ -106,15 +106,15 @@ const TOTAL_STEPS = 9;
 
 const ENVELOPE_PRESET = { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.5 };
 
-/** Five parcel choices — same tiers as Nova Post pricing. */
-const SIZE_OPTION_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL', 'XXL'];
+/** Preset sizes + custom dims. XXL removed — max tier is XL (30 kg). */
+const SIZE_OPTION_KEYS: Array<'S' | 'M' | 'L' | 'XL' | 'custom'> = ['S', 'M', 'L', 'XL', 'custom'];
+const MAX_CUSTOM_WEIGHT_KG = 30;
 
 const SIZE_ICONS: Record<ParcelKey, string> = {
   S: '📦',
   M: '📦',
   L: '📦',
   XL: '🗄️',
-  XXL: '🚚',
 };
 
 const CONTENT_KEYS: ContentKey[] = ['documents', 'clothing', 'shoes', 'cosmetics', 'electronics', 'gift', 'other'];
@@ -257,7 +257,6 @@ const PARCEL_LIMITS: Record<ParcelKey, { maxLongestCm: number; maxGirthCm: numbe
   M: { maxLongestCm: 64, maxGirthCm: 220, maxWeightKg: 10 },
   L: { maxLongestCm: 64, maxGirthCm: 240, maxWeightKg: 20 },
   XL: { maxLongestCm: 150, maxGirthCm: 300, maxWeightKg: 30 },
-  XXL: { maxLongestCm: 250, maxGirthCm: 400, maxWeightKg: 100 },
 };
 
 function sortedSidesCm(l: number, w: number, h: number) {
@@ -279,26 +278,25 @@ function sizeToApiKey(
   custom?: { l: string; w: string; h: string; kg: string },
 ): ParcelKey {
   if (sizeKey === 'envelope') return 'S';
+  if (sizeKey === 'XXL') return 'XL';
   if (sizeKey === 'custom') {
     const lengthCm = Math.max(1, Number(custom?.l) || 30);
     const widthCm = Math.max(1, Number(custom?.w) || 20);
     const heightCm = Math.max(1, Number(custom?.h) || 15);
     const weightKg = Math.max(0.1, Number(custom?.kg) || 2);
-    for (const tier of ['S', 'M', 'L', 'XL', 'XXL'] as ParcelKey[]) {
+    for (const tier of PARCEL_KEYS) {
       if (fitsParcelTier(lengthCm, widthCm, heightCm, weightKg, tier)) return tier;
     }
-    return 'XXL';
+    return 'XL';
   }
   return sizeKey;
 }
 
-function normalizeSizeKey(
-  sizeKey: SizeKey,
-  custom?: { l: string; w: string; h: string; kg: string },
-): ParcelKey {
+function normalizeSizeKey(sizeKey: SizeKey): SizeKey {
   if (sizeKey === 'envelope') return 'S';
-  if (sizeKey === 'custom') return sizeToApiKey('custom', custom);
-  return sizeKey;
+  if (sizeKey === 'XXL') return 'XL';
+  if (SIZE_OPTION_KEYS.includes(sizeKey)) return sizeKey;
+  return 'M';
 }
 
 function deliveryModeToApi(mode: DeliveryMode): 'locker' | 'branch' | 'address' {
@@ -308,6 +306,7 @@ function deliveryModeToApi(mode: DeliveryMode): 'locker' | 'branch' | 'address' 
 
 function sizeToPreset(sizeKey: SizeKey, custom: { l: string; w: string; h: string; kg: string }) {
   if (sizeKey === 'envelope') return ENVELOPE_PRESET;
+  if (sizeKey === 'XXL') return PARCEL_PRESETS.XL;
   if (sizeKey === 'custom') {
     return {
       lengthCm: Math.max(1, Number(custom.l) || 30),
@@ -413,8 +412,8 @@ export function CalcForm({
   const [liveDestBranches, setLiveDestBranches] = useState<ShippingPoint[] | null>(null);
   const [pointsLoading, setPointsLoading] = useState(false);
 
-  const [sizeKey, setSizeKey] = useState<ParcelKey>(() => (
-    normalizeSizeKey((saved?.sizeKey as SizeKey) ?? 'M', saved?.customSize)
+  const [sizeKey, setSizeKey] = useState<SizeKey>(() => (
+    normalizeSizeKey((saved?.sizeKey as SizeKey) ?? 'M')
   ));
   const [customSize, setCustomSize] = useState(saved?.customSize ?? { l: '30', w: '20', h: '15', kg: '2' });
   const [contents, setContents] = useState<ContentKey>(saved?.contents ?? 'gift');
@@ -1339,7 +1338,9 @@ export function CalcForm({
     label: t(`calc.value${key.charAt(0).toUpperCase()}${key.slice(1)}`),
   })), [t]);
 
-  const sizeLabel = sizeKey;
+  const sizeLabel = sizeKey === 'custom'
+    ? t('calc.sizeCustomFmt', { l: customSize.l, w: customSize.w, h: customSize.h, kg: customSize.kg })
+    : sizeKey;
 
   const summaryRows: SummaryRow[] = useMemo(() => [
     { key: 'from', label: t('calc.summaryFrom'), value: formatRoute(PICKUP_COUNTRY, toCountry), onEdit: () => goTo(1) },
@@ -1375,7 +1376,15 @@ export function CalcForm({
       if (!pickupCity.trim()) return t('calc.valPickupCity');
       if (!destCity.trim()) return t('calc.valDestCity');
     }
-    if (step === 3 && !SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
+    if (step === 3) {
+      if (!SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
+      if (sizeKey === 'custom') {
+        if (!customSize.l || !customSize.w || !customSize.h || !customSize.kg) {
+          return t('calc.valCustomSize');
+        }
+        if (Number(customSize.kg) > MAX_CUSTOM_WEIGHT_KG) return t('calc.valMaxWeight');
+      }
+    }
     if (step === 4) {
       if (!pickupType || !deliveryType) return t('calc.valSelectModes');
       if (coverage) {
@@ -1635,22 +1644,28 @@ export function CalcForm({
     icon: DELIVERY_MODE_ICONS[key],
   })), [t]);
 
-  const sizeOptions = useMemo(() => (
-    SIZE_OPTION_KEYS.map((key) => {
+  const sizeOptions = useMemo(() => {
+    const presetDesc = (key: ParcelKey) => {
       const p = PARCEL_PRESETS[key];
+      return t('calc.sizePresetDesc', {
+        l: p.lengthCm,
+        w: p.widthCm,
+        h: p.heightCm,
+        kg: p.weightKg,
+      });
+    };
+    return SIZE_OPTION_KEYS.map((key) => {
+      if (key === 'custom') {
+        return { key, label: t('calc.sizeCustom'), icon: '📐', desc: t('calc.sizeCustomDesc') };
+      }
       return {
         key,
         label: key,
         icon: SIZE_ICONS[key],
-        desc: t('calc.sizePresetDesc', {
-          l: p.lengthCm,
-          w: p.widthCm,
-          h: p.heightCm,
-          kg: p.weightKg,
-        }),
+        desc: presetDesc(key),
       };
-    })
-  ), [t]);
+    });
+  }, [t]);
 
   const contentOptions = useMemo(() => CONTENT_KEYS.map((key) => ({
     key,
@@ -1794,12 +1809,15 @@ export function CalcForm({
               <StepHeader step={3} title={stepMeta[3].title} subtitle={stepMeta[3].sub} />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
-                  const price = parcelQuotes[s.key];
+                  const priceKey: ParcelKey | null = s.key === 'custom'
+                    ? (sizeKey === 'custom' ? apiParcelKey : null)
+                    : s.key;
+                  const price = priceKey != null ? parcelQuotes[priceKey] : null;
                   return (
                     <button
                       key={s.key}
                       type="button"
-                      className={`calc-form__size${sizeKey === s.key ? ' active' : ''}`}
+                      className={`calc-form__size${sizeKey === s.key ? ' active' : ''}${s.key === 'custom' ? ' calc-form__size--wide' : ''}`}
                       onClick={() => setSizeKey(s.key)}
                     >
                       <span className="calc-form__size-icon" aria-hidden>{s.icon}</span>
@@ -1814,6 +1832,86 @@ export function CalcForm({
                   );
                 })}
               </div>
+              {sizeKey === 'custom' && (
+                <div className="calc-custom-dims">
+                  <div className="calc-form__grid calc-form__grid--3">
+                    <div className="field-block">
+                      <label>{t('calc.lengthCm')}</label>
+                      <input
+                        inputMode="decimal"
+                        value={customSize.l}
+                        onChange={(e) => setCustomSize((p) => ({ ...p, l: e.target.value }))}
+                      />
+                    </div>
+                    <div className="field-block">
+                      <label>{t('calc.widthCm')}</label>
+                      <input
+                        inputMode="decimal"
+                        value={customSize.w}
+                        onChange={(e) => setCustomSize((p) => ({ ...p, w: e.target.value }))}
+                      />
+                    </div>
+                    <div className="field-block">
+                      <label>{t('calc.heightCm')}</label>
+                      <input
+                        inputMode="decimal"
+                        value={customSize.h}
+                        onChange={(e) => setCustomSize((p) => ({ ...p, h: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="calc-weight-stepper">
+                    <label className="calc-weight-stepper__label">{t('calc.weightKg')}</label>
+                    <div className="calc-weight-stepper__control">
+                      <button
+                        type="button"
+                        className="calc-weight-stepper__btn"
+                        aria-label={t('calc.decreaseWeight')}
+                        disabled={Number(customSize.kg) <= 0.1}
+                        onClick={() => setCustomSize((p) => ({
+                          ...p,
+                          kg: String(Math.max(0.1, Math.round((Number(p.kg) || 0.1) * 10 - 1) / 10)),
+                        }))}
+                      >
+                        −
+                      </button>
+                      <div className="calc-weight-stepper__value">
+                        <input
+                          className="calc-weight-stepper__input"
+                          inputMode="decimal"
+                          value={customSize.kg}
+                          aria-label={t('calc.weightKg')}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(',', '.').replace(/[^\d.]/g, '');
+                            setCustomSize((p) => ({ ...p, kg: raw }));
+                          }}
+                          onBlur={() => {
+                            let n = Number(customSize.kg);
+                            if (!Number.isFinite(n) || n < 0.1) n = 0.1;
+                            if (n > MAX_CUSTOM_WEIGHT_KG) n = MAX_CUSTOM_WEIGHT_KG;
+                            setCustomSize((p) => ({ ...p, kg: String(Math.round(n * 10) / 10) }));
+                          }}
+                        />
+                        <span>kg</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="calc-weight-stepper__btn"
+                        aria-label={t('calc.increaseWeight')}
+                        disabled={Number(customSize.kg) >= MAX_CUSTOM_WEIGHT_KG}
+                        onClick={() => setCustomSize((p) => ({
+                          ...p,
+                          kg: String(Math.min(MAX_CUSTOM_WEIGHT_KG, Math.round((Number(p.kg) || 0) * 10 + 1) / 10)),
+                        }))}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <p className="calc-weight-stepper__hint">{t('calc.weightHint')}</p>
+                  </div>
+                </div>
+              )}
               <label className="calc-form__check">
                 <input type="checkbox" checked={fragile} onChange={(e) => setFragile(e.target.checked)} />
                 <span>{t('calc.fragile', { fee: fragileFeeLabel })}</span>
