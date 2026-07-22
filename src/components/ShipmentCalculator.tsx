@@ -460,6 +460,7 @@ export function CalcForm({
 
   const [termsAccepted, setTermsAccepted] = useState(saved?.termsAccepted ?? false);
   const [parcelQuotes, setParcelQuotes] = useState<Partial<Record<ParcelKey, number>>>({});
+  const [customQuote, setCustomQuote] = useState<number | null>(null);
   const [quoteRefreshing, setQuoteRefreshing] = useState(false);
   const [welcomeDiscountPercent, setWelcomeDiscountPercent] = useState<number | null>(null);
   const [showQuoteWait, setShowQuoteWait] = useState(false);
@@ -468,6 +469,8 @@ export function CalcForm({
   const [bookAddresses, setBookAddresses] = useState<AddressEntry[]>([]);
 
   const quoteDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customQuoteDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customQuoteRequestId = useRef(0);
   const quoteWaitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quoteRequestId = useRef(0);
 
@@ -878,6 +881,74 @@ export function CalcForm({
     applyEstimateFallback, t,
   ]);
 
+  const fetchCustomQuote = useCallback(async (
+    preset: { lengthCm: number; widthCm: number; heightCm: number; weightKg: number },
+    options?: {
+      pickupLocation?: QuoteLocation;
+      deliveryLocation?: QuoteLocation;
+      deliveryMode?: 'locker' | 'branch' | 'address';
+      pickupMode?: 'locker' | 'branch' | 'address';
+      allowWithoutLocations?: boolean;
+    },
+  ) => {
+    const key = sizeToApiKey('custom', {
+      l: String(preset.lengthCm),
+      w: String(preset.widthCm),
+      h: String(preset.heightCm),
+      kg: String(preset.weightKg),
+    });
+    const usePickup = options?.pickupLocation ?? pickupQuoteLocation;
+    const useDelivery = options?.deliveryLocation ?? deliveryQuoteLocation;
+    const useMode = options?.deliveryMode ?? quoteDeliveryMode;
+    const usePickupMode = options?.pickupMode ?? quotePickupMode;
+    if (!options?.allowWithoutLocations && !(usePickup && useDelivery)) return;
+
+    const reqId = ++customQuoteRequestId.current;
+    setQuoteRefreshing(true);
+    try {
+      const data = await calculateBatch({
+        fromCountry: PICKUP_COUNTRY,
+        toCountry,
+        declaredValue,
+        deliveryMode: useMode,
+        pickupMode: usePickupMode,
+        pickupLocation: usePickup,
+        deliveryLocation: useDelivery,
+        payerType: quotePayerType,
+        sizes: [{ boxSize: key, ...preset }],
+      });
+      if (reqId !== customQuoteRequestId.current) return;
+
+      const code = (data.currency?.code || DEFAULT_QUOTE_CURRENCY).toUpperCase();
+      setCurrency(code);
+
+      const q = data.quotes[key];
+      const total = typeof q === 'number' ? q : (q?.total ?? null);
+      setCustomQuote(total);
+
+      if (typeof q === 'object' && q?.breakdown?.welcomeDiscountPercent) {
+        setWelcomeDiscountPercent(q.breakdown.welcomeDiscountPercent);
+      }
+
+      setQuotesFromNp(data.priceSource === 'novapost' || data.priceSource === 'mate-matrix');
+      if (data.priceSource === 'estimate' || data.priceSource === 'mock') {
+        setQuoteWarning(t('calc.quoteEst'));
+      } else {
+        setQuoteWarning(null);
+      }
+    } catch {
+      if (reqId !== customQuoteRequestId.current) return;
+      setCustomQuote(estimateParcelPrice(preset, DEFAULT_QUOTE_CURRENCY));
+      setQuotesFromNp(false);
+      setQuoteWarning(t('calc.quoteEst'));
+    } finally {
+      if (reqId === customQuoteRequestId.current) setQuoteRefreshing(false);
+    }
+  }, [
+    toCountry, declaredValue, quoteDeliveryMode, quotePickupMode,
+    pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, t,
+  ]);
+
   // Steps 2–5: city-pair quotes that follow selected pickup/delivery modes.
   useEffect(() => {
     if (step < 2 || step > 5) return;
@@ -926,6 +997,66 @@ export function CalcForm({
     applyCachedPreliminaryQuotes, fetchQuoteKeys,
   ]);
 
+  // Custom size: quote by actual dims + weight (not preset tier max weight).
+  useEffect(() => {
+    if (sizeKey !== 'custom') {
+      setCustomQuote(null);
+      return;
+    }
+    if (step < 3 || step > 9) return;
+    if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
+    if (!customSize.l || !customSize.w || !customSize.h || !customSize.kg) {
+      setCustomQuote(null);
+      return;
+    }
+    if (Number(customSize.kg) > MAX_CUSTOM_WEIGHT_KG) {
+      setCustomQuote(null);
+      return;
+    }
+    // Steps 6+ with exact endpoints use the dedicated quote effect below.
+    if (quoteLocationsReady && step >= 6) return;
+
+    let cancelled = false;
+    if (customQuoteDebounce.current) clearTimeout(customQuoteDebounce.current);
+    customQuoteDebounce.current = setTimeout(async () => {
+      const preset = sizeToPreset('custom', customSize);
+      try {
+        const { pickup: pickupLoc, delivery: deliveryLoc } = await resolvePreliminaryQuoteLocations(
+          pickupType,
+          deliveryType,
+          pickupCity,
+          destCity,
+          toCountry,
+        );
+        if (cancelled) return;
+        await fetchCustomQuote(preset, {
+          deliveryMode: quoteDeliveryMode,
+          pickupMode: quotePickupMode,
+          pickupLocation: pickupLoc,
+          deliveryLocation: deliveryLoc,
+          allowWithoutLocations: true,
+        });
+      } catch {
+        if (cancelled) return;
+        await fetchCustomQuote(preset, {
+          deliveryMode: quoteDeliveryMode,
+          pickupMode: quotePickupMode,
+          allowWithoutLocations: true,
+        });
+      }
+    }, 280);
+
+    return () => {
+      cancelled = true;
+      if (customQuoteDebounce.current) clearTimeout(customQuoteDebounce.current);
+    };
+  }, [
+    sizeKey, step, customSize.l, customSize.w, customSize.h, customSize.kg,
+    pickupCity, destCity, toCountry, pickupType, deliveryType,
+    quoteDeliveryMode, quotePickupMode, quoteLocationsReady,
+    fetchCustomQuote,
+  ]);
+
   useEffect(() => {
     if (!quoteLocationsReady || step < 6 || step >= 9) return;
 
@@ -933,7 +1064,12 @@ export function CalcForm({
     if (applyCachedRouteQuotes()) return;
 
     if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
-    if (step <= 6) {
+    if (sizeKey === 'custom') {
+      const preset = sizeToPreset(sizeKey, customSize);
+      quoteDebounce.current = setTimeout(() => {
+        void fetchCustomQuote(preset);
+      }, 120);
+    } else if (step <= 6) {
       quoteDebounce.current = setTimeout(() => { void fetchQuoteKeys(STEP3_QUOTE_KEYS); }, 80);
     } else {
       const preset = sizeToPreset(sizeKey, customSize);
@@ -950,7 +1086,7 @@ export function CalcForm({
     quoteLocationsReady,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     fragile, insurance,
-    applyCachedRouteQuotes, fetchQuoteKeys,
+    applyCachedRouteQuotes, fetchQuoteKeys, fetchCustomQuote,
     pickupType, deliveryType,
   ]);
 
@@ -977,13 +1113,21 @@ export function CalcForm({
         });
         if (cancelled) return;
         setCurrency((data.currency || DEFAULT_QUOTE_CURRENCY).toUpperCase());
-        setParcelQuotes((prev) => ({ ...prev, [apiParcelKey]: data.total }));
+        if (sizeKey === 'custom') {
+          setCustomQuote(data.total);
+        } else {
+          setParcelQuotes((prev) => ({ ...prev, [apiParcelKey]: data.total }));
+        }
         setWelcomeDiscountPercent(data.breakdown?.welcomeDiscountPercent ?? null);
         setQuotesFromNp(true);
       } catch {
         if (cancelled) return;
         setQuoteWarning(t('calc.quoteNpFail'));
-        await fetchQuoteKeys([apiParcelKey], [{ boxSize: apiParcelKey, ...preset }]);
+        if (sizeKey === 'custom') {
+          await fetchCustomQuote(preset);
+        } else {
+          await fetchQuoteKeys([apiParcelKey], [{ boxSize: apiParcelKey, ...preset }]);
+        }
       } finally {
         if (!cancelled) setQuoteRefreshing(false);
       }
@@ -997,7 +1141,7 @@ export function CalcForm({
     step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quotePickupMode,
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, quoteLocationsReady,
     customSize.l, customSize.w, customSize.h, customSize.kg,
-    fetchQuoteKeys,
+    fetchQuoteKeys, fetchCustomQuote,
     t,
   ]);
 
@@ -1006,6 +1150,7 @@ export function CalcForm({
       routeQuoteCache.current.delete(`prelim:${prevRouteKey.current}`);
       setQuotesFromNp(false);
       setParcelQuotes({});
+      setCustomQuote(null);
     }
     prevRouteKey.current = preliminaryRouteKey;
   }, [preliminaryRouteKey]);
@@ -1019,7 +1164,11 @@ export function CalcForm({
     return values.length ? Math.min(...values) : null;
   }, [parcelQuotes]);
   const priceIsMinimum = step < 3;
-  const basePrice = priceIsMinimum ? minQuote : (parcelQuotes[apiParcelKey] ?? null);
+  const basePrice = priceIsMinimum
+    ? minQuote
+    : (sizeKey === 'custom'
+      ? customQuote
+      : (parcelQuotes[apiParcelKey] ?? null));
 
   const extras = useMemo(() => {
     if (basePrice == null || !quoteSettings) {
@@ -1808,10 +1957,9 @@ export function CalcForm({
               <StepHeader step={3} title={stepMeta[3].title} subtitle={stepMeta[3].sub} />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
-                  const priceKey: ParcelKey | null = s.key === 'custom'
-                    ? (sizeKey === 'custom' ? apiParcelKey : null)
-                    : s.key;
-                  const price = priceKey != null ? parcelQuotes[priceKey] : null;
+                  const price = s.key === 'custom'
+                    ? (sizeKey === 'custom' ? customQuote : null)
+                    : parcelQuotes[s.key];
                   return (
                     <button
                       key={s.key}
