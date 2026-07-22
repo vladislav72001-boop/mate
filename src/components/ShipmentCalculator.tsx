@@ -1644,28 +1644,27 @@ export function CalcForm({
     icon: DELIVERY_MODE_ICONS[key],
   })), [t]);
 
-  const sizeOptions = useMemo(() => {
-    const presetDesc = (key: ParcelKey) => {
-      const p = PARCEL_PRESETS[key];
-      return t('calc.sizePresetDesc', {
-        l: p.lengthCm,
-        w: p.widthCm,
-        h: p.heightCm,
-        kg: p.weightKg,
-      });
-    };
-    return SIZE_OPTION_KEYS.map((key) => {
+  const sizeOptions = useMemo(() => (
+    SIZE_OPTION_KEYS.map((key) => {
       if (key === 'custom') {
-        return { key, label: t('calc.sizeCustom'), icon: '📐', desc: t('calc.sizeCustomDesc') };
+        return {
+          key,
+          label: t('calc.sizeCustom'),
+          icon: '📐',
+          dims: t('calc.sizeCustomDesc'),
+          weight: null as string | null,
+        };
       }
+      const p = PARCEL_PRESETS[key];
       return {
         key,
         label: key,
         icon: SIZE_ICONS[key],
-        desc: presetDesc(key),
+        dims: t('calc.sizeDimsFmt', { l: p.lengthCm, w: p.widthCm, h: p.heightCm }),
+        weight: t('calc.sizeWeightFmt', { kg: p.weightKg }),
       };
-    });
-  }, [t]);
+    })
+  ), [t]);
 
   const contentOptions = useMemo(() => CONTENT_KEYS.map((key) => ({
     key,
@@ -1821,8 +1820,11 @@ export function CalcForm({
                       onClick={() => setSizeKey(s.key)}
                     >
                       <span className="calc-form__size-icon" aria-hidden>{s.icon}</span>
-                      <b>{s.label}</b>
-                      <span>{s.desc}</span>
+                      <span className="calc-form__size-body">
+                        <b>{s.label}</b>
+                        <span className="calc-form__size-dims">{s.dims}</span>
+                        {s.weight && <span className="calc-form__size-weight">{s.weight}</span>}
+                      </span>
                       {price != null && (
                         <em className={quoteRefreshing && !quotesFromNp ? 'calc-form__price-est' : ''}>
                           {formatMoney(price)}
