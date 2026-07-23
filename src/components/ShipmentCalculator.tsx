@@ -1341,7 +1341,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 6 && deliveryType === 'locker' && destCity.trim() && destAddressReady) {
+      if (step === 6 && deliveryType === 'locker' && destCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1352,6 +1352,7 @@ export function CalcForm({
           });
           if (!cancelled) {
             setLiveDestLockers(res.points);
+            if (res.points[0]) setDestLocker((prev) => prev || res.points[0].id);
           }
         } catch {
           if (!cancelled) setLiveDestLockers(null);
@@ -1359,7 +1360,7 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 6 && deliveryType === 'branch' && destCity.trim() && destAddressReady) {
+      if (step === 6 && deliveryType === 'branch' && destCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1368,7 +1369,10 @@ export function CalcForm({
             kind: 'branch',
             side: 'delivery',
           });
-          if (!cancelled) setLiveDestBranches(res.points);
+          if (!cancelled) {
+            setLiveDestBranches(res.points);
+            if (res.points[0]) setDestBranch((prev) => prev || res.points[0].id);
+          }
         } catch {
           if (!cancelled) setLiveDestBranches(null);
         } finally {
@@ -1378,7 +1382,7 @@ export function CalcForm({
     };
     void load();
     return () => { cancelled = true; };
-  }, [step, pickupType, deliveryType, pickupCity, destCity, toCountry, pickupAddressReady, destAddressReady]);
+  }, [step, pickupType, deliveryType, pickupCity, destCity, toCountry]);
 
   // If user lands mid-flow without coverage (e.g. after restoring draft), load it
   useEffect(() => {
