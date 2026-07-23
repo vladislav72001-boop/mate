@@ -1556,7 +1556,7 @@ export function CalcForm({
         if (!pickupAddressReady) return t('calc.valSelectAddressHint');
         if (!pickupStreet || !pickupCity || !pickupPostal) return t('calc.valPickupAddress');
       }
-      if (pickupType === 'locker' && !pickupAddressReady) return t('calc.valSelectAddressHint');
+      // Locker address is optional — it only helps filter nearby points.
       if (pickupType === 'branch' && pickupNeedsAddressRefinement && !pickupAddressReady) {
         return t('calc.valSelectAddressHint');
       }
@@ -1576,7 +1576,7 @@ export function CalcForm({
         if (!destAddressReady) return t('calc.valSelectAddressHint');
         if (!destStreet || !destCity || !destPostal) return t('calc.valDeliveryAddress');
       }
-      if ((deliveryType === 'locker' || deliveryType === 'branch') && !destAddressReady) return t('calc.valSelectAddressHint');
+      // Locker/branch address is optional when a point is already chosen.
       if (deliveryType === 'locker' && !destLocker) return t('calc.valSelectDestLocker');
       if (deliveryType === 'branch' && !destBranch) return t('calc.valSelectDestBranch');
       if (!deliveryQuoteLocation) {
@@ -2369,20 +2369,14 @@ export function CalcForm({
                     name="receiver_address"
                     bookAddresses={bookAddresses}
                   />
-                  {destAddressReady ? (
-                    <>
-                      <p className="calc-form__group-label">{t('calc.pickupLockersLabel')}</p>
-                      {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
-                      <LockerPicker
-                        lockers={destLockersForCity}
-                        selected={destLocker}
-                        onSelect={setDestLocker}
-                        focusPos={destAddressFocus}
-                      />
-                    </>
-                  ) : (
-                    <p className="calc-form__hint">{t('calc.afterAddressLockers')}</p>
-                  )}
+                  <p className="calc-form__group-label">{t('calc.pickupLockersLabel')}</p>
+                  {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
+                  <LockerPicker
+                    lockers={destLockersForCity}
+                    selected={destLocker}
+                    onSelect={setDestLocker}
+                    focusPos={destAddressFocus}
+                  />
                 </>
               )}
               {deliveryType === 'branch' && (
@@ -2399,20 +2393,14 @@ export function CalcForm({
                     name="receiver_address_branch"
                     bookAddresses={bookAddresses}
                   />
-                  {destAddressReady ? (
-                    <>
-                      <p className="calc-form__group-label">{t('calc.pickupBranchesLabel')}</p>
-                      {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
-                      <LockerPicker
-                        lockers={destBranchesForCity}
-                        selected={destBranch}
-                        onSelect={setDestBranch}
-                        focusPos={destAddressFocus}
-                      />
-                    </>
-                  ) : (
-                    <p className="calc-form__hint">{t('calc.afterAddressBranches')}</p>
-                  )}
+                  <p className="calc-form__group-label">{t('calc.pickupBranchesLabel')}</p>
+                  {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
+                  <LockerPicker
+                    lockers={destBranchesForCity}
+                    selected={destBranch}
+                    onSelect={setDestBranch}
+                    focusPos={destAddressFocus}
+                  />
                 </>
               )}
               {deliveryType === 'home' && (
