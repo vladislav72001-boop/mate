@@ -1,9 +1,12 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma } from './db.mjs';
 
 const DATA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
+const PRICING_JSON_PATH = path.join(DATA_DIR, 'pricing.json');
+/** Known bad seed that inflated B2C ~×2.8 — one-shot replace with pricing.json markups. */
+const LEGACY_MARKUP_PERCENT = 181;
 
 export const DESTINATIONS = [
   'DOM', 'DE', 'CZ', 'SK', 'AT', 'LT', 'LV', 'EE',
@@ -235,11 +238,40 @@ function needsJsonResync(pricing, jsonPricing) {
   return false;
 }
 
-/** When matrix still matches seed, keep weightMarkups in sync with pricing.json (e.g. 181 → 20). */
-function needsMarkupResync(pricing, jsonPricing) {
+/**
+ * One-shot: DB still has the old 181% seed markups → take markups from pricing.json.
+ * Does NOT overwrite arbitrary admin markup edits (e.g. 25% stays 25%).
+ */
+function needsLegacyMarkupFix(pricing, jsonPricing) {
   if (!jsonPricing?.weightMarkups?.length) return false;
-  if (!matrixMatchesJson(pricing, jsonPricing)) return false;
-  return JSON.stringify(pricing.weightMarkups || []) !== JSON.stringify(jsonPricing.weightMarkups || []);
+  const markups = pricing?.weightMarkups || [];
+  if (!markups.length) return false;
+  const allLegacy = markups.every((m) => Number(m.percent) === LEGACY_MARKUP_PERCENT);
+  if (!allLegacy) return false;
+  const jsonAllLegacy = jsonPricing.weightMarkups.every(
+    (m) => Number(m.percent) === LEGACY_MARKUP_PERCENT,
+  );
+  return !jsonAllLegacy;
+}
+
+/** Best-effort mirror of DB pricing into seed file (local / persistent disk). */
+async function persistPricingJson(pricing) {
+  try {
+    const existing = await readJsonFile('pricing.json', {});
+    const payload = {
+      ...existing,
+      version: pricing.version || existing.version || 1,
+      destinations: pricing.destinations || DESTINATIONS,
+      weightRows: pricing.weightRows || WEIGHT_ROWS,
+      costPrices: pricing.costPrices || {},
+      weightMarkups: pricing.weightMarkups || [],
+      tiers: pricing.tiers || [],
+      updatedAt: new Date().toISOString(),
+    };
+    await writeFile(PRICING_JSON_PATH, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  } catch (err) {
+    console.warn('[pricing] could not write pricing.json:', err?.message || err);
+  }
 }
 
 function needsHighWeightMerge(pricing) {
@@ -284,11 +316,6 @@ export function repairWeightCostSpikes(costPrices) {
   return { costPrices: next, fixed };
 }
 
-function needsWeightSpikeRepair(pricing) {
-  const { fixed } = repairWeightCostSpikes(pricing?.costPrices || {});
-  return fixed > 0;
-}
-
 export async function ensurePricingDefaults() {
   const settingsSeed = await jsonSeedSettings();
   await prisma.appSettings.upsert({
@@ -324,8 +351,10 @@ export async function ensurePricingDefaults() {
 }
 
 /**
- * If PG was seeded with empty generated defaults (0% markups), restore tariffs from JSON.
- * Does not overwrite admin-edited matrices that already match JSON / custom markups.
+ * Seed / repair from pricing.json without wiping admin edits.
+ * - Full JSON overwrite only for empty/generated DB or PRICING_SYNC_FROM_JSON=true
+ * - Legacy 181% markups → current JSON markups (one-shot)
+ * - Spike repair only during full JSON sync (never overwrites admin cell edits on boot)
  */
 export async function syncPricingFromJsonIfNeeded() {
   await ensurePricingDefaults();
@@ -335,13 +364,14 @@ export async function syncPricingFromJsonIfNeeded() {
   let current = mapPricingRow(raw);
   if (force || needsJsonResync(current, seed)) {
     const settingsSeed = await jsonSeedSettings();
+    const { costPrices: repairedCosts, fixed } = repairWeightCostSpikes(seed.costPrices);
     await prisma.pricingConfig.update({
       where: { id: 1 },
       data: {
         version: seed.version,
         destinations: seed.destinations,
         weightRows: seed.weightRows,
-        costPrices: seed.costPrices,
+        costPrices: repairedCosts,
         weightMarkups: seed.weightMarkups,
         tiers: seed.tiers,
       },
@@ -361,14 +391,16 @@ export async function syncPricingFromJsonIfNeeded() {
         },
       });
     }
-    console.log(`[pricing] synced matrix from JSON (force=${force})`);
+    console.log(
+      `[pricing] synced matrix from JSON (force=${force}${fixed ? `, repaired ${fixed} spike(s)` : ''})`,
+    );
     current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
-  } else if (needsMarkupResync(current, seed)) {
+  } else if (needsLegacyMarkupFix(current, seed)) {
     await prisma.pricingConfig.update({
       where: { id: 1 },
       data: { weightMarkups: seed.weightMarkups },
     });
-    console.log('[pricing] synced weightMarkups from JSON');
+    console.log(`[pricing] replaced legacy ${LEGACY_MARKUP_PERCENT}% markups from JSON`);
     current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
   } else if (needsHighWeightMerge({ costPrices: raw?.costPrices || {} })) {
     const mergedCosts = fillMissingWeightCosts(raw?.costPrices || {}, seed.costPrices);
@@ -384,15 +416,6 @@ export async function syncPricingFromJsonIfNeeded() {
     current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
   }
 
-  if (needsWeightSpikeRepair(current)) {
-    const { costPrices: repaired, fixed } = repairWeightCostSpikes(current.costPrices);
-    await prisma.pricingConfig.update({
-      where: { id: 1 },
-      data: { costPrices: repaired },
-    });
-    console.log(`[pricing] repaired ${fixed} non-monotonic weight cost spike(s)`);
-    current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
-  }
   return current;
 }
 
@@ -480,6 +503,7 @@ export async function savePricing(patch) {
   const next = {
     ...current,
     ...patch,
+    updatedAt: new Date().toISOString(),
   };
 
   const row = await prisma.pricingConfig.upsert({
@@ -502,7 +526,10 @@ export async function savePricing(patch) {
       tiers: next.tiers || [],
     },
   });
-  return mapPricingRow(row);
+  const saved = mapPricingRow(row);
+  // Keep seed file aligned so deploys / restarts don't revive stale markups.
+  await persistPricingJson(saved);
+  return saved;
 }
 
 export function weightKeyForKg(weightKg) {

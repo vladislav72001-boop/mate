@@ -1601,9 +1601,13 @@ function PricingTab() {
   const onCellBlur = async (weightKey: string, dest: string, raw: string) => {
     const value = Number(String(raw).replace(/\s/g, ''));
     if (!Number.isFinite(value) || value < 0) return;
+    const prev = pricing?.costPrices?.[mode]?.[weightKey]?.[dest];
+    if (prev != null && Math.round(Number(prev)) === Math.round(value)) return;
     try {
+      setError('');
       const res = await savePricingCell({ mode, weightKey, dest, value });
       setPricing(res.pricing);
+      setMsg(`Ячейка ${mode} / ${weightKey} / ${dest} сохранена`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
     }
@@ -1655,7 +1659,7 @@ function PricingTab() {
     <div className="admin-section admin-section--animate">
       <header className="admin-section__head">
         <h1>Цены на доставку</h1>
-        <p>Матрица = тариф без НДС (как в Excel / как у Nova Post). Клиенту: матрица − скидка уровня + НДС + округление</p>
+        <p>Матрица = тариф без НДС. Клиенту: матрица × наценка − скидка уровня + НДС + округление. Правки в админке пишутся в БД и не затираются при рестарте.</p>
       </header>
       {error && <div className="admin-alert">{error}</div>}
       {msg && <div className="admin-ok">{msg}</div>}
