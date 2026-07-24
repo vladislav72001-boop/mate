@@ -1051,27 +1051,27 @@
   "weightMarkups": [
     {
       "upToKg": 1,
-      "percent": 181
+      "percent": 20
     },
     {
       "upToKg": 2,
-      "percent": 181
+      "percent": 20
     },
     {
       "upToKg": 5,
-      "percent": 181
+      "percent": 20
     },
     {
       "upToKg": 10,
-      "percent": 181
+      "percent": 20
     },
     {
       "upToKg": 20,
-      "percent": 181
+      "percent": 20
     },
     {
       "upToKg": 35,
-      "percent": 181
+      "percent": 20
     }
   ],
   "tiers": [

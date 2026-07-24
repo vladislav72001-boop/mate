@@ -219,18 +219,27 @@ function looksLikeGeneratedPricing(pricing) {
   return allZeroMarkup && sample === generatedSample;
 }
 
+function matrixMatchesJson(pricing, jsonPricing) {
+  const dbSample = pricing?.costPrices?.locker?.['2']?.DE;
+  const jsonSample = jsonPricing?.costPrices?.locker?.['2']?.DE;
+  return dbSample != null && jsonSample != null && dbSample === jsonSample;
+}
+
 function needsJsonResync(pricing, jsonPricing) {
   if (!jsonPricing?.costPrices) return false;
   if (looksLikeGeneratedPricing(pricing)) return true;
   const dbZero = !(pricing.weightMarkups || []).some((m) => Number(m.percent) > 0);
   const jsonHasMarkup = (jsonPricing.weightMarkups || []).some((m) => Number(m.percent) > 0);
   // Costs imported from JSON but markups wiped to 0% → restore full JSON tariffs
-  if (dbZero && jsonHasMarkup) {
-    const dbSample = pricing.costPrices?.locker?.['2']?.DE;
-    const jsonSample = jsonPricing.costPrices?.locker?.['2']?.DE;
-    if (dbSample === jsonSample) return true;
-  }
+  if (dbZero && jsonHasMarkup && matrixMatchesJson(pricing, jsonPricing)) return true;
   return false;
+}
+
+/** When matrix still matches seed, keep weightMarkups in sync with pricing.json (e.g. 181 → 20). */
+function needsMarkupResync(pricing, jsonPricing) {
+  if (!jsonPricing?.weightMarkups?.length) return false;
+  if (!matrixMatchesJson(pricing, jsonPricing)) return false;
+  return JSON.stringify(pricing.weightMarkups || []) !== JSON.stringify(jsonPricing.weightMarkups || []);
 }
 
 function needsHighWeightMerge(pricing) {
@@ -353,6 +362,13 @@ export async function syncPricingFromJsonIfNeeded() {
       });
     }
     console.log(`[pricing] synced matrix from JSON (force=${force})`);
+    current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
+  } else if (needsMarkupResync(current, seed)) {
+    await prisma.pricingConfig.update({
+      where: { id: 1 },
+      data: { weightMarkups: seed.weightMarkups },
+    });
+    console.log('[pricing] synced weightMarkups from JSON');
     current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
   } else if (needsHighWeightMerge({ costPrices: raw?.costPrices || {} })) {
     const mergedCosts = fillMissingWeightCosts(raw?.costPrices || {}, seed.costPrices);
