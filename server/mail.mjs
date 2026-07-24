@@ -76,11 +76,65 @@ function useCidImages() {
   return !isProductionRuntime();
 }
 
+function resendApiKey() {
+  return String(process.env.RESEND_API_KEY || '').trim();
+}
+
+/**
+ * Resend (HTTPS) is preferred when RESEND_API_KEY is set.
+ * GoDaddy SMTP from Railway almost always fails with ETIMEDOUT on CONN.
+ */
+function preferResend() {
+  const key = resendApiKey();
+  if (!key) return false;
+  const provider = String(process.env.EMAIL_PROVIDER || '').toLowerCase().trim();
+  if (provider === 'smtp') return false;
+  return true;
+}
+
+async function sendViaResend({ to, subject, html }) {
+  const key = resendApiKey();
+  const from = mailFrom();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject,
+        html,
+      }),
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = body?.message || body?.error || JSON.stringify(body);
+      throw new Error(`Resend ${res.status}: ${detail}`);
+    }
+    return { messageId: body?.id || null, preview: null, provider: 'resend' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function getTransporter() {
   if (transporterResolved) return transporter;
   if (transporterPromise) return transporterPromise;
 
   transporterPromise = (async () => {
+    // When Resend is active, skip SMTP init (avoids noisy verify timeouts on boot).
+    if (preferResend()) {
+      console.log('[mail] provider=resend (HTTPS) — SMTP skipped');
+      transporter = null;
+      return null;
+    }
+
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
       const port = smtpPort();
       const secure = smtpSecure(port);
@@ -119,7 +173,7 @@ async function getTransporter() {
 
     // Never block production checkout on Ethereal account creation
     if (isProductionRuntime() || process.env.MAIL_DISABLE === 'true') {
-      console.warn('[mail] SMTP_* not configured — emails are written to server/outbox only');
+      console.warn('[mail] SMTP_* / RESEND_API_KEY not configured — emails are written to server/outbox only');
       transporter = null;
       return null;
     }
@@ -142,7 +196,7 @@ async function getTransporter() {
         pass: testAccount.pass,
       },
     });
-    console.log('[mail] Using Ethereal test SMTP. Set SMTP_* env vars for production.');
+    console.log('[mail] Using Ethereal test SMTP. Set RESEND_API_KEY or SMTP_* for production.');
     return transporter;
   })()
     .then((value) => {
@@ -443,8 +497,19 @@ async function deliver({ to, subject, html, outboxName, hero = null }) {
   }
 
   const transport = await getTransporter();
+  if (preferResend()) {
+    try {
+      const result = await sendViaResend({ to, subject, html });
+      console.log(`[mail] sent OK (resend) → ${to} | ${subject} | id=${result.messageId || 'n/a'}`);
+      return result;
+    } catch (err) {
+      console.error(`[mail] send FAILED (resend) → ${to} | ${subject}:`, err?.message || err);
+      throw err;
+    }
+  }
+
   if (!transport) {
-    console.warn(`[mail] skipped send (no SMTP): ${subject} → ${to}`);
+    console.warn(`[mail] skipped send (no SMTP/Resend): ${subject} → ${to}`);
     return { messageId: null, preview: null, skipped: true };
   }
 
@@ -463,11 +528,11 @@ async function deliver({ to, subject, html, outboxName, hero = null }) {
       }),
     ]);
     const preview = nodemailer.getTestMessageUrl(info);
-    console.log(`[mail] sent OK → ${to} | ${subject} | id=${info.messageId || 'n/a'}`);
+    console.log(`[mail] sent OK (smtp) → ${to} | ${subject} | id=${info.messageId || 'n/a'}`);
     if (preview) console.log(`[mail] Preview (${subject}): ${preview}`);
     return { messageId: info.messageId, preview };
   } catch (err) {
-    console.error(`[mail] send FAILED → ${to} | ${subject}:`, err?.message || err);
+    console.error(`[mail] send FAILED (smtp) → ${to} | ${subject}:`, err?.message || err);
     throw err;
   }
 }
@@ -772,13 +837,22 @@ export async function assertMailAssets() {
   return missing;
 }
 
-/** Probe SMTP from production (e.g. Railway console). */
+/** Probe mail provider from production (visible in Railway logs). */
 export async function probeSmtp() {
+  if (preferResend()) {
+    return {
+      ok: true,
+      provider: 'resend',
+      from: mailFrom(),
+      note: 'HTTPS API — works from Railway (unlike GoDaddy SMTP)',
+    };
+  }
   const transport = await getTransporter();
-  if (!transport) return { ok: false, error: 'SMTP not configured' };
+  if (!transport) return { ok: false, error: 'Neither RESEND_API_KEY nor SMTP_* configured' };
   await transport.verify();
   return {
     ok: true,
+    provider: 'smtp',
     host: process.env.SMTP_HOST,
     port: smtpPort(),
     secure: smtpSecure(),
