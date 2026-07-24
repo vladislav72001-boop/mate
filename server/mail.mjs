@@ -532,7 +532,16 @@ async function deliver({ to, subject, html, outboxName, hero = null }) {
     if (preview) console.log(`[mail] Preview (${subject}): ${preview}`);
     return { messageId: info.messageId, preview };
   } catch (err) {
-    console.error(`[mail] send FAILED (smtp) → ${to} | ${subject}:`, err?.message || err);
+    const msg = err?.message || String(err);
+    console.error(`[mail] send FAILED (smtp) → ${to} | ${subject}:`, msg);
+    if (/timeout|ETIMEDOUT|ECONNREFUSED|CONN/i.test(msg)) {
+      console.error(
+        '[mail] GoDaddy/SMTP is unreachable from Railway. '
+        + 'Add RESEND_API_KEY + EMAIL_PROVIDER=resend in Railway Variables, '
+        + 'verify matedelivery.com in Resend, set MAIL_FROM="MATE <info@matedelivery.com>". '
+        + 'Mailbox on GoDaddy ≠ SMTP access from cloud hosts.',
+      );
+    }
     throw err;
   }
 }
