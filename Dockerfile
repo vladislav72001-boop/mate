@@ -34,6 +34,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/server ./server
 COPY --from=build /app/dist ./dist
+# Brand images for transactional emails (/email/*). Also present under dist/ after Vite build.
+COPY --from=build /app/public ./public
 EXPOSE 8080
 # Import checked-in JSON tariffs/users/orders into PG (upsert) so prod matches the old JSON store.
 CMD ["sh", "-c", "npx prisma migrate deploy && node server/scripts/migrate-json-to-pg.mjs && node server/index.mjs"]

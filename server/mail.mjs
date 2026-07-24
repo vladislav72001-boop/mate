@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outboxDir = path.join(__dirname, 'outbox');
-const emailAssetsDir = path.join(__dirname, '..', 'public', 'email');
+const emailAssetDirs = [
+  path.join(__dirname, '..', 'public', 'email'),
+  path.join(__dirname, '..', 'dist', 'email'),
+];
 
 const BRAND = {
   lime: '#E1FF01',
@@ -45,24 +48,72 @@ function isProductionRuntime() {
     || String(process.env.APP_URL || '').startsWith('https://');
 }
 
+function smtpPort() {
+  return Number(process.env.SMTP_PORT || 587);
+}
+
+function smtpSecure(port = smtpPort()) {
+  const raw = process.env.SMTP_SECURE;
+  if (raw != null && String(raw).trim() !== '') {
+    return raw === 'true' || raw === '1';
+  }
+  // GoDaddy / Secureserver: 465 = implicit TLS, 587 = STARTTLS
+  return port === 465;
+}
+
+function resolveAssetPath(filename) {
+  for (const dir of emailAssetDirs) {
+    const full = path.join(dir, filename);
+    if (existsSync(full)) return full;
+  }
+  return null;
+}
+
+/** Prefer hosted image URLs in production — CID attachments often fail/timeout on GoDaddy SMTP. */
+function useCidImages() {
+  if (process.env.MAIL_INLINE_IMAGES === 'true') return true;
+  if (process.env.MAIL_INLINE_IMAGES === 'false') return false;
+  return !isProductionRuntime();
+}
+
 async function getTransporter() {
   if (transporterResolved) return transporter;
   if (transporterPromise) return transporterPromise;
 
   transporterPromise = (async () => {
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      const port = smtpPort();
+      const secure = smtpSecure(port);
+      const host = process.env.SMTP_HOST;
       transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: process.env.SMTP_SECURE === 'true',
-        connectionTimeout: 12_000,
-        greetingTimeout: 12_000,
-        socketTimeout: 20_000,
+        host,
+        port,
+        secure,
+        requireTLS: !secure && port === 587,
+        connectionTimeout: 20_000,
+        greetingTimeout: 20_000,
+        socketTimeout: 45_000,
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
         },
+        tls: {
+          servername: host,
+          minVersion: 'TLSv1.2',
+        },
       });
+      try {
+        await Promise.race([
+          transporter.verify(),
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('SMTP verify timed out')), 20_000);
+          }),
+        ]);
+        console.log(`[mail] SMTP ready ${host}:${port} secure=${secure}`);
+      } catch (err) {
+        console.error(`[mail] SMTP verify FAILED (${host}:${port} secure=${secure}):`, err?.message || err);
+        // Keep transporter — send may still work; verify is advisory for some hosts.
+      }
       return transporter;
     }
 
@@ -99,6 +150,12 @@ async function getTransporter() {
       transporterResolved = true;
       return value;
     })
+    .catch((err) => {
+      console.error('[mail] transporter init failed:', err?.message || err);
+      transporter = null;
+      transporterResolved = true;
+      return null;
+    })
     .finally(() => {
       transporterPromise = null;
     });
@@ -124,7 +181,9 @@ function assetUrl(filename) {
 }
 
 function mailFrom() {
-  return process.env.MAIL_FROM || '"MATE" <info@matedelivery.com>';
+  const raw = String(process.env.MAIL_FROM || '"MATE" <info@matedelivery.com>').trim();
+  // Railway sometimes stores: "MATE" <addr>  or  MATE <addr>
+  return raw || '"MATE" <info@matedelivery.com>';
 }
 
 function formatMoney(amount, currency = 'EUR') {
@@ -147,14 +206,15 @@ function escapeHtml(value) {
 
 async function readAssetBuffer(filename) {
   if (assetCache.has(filename)) return assetCache.get(filename);
-  const full = path.join(emailAssetsDir, filename);
-  if (!existsSync(full)) return null;
+  const full = resolveAssetPath(filename);
+  if (!full) return null;
   const buf = await readFile(full);
   assetCache.set(filename, buf);
   return buf;
 }
 
 function buildAttachments(heroFile) {
+  if (!useCidImages()) return [];
   const files = [
     { filename: 'logo-mark.png', cid: 'mate-logo' },
     heroFile ? { filename: heroFile, cid: 'mate-hero' } : null,
@@ -162,8 +222,8 @@ function buildAttachments(heroFile) {
 
   return files
     .map((file) => {
-      const full = path.join(emailAssetsDir, file.filename);
-      if (!existsSync(full)) return null;
+      const full = resolveAssetPath(file.filename);
+      if (!full) return null;
       return {
         filename: file.filename,
         path: full,
@@ -263,7 +323,7 @@ function baseTemplate({
   badge = '',
   bodyHtml,
   hero = null,
-  useCid = true,
+  useCid = useCidImages(),
 }) {
   const year = new Date().getFullYear();
   const site = appUrl();
@@ -352,6 +412,11 @@ function baseTemplate({
 }
 
 async function deliver({ to, subject, html, outboxName, hero = null }) {
+  if (!to) {
+    console.warn(`[mail] skipped send (no recipient): ${subject}`);
+    return { messageId: null, preview: null, skipped: true };
+  }
+
   if (outboxName) {
     try {
       let outboxHtml = html;
@@ -384,21 +449,27 @@ async function deliver({ to, subject, html, outboxName, hero = null }) {
   }
 
   const attachments = buildAttachments(hero);
-  const info = await Promise.race([
-    transport.sendMail({
-      from: mailFrom(),
-      to,
-      subject,
-      html,
-      attachments,
-    }),
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('SMTP send timed out')), 20_000);
-    }),
-  ]);
-  const preview = nodemailer.getTestMessageUrl(info);
-  if (preview) console.log(`[mail] Preview (${subject}): ${preview}`);
-  return { messageId: info.messageId, preview };
+  try {
+    const info = await Promise.race([
+      transport.sendMail({
+        from: mailFrom(),
+        to,
+        subject,
+        html,
+        attachments: attachments.length ? attachments : undefined,
+      }),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('SMTP send timed out after 45s')), 45_000);
+      }),
+    ]);
+    const preview = nodemailer.getTestMessageUrl(info);
+    console.log(`[mail] sent OK → ${to} | ${subject} | id=${info.messageId || 'n/a'}`);
+    if (preview) console.log(`[mail] Preview (${subject}): ${preview}`);
+    return { messageId: info.messageId, preview };
+  } catch (err) {
+    console.error(`[mail] send FAILED → ${to} | ${subject}:`, err?.message || err);
+    throw err;
+  }
 }
 
 function escapeRegExp(value) {
@@ -695,6 +766,22 @@ export async function assertMailAssets() {
   }
   if (missing.length) {
     console.warn(`[mail] missing email assets: ${missing.join(', ')}`);
+  } else {
+    console.log(`[mail] email assets OK (${emailAssetDirs.filter((d) => existsSync(d)).join(' | ') || 'none'})`);
   }
   return missing;
+}
+
+/** Probe SMTP from production (e.g. Railway console). */
+export async function probeSmtp() {
+  const transport = await getTransporter();
+  if (!transport) return { ok: false, error: 'SMTP not configured' };
+  await transport.verify();
+  return {
+    ok: true,
+    host: process.env.SMTP_HOST,
+    port: smtpPort(),
+    secure: smtpSecure(),
+    from: mailFrom(),
+  };
 }

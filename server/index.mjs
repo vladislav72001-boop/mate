@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUser, findByAppleId, findByEmail, findByGoogleId, findById, findByIdentifier, publicUser, updateUser } from './store.mjs';
-import { sendWelcomeEmail, sendLoginEmail } from './mail.mjs';
+import { sendWelcomeEmail, sendLoginEmail, assertMailAssets, probeSmtp } from './mail.mjs';
 import { verifyGoogleCredential, isGoogleAuthConfigured } from './google-auth.mjs';
 import { getAppleAuthPublicConfig, isAppleAuthConfigured, verifyAppleIdToken } from './apple-auth.mjs';
 import { createShippingRouter } from './shipping.mjs';
@@ -490,6 +490,15 @@ await ensureAdminUser({ createUser, findByEmail });
 await syncPricingFromJsonIfNeeded().catch((err) => {
   console.error('[pricing] JSON sync failed:', err);
 });
+
+// Boot-time mail diagnostics (visible in Railway logs)
+void assertMailAssets().catch((err) => console.error('[mail] asset check failed:', err));
+void probeSmtp()
+  .then((result) => {
+    if (result.ok) console.log(`[mail] probe OK ${result.host}:${result.port} from=${result.from}`);
+    else console.warn(`[mail] probe: ${result.error}`);
+  })
+  .catch((err) => console.error('[mail] probe FAILED:', err?.message || err));
 
 // Production: serve Vite build from the same origin as /api
 const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
