@@ -1,10 +1,23 @@
 import nodemailer from 'nodemailer';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outboxDir = path.join(__dirname, 'outbox');
+const emailAssetsDir = path.join(__dirname, '..', 'public', 'email');
+
+const BRAND = {
+  lime: '#E1FF01',
+  black: '#0B0B0B',
+  ink: '#111111',
+  muted: '#6B7280',
+  soft: '#F4F4F1',
+  line: '#E8E8E4',
+  page: '#E4E4E0',
+  white: '#FFFFFF',
+};
 
 const STATUS_LABELS = {
   pending_payment: 'Ожидает оплаты',
@@ -13,8 +26,19 @@ const STATUS_LABELS = {
   cancelled: 'Отменён',
 };
 
+const HERO = {
+  order: 'hero-boxes.png',
+  welcome: 'hero-van.png',
+  login: 'hero-container.png',
+  status: 'hero-van-black.png',
+  tracking: 'hero-van-black.png',
+  security: 'hero-container.png',
+};
+
 let transporter = null;
 let transporterPromise = null;
+let transporterResolved = false;
+const assetCache = new Map();
 
 function isProductionRuntime() {
   return process.env.NODE_ENV === 'production'
@@ -22,7 +46,7 @@ function isProductionRuntime() {
 }
 
 async function getTransporter() {
-  if (transporter) return transporter;
+  if (transporterResolved) return transporter;
   if (transporterPromise) return transporterPromise;
 
   transporterPromise = (async () => {
@@ -69,9 +93,15 @@ async function getTransporter() {
     });
     console.log('[mail] Using Ethereal test SMTP. Set SMTP_* env vars for production.');
     return transporter;
-  })().finally(() => {
-    transporterPromise = null;
-  });
+  })()
+    .then((value) => {
+      transporter = value;
+      transporterResolved = true;
+      return value;
+    })
+    .finally(() => {
+      transporterPromise = null;
+    });
 
   return transporterPromise;
 }
@@ -82,7 +112,15 @@ async function saveOutboxCopy(filename, html) {
 }
 
 function appUrl() {
-  return process.env.APP_URL || 'http://localhost:5011';
+  return String(process.env.APP_URL || 'http://localhost:5011').replace(/\/$/, '');
+}
+
+function assetBaseUrl() {
+  return String(process.env.MAIL_ASSET_URL || process.env.APP_URL || 'http://localhost:5011').replace(/\/$/, '');
+}
+
+function assetUrl(filename) {
+  return `${assetBaseUrl()}/email/${filename}`;
 }
 
 function mailFrom() {
@@ -107,22 +145,85 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function baseTemplate(title, body) {
-  return `<!DOCTYPE html>
-<html lang="ru">
-<head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>
-<body style="font-family:Arial,sans-serif;background:#f3f3f1;padding:24px;color:#122023">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;border:1px solid #e8e8e8">
-    <div style="font-weight:900;font-size:24px;letter-spacing:.04em;margin-bottom:18px">MATE<span style="color:#8fa300">.</span></div>
-    ${body}
-    <p style="margin-top:24px;font-size:13px;color:#7b7b7b">С уважением,<br>Команда MATE</p>
-  </div>
-</body>
-</html>`;
+async function readAssetBuffer(filename) {
+  if (assetCache.has(filename)) return assetCache.get(filename);
+  const full = path.join(emailAssetsDir, filename);
+  if (!existsSync(full)) return null;
+  const buf = await readFile(full);
+  assetCache.set(filename, buf);
+  return buf;
+}
+
+function buildAttachments(heroFile) {
+  const files = [
+    { filename: 'logo-mark.png', cid: 'mate-logo' },
+    heroFile ? { filename: heroFile, cid: 'mate-hero' } : null,
+  ].filter(Boolean);
+
+  return files
+    .map((file) => {
+      const full = path.join(emailAssetsDir, file.filename);
+      if (!existsSync(full)) return null;
+      return {
+        filename: file.filename,
+        path: full,
+        cid: file.cid,
+        contentDisposition: 'inline',
+      };
+    })
+    .filter(Boolean);
+}
+
+function logoImg(useCid) {
+  const src = useCid ? 'cid:mate-logo' : assetUrl('logo-mark.png');
+  return `<img src="${src}" width="52" height="52" alt="MATE" style="display:block;width:52px;height:52px;border:0;border-radius:50%;" />`;
+}
+
+function heroImg(heroFile, useCid) {
+  if (!heroFile) return '';
+  const src = useCid ? 'cid:mate-hero' : assetUrl(heroFile);
+  return `
+    <tr>
+      <td style="padding:0;line-height:0;font-size:0;background:${BRAND.black};">
+        <img src="${src}" width="600" alt="MATE logistics" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
+      </td>
+    </tr>`;
+}
+
+function statusBadge(label, tone = 'lime') {
+  const styles = {
+    lime: `background:${BRAND.lime};color:${BRAND.black};`,
+    dark: `background:${BRAND.black};color:${BRAND.white};`,
+    muted: `background:${BRAND.line};color:${BRAND.ink};`,
+    danger: 'background:#FEE2E2;color:#991B1B;',
+  };
+  const style = styles[tone] || styles.lime;
+  return `<span style="display:inline-block;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;${style}">${escapeHtml(label)}</span>`;
 }
 
 function ctaButton(href, label) {
-  return `<a href="${escapeHtml(href)}" style="display:inline-block;margin-top:16px;background:#E1FF01;color:#122023;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:700">${escapeHtml(label)}</a>`;
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+      <tr>
+        <td style="border-radius:10px;background:${BRAND.lime};">
+          <a href="${escapeHtml(href)}" style="display:inline-block;padding:14px 28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;line-height:1;color:${BRAND.black};text-decoration:none;border-radius:10px;">
+            ${escapeHtml(label)}
+          </a>
+        </td>
+      </tr>
+    </table>`;
+}
+
+function detailRow(label, value, { last = false, strong = false } = {}) {
+  const border = last ? 'none' : `1px solid ${BRAND.line}`;
+  const valueHtml = strong
+    ? `<strong style="color:${BRAND.ink};font-weight:800;">${value}</strong>`
+    : value;
+  return `
+    <tr>
+      <td style="padding:12px 0;border-bottom:${border};font-size:13px;color:${BRAND.muted};width:38%;vertical-align:top;">${escapeHtml(label)}</td>
+      <td style="padding:12px 0;border-bottom:${border};font-size:14px;color:${BRAND.ink};text-align:right;vertical-align:top;">${valueHtml}</td>
+    </tr>`;
 }
 
 function orderRouteLine(order) {
@@ -139,20 +240,138 @@ function orderSummaryBlock(order, extraRows = '') {
   const receiver = order.payload?.receiver || {};
   const receiverName = [receiver.firstName, receiver.lastName].filter(Boolean).join(' ') || '—';
   return `
-    <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;line-height:1.5;color:#5a6068">
-      <tr><td style="padding:6px 0;color:#7b7b7b;width:140px">Номер заказа</td><td style="padding:6px 0"><strong>${escapeHtml(order.orderNumber)}</strong></td></tr>
-      <tr><td style="padding:6px 0;color:#7b7b7b">Маршрут</td><td style="padding:6px 0">${escapeHtml(orderRouteLine(order))}</td></tr>
-      <tr><td style="padding:6px 0;color:#7b7b7b">Получатель</td><td style="padding:6px 0">${escapeHtml(receiverName)}</td></tr>
-      <tr><td style="padding:6px 0;color:#7b7b7b">Сумма</td><td style="padding:6px 0"><strong>${escapeHtml(formatMoney(order.amount, order.currency))}</strong></td></tr>
-      ${order.npTtn ? `<tr><td style="padding:6px 0;color:#7b7b7b">ТТН</td><td style="padding:6px 0"><strong>${escapeHtml(order.npTtn)}</strong></td></tr>` : ''}
-      ${extraRows}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 8px;background:${BRAND.soft};border-radius:14px;">
+      <tr>
+        <td style="padding:18px 20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+            ${detailRow('Номер заказа', escapeHtml(order.orderNumber), { strong: true })}
+            ${detailRow('Маршрут', escapeHtml(orderRouteLine(order)))}
+            ${detailRow('Получатель', escapeHtml(receiverName))}
+            ${detailRow('Сумма', escapeHtml(formatMoney(order.amount, order.currency)), { strong: true, last: !order.npTtn && !extraRows })}
+            ${order.npTtn ? detailRow('ТТН', escapeHtml(order.npTtn), { strong: true, last: !extraRows }) : ''}
+            ${extraRows}
+          </table>
+        </td>
+      </tr>
     </table>`;
 }
 
-async function deliver({ to, subject, html, outboxName }) {
+function baseTemplate({
+  title,
+  preheader = '',
+  eyebrow = '',
+  badge = '',
+  bodyHtml,
+  hero = null,
+  useCid = true,
+}) {
+  const year = new Date().getFullYear();
+  const site = appUrl();
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
+  <title>${escapeHtml(title)}</title>
+  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background:${BRAND.page};color:${BRAND.ink};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
+    ${escapeHtml(preheader)}
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BRAND.page};">
+    <tr>
+      <td align="center" style="padding:28px 16px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:${BRAND.white};border-radius:20px;overflow:hidden;border:1px solid ${BRAND.line};box-shadow:0 18px 40px rgba(0,0,0,.08);">
+          <tr>
+            <td style="background:${BRAND.black};padding:22px 28px 18px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="vertical-align:middle;width:60px;">
+                    ${logoImg(useCid)}
+                  </td>
+                  <td style="vertical-align:middle;padding-left:14px;">
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:900;letter-spacing:.06em;color:${BRAND.white};line-height:1;">
+                      MATE<span style="color:${BRAND.lime};">.</span>
+                    </div>
+                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#A3A3A3;margin-top:4px;letter-spacing:.02em;">
+                      Express logistics across Europe
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="height:4px;line-height:4px;font-size:0;background:${BRAND.lime};">&nbsp;</td>
+          </tr>
+          ${heroImg(hero, useCid)}
+          <tr>
+            <td style="padding:32px 28px 8px;font-family:Arial,Helvetica,sans-serif;">
+              ${badge ? `<div style="margin-bottom:14px;">${badge}</div>` : ''}
+              ${eyebrow ? `<div style="margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${BRAND.muted};">${escapeHtml(eyebrow)}</div>` : ''}
+              <h1 style="margin:0 0 14px;font-size:28px;line-height:1.2;font-weight:900;color:${BRAND.ink};">${escapeHtml(title)}</h1>
+              ${bodyHtml}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 28px;font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0;font-size:14px;line-height:1.6;color:${BRAND.muted};">
+                С уважением,<br />
+                <strong style="color:${BRAND.ink};">Команда MATE</strong>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:${BRAND.black};padding:24px 28px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#CFCFCF;">
+                    Delivery, Moving &amp; Storage Made Simple<br />
+                    <a href="${escapeHtml(site)}" style="color:${BRAND.lime};text-decoration:none;font-weight:700;">matedelivery.com</a>
+                  </td>
+                  <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8A8A8A;vertical-align:bottom;">
+                    © ${year} MATE
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#8A8A8A;max-width:600px;">
+          Это автоматическое уведомление MATE. Если письмо пришло по ошибке — просто проигнорируйте его.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+async function deliver({ to, subject, html, outboxName, hero = null }) {
   if (outboxName) {
     try {
-      await saveOutboxCopy(outboxName, html);
+      let outboxHtml = html;
+      const logoBuf = await readAssetBuffer('logo-mark.png');
+      if (logoBuf) {
+        const logoData = `data:image/png;base64,${logoBuf.toString('base64')}`;
+        outboxHtml = outboxHtml
+          .replace(/cid:mate-logo/g, logoData)
+          .replace(new RegExp(escapeRegExp(assetUrl('logo-mark.png')), 'g'), logoData);
+      }
+      if (hero) {
+        const heroBuf = await readAssetBuffer(hero);
+        if (heroBuf) {
+          const heroData = `data:image/png;base64,${heroBuf.toString('base64')}`;
+          outboxHtml = outboxHtml
+            .replace(/cid:mate-hero/g, heroData)
+            .replace(new RegExp(escapeRegExp(assetUrl(hero)), 'g'), heroData);
+        }
+      }
+      await saveOutboxCopy(outboxName, outboxHtml);
     } catch (err) {
       console.error('[mail] outbox write failed:', err?.message || err);
     }
@@ -164,12 +383,14 @@ async function deliver({ to, subject, html, outboxName }) {
     return { messageId: null, preview: null, skipped: true };
   }
 
+  const attachments = buildAttachments(hero);
   const info = await Promise.race([
     transport.sendMail({
       from: mailFrom(),
       to,
       subject,
       html,
+      attachments,
     }),
     new Promise((_, reject) => {
       setTimeout(() => reject(new Error('SMTP send timed out')), 20_000);
@@ -180,76 +401,156 @@ async function deliver({ to, subject, html, outboxName }) {
   return { messageId: info.messageId, preview };
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function sendWelcomeEmail(user) {
-  const html = baseTemplate(
-    'Добро пожаловать в MATE',
-    `<h1 style="margin:0 0 12px;font-size:24px">Добро пожаловать, ${escapeHtml(user.name)}!</h1>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068">Ваш аккаунт MATE успешно создан. Теперь вы можете рассчитывать доставку, создавать отправления и отслеживать посылки в личном кабинете.</p>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068"><strong>Email:</strong> ${escapeHtml(user.email)}</p>
-     ${ctaButton(appUrl(), 'Перейти в личный кабинет')}`,
-  );
+  const hero = HERO.welcome;
+  const html = baseTemplate({
+    title: `Добро пожаловать, ${user.name}!`,
+    preheader: 'Ваш аккаунт MATE создан — доставка по Европе стала проще.',
+    eyebrow: 'Аккаунт создан',
+    badge: statusBadge('Welcome', 'lime'),
+    hero,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+        Ваш аккаунт MATE успешно создан. Считайте стоимость, оформляйте отправления и отслеживайте посылки в одном кабинете.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
+        <tr>
+          <td style="padding:18px 20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+              ${detailRow('Email', escapeHtml(user.email), { strong: true, last: true })}
+            </table>
+          </td>
+        </tr>
+      </table>
+      ${ctaButton(appUrl(), 'Перейти в личный кабинет')}
+    `,
+  });
 
   return deliver({
     to: user.email,
     subject: 'Добро пожаловать в MATE — аккаунт создан',
     html,
+    hero,
     outboxName: `welcome-${user.id}.html`,
   });
 }
 
 export async function sendLoginEmail(user, meta = {}) {
   const when = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Berlin' });
-  const html = baseTemplate(
-    'Вход в MATE',
-    `<h1 style="margin:0 0 12px;font-size:24px">Вход в ваш аккаунт</h1>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068">Здравствуйте, ${escapeHtml(user.name)}! Вы успешно вошли в личный кабинет MATE.</p>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068"><strong>Время:</strong> ${escapeHtml(when)}</p>
-     ${meta.ip ? `<p style="font-size:16px;line-height:1.5;color:#5a6068"><strong>IP:</strong> ${escapeHtml(meta.ip)}</p>` : ''}
-     <p style="font-size:14px;line-height:1.5;color:#7b7b7b">Если это были не вы, немедленно смените пароль в настройках аккаунта.</p>`,
-  );
+  const hero = HERO.login;
+  const html = baseTemplate({
+    title: 'Вход в ваш аккаунт',
+    preheader: `Успешный вход в MATE — ${when}`,
+    eyebrow: 'Безопасность',
+    badge: statusBadge('Login', 'dark'),
+    hero,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+        Здравствуйте, ${escapeHtml(user.name)}! Вы успешно вошли в личный кабинет MATE.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
+        <tr>
+          <td style="padding:18px 20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+              ${detailRow('Время', escapeHtml(when), { strong: true, last: !meta.ip })}
+              ${meta.ip ? detailRow('IP', escapeHtml(meta.ip), { last: true }) : ''}
+            </table>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+        Если это были не вы — немедленно смените пароль в настройках аккаунта.
+      </p>
+      ${ctaButton(appUrl(), 'Открыть личный кабинет')}
+    `,
+  });
 
   return deliver({
     to: user.email,
     subject: 'Вход в аккаунт MATE',
     html,
+    hero,
     outboxName: `login-${user.id}-${Date.now()}.html`,
   });
 }
 
 export async function sendPasswordChangedEmail(user) {
   const when = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Berlin' });
-  const html = baseTemplate(
-    'Пароль изменён',
-    `<h1 style="margin:0 0 12px;font-size:24px">Пароль обновлён</h1>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068">Здравствуйте, ${escapeHtml(user.name)}! Пароль вашего аккаунта MATE был успешно изменён.</p>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068"><strong>Время:</strong> ${escapeHtml(when)}</p>
-     <p style="font-size:14px;line-height:1.5;color:#7b7b7b">Если вы не меняли пароль, немедленно свяжитесь с поддержкой и смените пароль в настройках.</p>
-     ${ctaButton(appUrl(), 'Открыть личный кабинет')}`,
-  );
+  const hero = HERO.security;
+  const html = baseTemplate({
+    title: 'Пароль обновлён',
+    preheader: 'Пароль вашего аккаунта MATE был изменён.',
+    eyebrow: 'Безопасность',
+    badge: statusBadge('Security', 'dark'),
+    hero,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+        Здравствуйте, ${escapeHtml(user.name)}! Пароль вашего аккаунта MATE был успешно изменён.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
+        <tr>
+          <td style="padding:18px 20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+              ${detailRow('Время', escapeHtml(when), { strong: true, last: true })}
+            </table>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+        Если вы не меняли пароль — свяжитесь с поддержкой и смените пароль в настройках.
+      </p>
+      ${ctaButton(appUrl(), 'Открыть личный кабинет')}
+    `,
+  });
 
   return deliver({
     to: user.email,
     subject: 'Пароль аккаунта MATE изменён',
     html,
+    hero,
     outboxName: `password-${user.id}-${Date.now()}.html`,
   });
 }
 
 export async function sendProfileUpdatedEmail(user) {
   const when = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Berlin' });
-  const html = baseTemplate(
-    'Профиль обновлён',
-    `<h1 style="margin:0 0 12px;font-size:24px">Данные профиля обновлены</h1>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068">Здравствуйте, ${escapeHtml(user.name)}! Ваши данные в личном кабинете MATE были изменены.</p>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068"><strong>Email:</strong> ${escapeHtml(user.email)}<br><strong>Телефон:</strong> ${escapeHtml(user.phone)}</p>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068"><strong>Время:</strong> ${escapeHtml(when)}</p>
-     <p style="font-size:14px;line-height:1.5;color:#7b7b7b">Если это были не вы, свяжитесь с поддержкой.</p>`,
-  );
+  const hero = HERO.security;
+  const html = baseTemplate({
+    title: 'Данные профиля обновлены',
+    preheader: 'В личном кабинете MATE изменены данные профиля.',
+    eyebrow: 'Профиль',
+    badge: statusBadge('Updated', 'muted'),
+    hero,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+        Здравствуйте, ${escapeHtml(user.name)}! Ваши данные в личном кабинете MATE были изменены.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
+        <tr>
+          <td style="padding:18px 20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+              ${detailRow('Email', escapeHtml(user.email), { strong: true })}
+              ${detailRow('Телефон', escapeHtml(user.phone))}
+              ${detailRow('Время', escapeHtml(when), { last: true })}
+            </table>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+        Если это были не вы — свяжитесь с поддержкой.
+      </p>
+    `,
+  });
 
   return deliver({
     to: user.email,
     subject: 'Профиль MATE обновлён',
     html,
+    hero,
     outboxName: `profile-${user.id}-${Date.now()}.html`,
   });
 }
@@ -257,18 +558,30 @@ export async function sendProfileUpdatedEmail(user) {
 export async function sendOrderCreatedEmail(order, meta = {}) {
   const payUrl = meta.checkoutUrl || appUrl();
   const payLabel = meta.checkoutUrl ? 'Оплатить заказ' : 'Перейти к оплате';
-  const html = baseTemplate(
-    'Заказ создан',
-    `<h1 style="margin:0 0 12px;font-size:24px">Заказ создан</h1>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068">Ваш заказ на доставку успешно оформлен и ожидает оплаты.</p>
-     ${orderSummaryBlock(order, `<tr><td style="padding:6px 0;color:#7b7b7b">Статус</td><td style="padding:6px 0"><strong>${escapeHtml(STATUS_LABELS.pending_payment)}</strong></td></tr>`)}
-     ${ctaButton(payUrl, payLabel)}`,
-  );
+  const hero = HERO.order;
+  const html = baseTemplate({
+    title: 'Заказ создан',
+    preheader: `Заказ ${order.orderNumber} оформлен и ожидает оплаты.`,
+    eyebrow: 'Новое отправление',
+    badge: statusBadge(STATUS_LABELS.pending_payment, 'lime'),
+    hero,
+    bodyHtml: `
+      <p style="margin:0 0 8px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+        Ваш заказ на доставку успешно оформлен и ожидает оплаты. После оплаты мы сразу начнём обработку отправления.
+      </p>
+      ${orderSummaryBlock(
+        order,
+        detailRow('Статус', escapeHtml(STATUS_LABELS.pending_payment), { strong: true, last: true }),
+      )}
+      ${ctaButton(payUrl, payLabel)}
+    `,
+  });
 
   return deliver({
     to: order.customerEmail,
     subject: `MATE — заказ ${order.orderNumber} создан, ожидает оплаты`,
     html,
+    hero,
     outboxName: `order-created-${order.id}.html`,
   });
 }
@@ -277,15 +590,18 @@ export async function sendOrderStatusEmail(order, previousStatus) {
   const status = order.status;
   const prevLabel = STATUS_LABELS[previousStatus] || previousStatus;
   const nextLabel = STATUS_LABELS[status] || status;
+  const hero = HERO.status;
 
   let title;
   let intro;
   let subject;
+  let badgeTone = 'lime';
 
   if (status === 'paid') {
     title = 'Оплата получена';
     intro = 'Оплата вашего заказа успешно получена. Мы начинаем обработку отправления.';
     subject = `MATE — оплата по заказу ${order.orderNumber} получена`;
+    badgeTone = 'lime';
   } else if (status === 'submitted') {
     if (previousStatus === 'pending_payment') {
       title = 'Оплата получена — посылка в пути';
@@ -296,49 +612,89 @@ export async function sendOrderStatusEmail(order, previousStatus) {
       intro = 'Ваше отправление принято перевозчиком и находится в пути.';
       subject = `MATE — посылка ${order.orderNumber} в пути`;
     }
+    badgeTone = 'dark';
   } else if (status === 'cancelled') {
     title = 'Заказ отменён';
     intro = 'Ваш заказ был отменён. Если оплата уже проходила, мы свяжемся с вами по возврату.';
     subject = `MATE — заказ ${order.orderNumber} отменён`;
+    badgeTone = 'danger';
   } else if (status === 'pending_payment') {
     title = 'Требуется оплата';
     intro = 'Статус заказа изменён: требуется оплата для продолжения отправки.';
     subject = `MATE — заказ ${order.orderNumber} ожидает оплаты`;
+    badgeTone = 'lime';
   } else {
     title = 'Статус заказа изменён';
     intro = `Статус вашего заказа обновлён: ${prevLabel} → ${nextLabel}.`;
     subject = `MATE — статус заказа ${order.orderNumber} обновлён`;
+    badgeTone = 'muted';
   }
 
-  const html = baseTemplate(
+  const html = baseTemplate({
     title,
-    `<h1 style="margin:0 0 12px;font-size:24px">${escapeHtml(title)}</h1>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068">${escapeHtml(intro)}</p>
-     ${orderSummaryBlock(order, `<tr><td style="padding:6px 0;color:#7b7b7b">Статус</td><td style="padding:6px 0"><strong>${escapeHtml(nextLabel)}</strong></td></tr>`)}
-     ${ctaButton(appUrl(), 'Отследить отправление')}`,
-  );
+    preheader: intro,
+    eyebrow: 'Обновление заказа',
+    badge: statusBadge(nextLabel, badgeTone),
+    hero,
+    bodyHtml: `
+      <p style="margin:0 0 8px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+        ${escapeHtml(intro)}
+      </p>
+      ${orderSummaryBlock(
+        order,
+        detailRow('Статус', escapeHtml(nextLabel), { strong: true, last: true }),
+      )}
+      ${ctaButton(appUrl(), 'Отследить отправление')}
+    `,
+  });
 
   return deliver({
     to: order.customerEmail,
     subject,
     html,
+    hero,
     outboxName: `order-status-${order.id}-${status}-${Date.now()}.html`,
   });
 }
 
 export async function sendOrderTrackingEmail(order) {
-  const html = baseTemplate(
-    'Обновление трекинга',
-    `<h1 style="margin:0 0 12px;font-size:24px">Номер для отслеживания</h1>
-     <p style="font-size:16px;line-height:1.5;color:#5a6068">Для вашего отправления доступен номер отслеживания (ТТН). Используйте его для проверки статуса доставки.</p>
-     ${orderSummaryBlock(order, `<tr><td style="padding:6px 0;color:#7b7b7b">Статус</td><td style="padding:6px 0"><strong>${escapeHtml(STATUS_LABELS[order.status] || order.status)}</strong></td></tr>`)}
-     ${ctaButton(appUrl(), 'Отследить посылку')}`,
-  );
+  const hero = HERO.tracking;
+  const html = baseTemplate({
+    title: 'Номер для отслеживания',
+    preheader: `ТТН ${order.npTtn} для заказа ${order.orderNumber}`,
+    eyebrow: 'Трекинг',
+    badge: statusBadge('Tracking', 'lime'),
+    hero,
+    bodyHtml: `
+      <p style="margin:0 0 8px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+        Для вашего отправления доступен номер отслеживания (ТТН). Используйте его, чтобы проверить статус доставки.
+      </p>
+      ${orderSummaryBlock(
+        order,
+        detailRow('Статус', escapeHtml(STATUS_LABELS[order.status] || order.status), { strong: true, last: true }),
+      )}
+      ${ctaButton(appUrl(), 'Отследить посылку')}
+    `,
+  });
 
   return deliver({
     to: order.customerEmail,
     subject: `MATE — трекинг ${order.orderNumber}: ${order.npTtn}`,
     html,
+    hero,
     outboxName: `order-tracking-${order.id}-${Date.now()}.html`,
   });
+}
+
+/** Warm asset cache / validate brand files exist (optional startup check). */
+export async function assertMailAssets() {
+  const required = ['logo-mark.png', ...new Set(Object.values(HERO))];
+  const missing = [];
+  for (const file of required) {
+    if (!(await readAssetBuffer(file))) missing.push(file);
+  }
+  if (missing.length) {
+    console.warn(`[mail] missing email assets: ${missing.join(', ')}`);
+  }
+  return missing;
 }
