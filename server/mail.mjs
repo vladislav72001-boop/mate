@@ -15,11 +15,17 @@ const BRAND = {
   lime: '#E1FF01',
   black: '#0B0B0B',
   ink: '#111111',
-  muted: '#6B7280',
-  soft: '#F4F4F1',
-  line: '#E8E8E4',
-  page: '#E4E4E0',
+  muted: '#5C6570',
+  soft: '#F3F4F0',
+  line: '#E6E7E2',
+  page: '#E8E9E4',
   white: '#FFFFFF',
+};
+
+/** Modern stack: Space Grotesk (display) + Plus Jakarta Sans (body). Fallbacks for Gmail/Outlook. */
+const FONT = {
+  display: "'Space Grotesk','Plus Jakarta Sans',Segoe UI,Helvetica Neue,Arial,sans-serif",
+  body: "'Plus Jakarta Sans',Segoe UI,Helvetica Neue,Arial,sans-serif",
 };
 
 const STATUS_LABELS = {
@@ -290,7 +296,7 @@ function buildAttachments(heroFile) {
 
 function logoImg(useCid) {
   const src = useCid ? 'cid:mate-logo' : assetUrl('logo-mark.png');
-  return `<img src="${src}" width="52" height="52" alt="MATE" style="display:block;width:52px;height:52px;border:0;border-radius:50%;" />`;
+  return `<img src="${src}" width="48" height="48" alt="MATE" style="display:block;width:48px;height:48px;border:0;border-radius:50%;" />`;
 }
 
 function heroImg(heroFile, useCid) {
@@ -298,7 +304,7 @@ function heroImg(heroFile, useCid) {
   const src = useCid ? 'cid:mate-hero' : assetUrl(heroFile);
   return `
     <tr>
-      <td style="padding:0;line-height:0;font-size:0;background:${BRAND.black};">
+      <td style="padding:0;line-height:0;font-size:0;background:#F0F1EC;">
         <img src="${src}" width="600" alt="MATE logistics" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
       </td>
     </tr>`;
@@ -312,16 +318,16 @@ function statusBadge(label, tone = 'lime') {
     danger: 'background:#FEE2E2;color:#991B1B;',
   };
   const style = styles[tone] || styles.lime;
-  return `<span style="display:inline-block;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;${style}">${escapeHtml(label)}</span>`;
+  return `<span style="display:inline-block;padding:7px 14px;border-radius:999px;font-family:${FONT.body};font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;${style}">${escapeHtml(label)}</span>`;
 }
 
 function ctaButton(href, label) {
   return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;">
       <tr>
-        <td style="border-radius:10px;background:${BRAND.lime};">
-          <a href="${escapeHtml(href)}" style="display:inline-block;padding:14px 28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;line-height:1;color:${BRAND.black};text-decoration:none;border-radius:10px;">
-            ${escapeHtml(label)}
+        <td style="border-radius:12px;background:${BRAND.lime};box-shadow:0 8px 24px rgba(225,255,1,.35);">
+          <a href="${escapeHtml(href)}" style="display:inline-block;padding:15px 28px;font-family:${FONT.display};font-size:15px;font-weight:700;letter-spacing:.01em;line-height:1;color:${BRAND.black};text-decoration:none;border-radius:12px;">
+            ${escapeHtml(label)}&nbsp;&nbsp;→
           </a>
         </td>
       </tr>
@@ -331,13 +337,21 @@ function ctaButton(href, label) {
 function detailRow(label, value, { last = false, strong = false } = {}) {
   const border = last ? 'none' : `1px solid ${BRAND.line}`;
   const valueHtml = strong
-    ? `<strong style="color:${BRAND.ink};font-weight:800;">${value}</strong>`
-    : value;
+    ? `<strong style="color:${BRAND.ink};font-weight:700;font-family:${FONT.display};">${value}</strong>`
+    : `<span style="font-family:${FONT.body};">${value}</span>`;
   return `
     <tr>
-      <td style="padding:12px 0;border-bottom:${border};font-size:13px;color:${BRAND.muted};width:38%;vertical-align:top;">${escapeHtml(label)}</td>
-      <td style="padding:12px 0;border-bottom:${border};font-size:14px;color:${BRAND.ink};text-align:right;vertical-align:top;">${valueHtml}</td>
+      <td style="padding:13px 0;border-bottom:${border};font-family:${FONT.body};font-size:13px;color:${BRAND.muted};width:38%;vertical-align:top;letter-spacing:.01em;">${escapeHtml(label)}</td>
+      <td style="padding:13px 0;border-bottom:${border};font-family:${FONT.body};font-size:14px;color:${BRAND.ink};text-align:right;vertical-align:top;line-height:1.45;">${valueHtml}</td>
     </tr>`;
+}
+
+function normalizeIp(ip) {
+  const raw = String(ip || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('::ffff:')) return raw.slice(7);
+  if (raw === '::1') return '127.0.0.1';
+  return raw;
 }
 
 function orderRouteLine(order) {
@@ -354,10 +368,13 @@ function orderSummaryBlock(order, extraRows = '') {
   const receiver = order.payload?.receiver || {};
   const receiverName = [receiver.firstName, receiver.lastName].filter(Boolean).join(' ') || '—';
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 8px;background:${BRAND.soft};border-radius:14px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0 10px;background:${BRAND.soft};border-radius:16px;border:1px solid ${BRAND.line};">
       <tr>
-        <td style="padding:18px 20px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+        <td style="padding:4px 0 0;background:${BRAND.lime};border-radius:16px 16px 0 0;height:4px;font-size:0;line-height:0;">&nbsp;</td>
+      </tr>
+      <tr>
+        <td style="padding:16px 20px 18px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
             ${detailRow('Номер заказа', escapeHtml(order.orderNumber), { strong: true })}
             ${detailRow('Маршрут', escapeHtml(orderRouteLine(order)))}
             ${detailRow('Получатель', escapeHtml(receiverName))}
@@ -390,28 +407,39 @@ function baseTemplate({
   <meta name="color-scheme" content="light" />
   <meta name="supported-color-schemes" content="light" />
   <title>${escapeHtml(title)}</title>
-  <!--[if mso]><style>body,table,td{font-family:Arial,Helvetica,sans-serif!important}</style><![endif]-->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+    body, table, td, a, p, h1, h2, span, div { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  </style>
+  <!--[if mso]>
+  <style>
+    body, table, td, a, p, h1 { font-family: Arial, Helvetica, sans-serif !important; }
+  </style>
+  <![endif]-->
 </head>
-<body style="margin:0;padding:0;background:${BRAND.page};color:${BRAND.ink};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<body style="margin:0;padding:0;background:${BRAND.page};color:${BRAND.ink};font-family:${FONT.body};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
     ${escapeHtml(preheader)}
   </div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BRAND.page};">
     <tr>
-      <td align="center" style="padding:28px 16px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:${BRAND.white};border-radius:20px;overflow:hidden;border:1px solid ${BRAND.line};box-shadow:0 18px 40px rgba(0,0,0,.08);">
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:${BRAND.white};border-radius:22px;overflow:hidden;border:1px solid ${BRAND.line};box-shadow:0 22px 48px rgba(11,11,11,.10);">
           <tr>
-            <td style="background:${BRAND.black};padding:22px 28px 18px;">
+            <td style="background:${BRAND.black};padding:24px 28px 20px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="vertical-align:middle;width:60px;">
+                  <td style="vertical-align:middle;width:56px;">
                     ${logoImg(useCid)}
                   </td>
                   <td style="vertical-align:middle;padding-left:14px;">
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:900;letter-spacing:.06em;color:${BRAND.white};line-height:1;">
+                    <div style="font-family:${FONT.display};font-size:28px;font-weight:700;letter-spacing:-.02em;color:${BRAND.white};line-height:1;">
                       MATE<span style="color:${BRAND.lime};">.</span>
                     </div>
-                    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#A3A3A3;margin-top:4px;letter-spacing:.02em;">
+                    <div style="font-family:${FONT.body};font-size:12px;font-weight:500;color:#A8ADB4;margin-top:5px;letter-spacing:.04em;">
                       Express logistics across Europe
                     </div>
                   </td>
@@ -420,34 +448,35 @@ function baseTemplate({
             </td>
           </tr>
           <tr>
-            <td style="height:4px;line-height:4px;font-size:0;background:${BRAND.lime};">&nbsp;</td>
+            <td style="height:5px;line-height:5px;font-size:0;background:linear-gradient(90deg,${BRAND.lime} 0%,#9BFF3D 55%,${BRAND.black} 100%);background-color:${BRAND.lime};">&nbsp;</td>
           </tr>
           ${heroImg(hero, useCid)}
           <tr>
-            <td style="padding:32px 28px 8px;font-family:Arial,Helvetica,sans-serif;">
-              ${badge ? `<div style="margin-bottom:14px;">${badge}</div>` : ''}
-              ${eyebrow ? `<div style="margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${BRAND.muted};">${escapeHtml(eyebrow)}</div>` : ''}
-              <h1 style="margin:0 0 14px;font-size:28px;line-height:1.2;font-weight:900;color:${BRAND.ink};">${escapeHtml(title)}</h1>
+            <td style="padding:34px 30px 10px;font-family:${FONT.body};">
+              ${badge ? `<div style="margin-bottom:16px;">${badge}</div>` : ''}
+              ${eyebrow ? `<div style="margin:0 0 10px;font-family:${FONT.body};font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:${BRAND.muted};">${escapeHtml(eyebrow)}</div>` : ''}
+              <h1 style="margin:0 0 6px;font-family:${FONT.display};font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-.03em;color:${BRAND.ink};">${escapeHtml(title)}</h1>
+              <div style="width:42px;height:3px;background:${BRAND.lime};border-radius:2px;margin:0 0 18px;font-size:0;line-height:0;">&nbsp;</div>
               ${bodyHtml}
             </td>
           </tr>
           <tr>
-            <td style="padding:8px 28px 28px;font-family:Arial,Helvetica,sans-serif;">
-              <p style="margin:0;font-size:14px;line-height:1.6;color:${BRAND.muted};">
+            <td style="padding:10px 30px 30px;font-family:${FONT.body};">
+              <p style="margin:0;font-size:14px;line-height:1.65;color:${BRAND.muted};font-weight:500;">
                 С уважением,<br />
-                <strong style="color:${BRAND.ink};">Команда MATE</strong>
+                <strong style="color:${BRAND.ink};font-family:${FONT.display};font-weight:700;">Команда MATE</strong>
               </p>
             </td>
           </tr>
           <tr>
-            <td style="background:${BRAND.black};padding:24px 28px;">
+            <td style="background:${BRAND.black};padding:26px 30px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#CFCFCF;">
+                  <td style="font-family:${FONT.body};font-size:13px;line-height:1.55;color:#C8CCD2;font-weight:500;">
                     Delivery, Moving &amp; Storage Made Simple<br />
-                    <a href="${escapeHtml(site)}" style="color:${BRAND.lime};text-decoration:none;font-weight:700;">matedelivery.com</a>
+                    <a href="${escapeHtml(site)}" style="color:${BRAND.lime};text-decoration:none;font-weight:700;font-family:${FONT.display};letter-spacing:.01em;">matedelivery.com</a>
                   </td>
-                  <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8A8A8A;vertical-align:bottom;">
+                  <td align="right" style="font-family:${FONT.body};font-size:12px;color:#8B9098;vertical-align:bottom;font-weight:500;">
                     © ${year} MATE
                   </td>
                 </tr>
@@ -455,7 +484,7 @@ function baseTemplate({
             </td>
           </tr>
         </table>
-        <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#8A8A8A;max-width:600px;">
+        <p style="margin:18px 0 0;font-family:${FONT.body};font-size:11px;line-height:1.55;color:#8B9098;max-width:600px;font-weight:500;">
           Это автоматическое уведомление MATE. Если письмо пришло по ошибке — просто проигнорируйте его.
         </p>
       </td>
@@ -559,13 +588,13 @@ export async function sendWelcomeEmail(user) {
     badge: statusBadge('Welcome', 'lime'),
     hero,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         Ваш аккаунт MATE успешно создан. Считайте стоимость, оформляйте отправления и отслеживайте посылки в одном кабинете.
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
         <tr>
           <td style="padding:18px 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
               ${detailRow('Email', escapeHtml(user.email), { strong: true, last: true })}
             </table>
           </td>
@@ -586,6 +615,7 @@ export async function sendWelcomeEmail(user) {
 
 export async function sendLoginEmail(user, meta = {}) {
   const when = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Berlin' });
+  const ip = normalizeIp(meta.ip);
   const hero = HERO.login;
   const html = baseTemplate({
     title: 'Вход в ваш аккаунт',
@@ -594,20 +624,23 @@ export async function sendLoginEmail(user, meta = {}) {
     badge: statusBadge('Login', 'dark'),
     hero,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         Здравствуйте, ${escapeHtml(user.name)}! Вы успешно вошли в личный кабинет MATE.
       </p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:16px;border:1px solid ${BRAND.line};">
         <tr>
-          <td style="padding:18px 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
-              ${detailRow('Время', escapeHtml(when), { strong: true, last: !meta.ip })}
-              ${meta.ip ? detailRow('IP', escapeHtml(meta.ip), { last: true }) : ''}
+          <td style="padding:4px 0 0;background:${BRAND.lime};border-radius:16px 16px 0 0;height:4px;font-size:0;line-height:0;">&nbsp;</td>
+        </tr>
+        <tr>
+          <td style="padding:16px 20px 18px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
+              ${detailRow('Время', escapeHtml(when), { strong: true, last: !ip })}
+              ${ip ? detailRow('IP', escapeHtml(ip), { last: true }) : ''}
             </table>
           </td>
         </tr>
       </table>
-      <p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+      <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
         Если это были не вы — немедленно смените пароль в настройках аккаунта.
       </p>
       ${ctaButton(appUrl(), 'Открыть личный кабинет')}
@@ -633,19 +666,19 @@ export async function sendPasswordChangedEmail(user) {
     badge: statusBadge('Security', 'dark'),
     hero,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         Здравствуйте, ${escapeHtml(user.name)}! Пароль вашего аккаунта MATE был успешно изменён.
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
         <tr>
           <td style="padding:18px 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
               ${detailRow('Время', escapeHtml(when), { strong: true, last: true })}
             </table>
           </td>
         </tr>
       </table>
-      <p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+      <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
         Если вы не меняли пароль — свяжитесь с поддержкой и смените пароль в настройках.
       </p>
       ${ctaButton(appUrl(), 'Открыть личный кабинет')}
@@ -671,13 +704,13 @@ export async function sendProfileUpdatedEmail(user) {
     badge: statusBadge('Updated', 'muted'),
     hero,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         Здравствуйте, ${escapeHtml(user.name)}! Ваши данные в личном кабинете MATE были изменены.
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
         <tr>
           <td style="padding:18px 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
               ${detailRow('Email', escapeHtml(user.email), { strong: true })}
               ${detailRow('Телефон', escapeHtml(user.phone))}
               ${detailRow('Время', escapeHtml(when), { last: true })}
@@ -685,7 +718,7 @@ export async function sendProfileUpdatedEmail(user) {
           </td>
         </tr>
       </table>
-      <p style="margin:0;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+      <p style="margin:0;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
         Если это были не вы — свяжитесь с поддержкой.
       </p>
     `,
@@ -711,7 +744,7 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
     badge: statusBadge(STATUS_LABELS.pending_payment, 'lime'),
     hero,
     bodyHtml: `
-      <p style="margin:0 0 8px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         Ваш заказ на доставку успешно оформлен и ожидает оплаты. После оплаты мы сразу начнём обработку отправления.
       </p>
       ${orderSummaryBlock(
@@ -782,7 +815,7 @@ export async function sendOrderStatusEmail(order, previousStatus) {
     badge: statusBadge(nextLabel, badgeTone),
     hero,
     bodyHtml: `
-      <p style="margin:0 0 8px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         ${escapeHtml(intro)}
       </p>
       ${orderSummaryBlock(
@@ -811,7 +844,7 @@ export async function sendOrderTrackingEmail(order) {
     badge: statusBadge('Tracking', 'lime'),
     hero,
     bodyHtml: `
-      <p style="margin:0 0 8px;font-size:16px;line-height:1.6;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         Для вашего отправления доступен номер отслеживания (ТТН). Используйте его, чтобы проверить статус доставки.
       </p>
       ${orderSummaryBlock(
