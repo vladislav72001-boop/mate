@@ -35,7 +35,6 @@ import {
   estimateParcelPrice,
   type ParcelKey,
   countryLabel,
-  countryFlag,
   countryCodeFromDial,
 } from '../constants/shipping';
 import { TrackingMap } from './client-dash/TrackingMap';
@@ -1851,7 +1850,7 @@ export function CalcForm({
                 <label className="calc-form__field-label">{t('calc.from')}</label>
                 <div className="calc-form__static calc-form__static--active calc-country-static">
                   <CountryFlag code={PICKUP_COUNTRY} size={22} />
-                  <span>{countryLabel(PICKUP_COUNTRY, locale)} {countryFlag(PICKUP_COUNTRY)}</span>
+                  <span>{countryLabel(PICKUP_COUNTRY, locale)}</span>
                 </div>
               </div>
               <div className="field-block">

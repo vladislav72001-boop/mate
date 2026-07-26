@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { countryFlag, countryLabel } from '../../constants/shipping';
+import { countryLabel } from '../../constants/shipping';
 import { cityLabelForValue, cityOptionsForDisplay, type CityOption } from '../../constants/cities';
 import { useI18n } from '../../i18n/context';
 import { CalcOptionPicker } from './CalcOptionPicker';
@@ -27,7 +27,7 @@ export function CitySelect({
   const resolvedAria = ariaLabel || t('calc.city');
   const options: CityOption[] = cityOptionsForDisplay(country, locale);
   const label = value ? cityLabelForValue(country, value, locale) : resolvedPlaceholder;
-  const sheetTitle = `${resolvedAria} · ${countryLabel(country, locale)} ${countryFlag(country)}`;
+  const sheetTitle = `${resolvedAria} · ${countryLabel(country, locale)}`;
 
   if (!options.length) {
     return (
