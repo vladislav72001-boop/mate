@@ -508,6 +508,12 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
         npTtn: 'SHHU0465193482',
       };
 
+      const locales = req.body?.allLocales
+        ? ['ru', 'en', 'hu', 'uk']
+        : [String(req.body?.locale || 'ru').toLowerCase().slice(0, 2)].map((v) => (
+          v === 'ua' ? 'uk' : ['ru', 'en', 'hu', 'uk'].includes(v) ? v : 'ru'
+        ));
+
       const samples = [
         {
           id: 'preview-courier',
@@ -585,21 +591,25 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
       ];
 
       const results = [];
-      for (const sample of samples) {
-        const result = await sendOrderStatusEmail({
-          ...baseOrder,
-          ...sample,
-        }, 'paid');
-        results.push({
-          id: sample.id,
-          skipped: Boolean(result?.skipped),
-          messageId: result?.messageId || null,
-          provider: result?.provider || null,
-          preview: result?.preview || null,
-        });
+      for (const locale of locales) {
+        for (const sample of samples) {
+          const result = await sendOrderStatusEmail({
+            ...baseOrder,
+            id: `${sample.id}-${locale}`,
+            payload: { ...sample.payload, locale },
+          }, 'paid');
+          results.push({
+            id: `${sample.id}-${locale}`,
+            locale,
+            skipped: Boolean(result?.skipped),
+            messageId: result?.messageId || null,
+            provider: result?.provider || null,
+            preview: result?.preview || null,
+          });
+        }
       }
 
-      res.json({ ok: true, to, results });
+      res.json({ ok: true, to, locales, results });
     } catch (err) {
       console.error('[admin] preview-waiting mail:', err);
       res.status(500).json({ error: err?.message || 'Не удалось отправить превью писем' });

@@ -4,6 +4,12 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildWaitingFromYouEmail } from './mail-waiting.mjs';
+import {
+  localeFromOrder,
+  mailT,
+  statusLabel,
+  intlLocale,
+} from './mail-i18n.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outboxDir = path.join(__dirname, 'outbox');
@@ -27,15 +33,6 @@ const BRAND = {
 const FONT = {
   display: "'Space Grotesk','Plus Jakarta Sans',Segoe UI,Helvetica Neue,Arial,sans-serif",
   body: "'Plus Jakarta Sans',Segoe UI,Helvetica Neue,Arial,sans-serif",
-};
-
-const STATUS_LABELS = {
-  pending_payment: 'Ожидает оплаты',
-  paid: 'Оплачено',
-  waiting_from_you: 'Жду от Вас посылку',
-  submitted: 'Посылка в пути',
-  delivered: 'Доставлено',
-  cancelled: 'Отменён',
 };
 
 const HERO = {
@@ -249,11 +246,11 @@ function mailFrom() {
   return raw || '"MATE" <info@matedelivery.com>';
 }
 
-function formatMoney(amount, currency = 'EUR') {
+function formatMoney(amount, currency = 'EUR', locale = 'ru') {
   const num = Number(amount);
   if (!Number.isFinite(num)) return '—';
   try {
-    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(num);
+    return new Intl.NumberFormat(intlLocale(locale), { style: 'currency', currency }).format(num);
   } catch {
     return `${num.toFixed(2)} ${currency}`;
   }
@@ -367,9 +364,10 @@ function orderRouteLine(order) {
   return `${from} → ${to}`;
 }
 
-function orderSummaryBlock(order, extraRows = '') {
+function orderSummaryBlock(order, extraRows = '', locale = 'ru') {
   const receiver = order.payload?.receiver || {};
   const receiverName = [receiver.firstName, receiver.lastName].filter(Boolean).join(' ') || '—';
+  const t = (key, vars) => mailT(locale, key, vars);
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0 10px;background:${BRAND.soft};border-radius:16px;border:1px solid ${BRAND.line};">
       <tr>
@@ -378,11 +376,11 @@ function orderSummaryBlock(order, extraRows = '') {
       <tr>
         <td style="padding:16px 20px 18px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-            ${detailRow('Номер заказа', escapeHtml(order.orderNumber), { strong: true })}
-            ${detailRow('Маршрут', escapeHtml(orderRouteLine(order)))}
-            ${detailRow('Получатель', escapeHtml(receiverName))}
-            ${detailRow('Сумма', escapeHtml(formatMoney(order.amount, order.currency)), { strong: true, last: !order.npTtn && !extraRows })}
-            ${order.npTtn ? detailRow('ТТН', escapeHtml(order.npTtn), { strong: true, last: !extraRows }) : ''}
+            ${detailRow(t('orderNumber'), escapeHtml(order.orderNumber), { strong: true })}
+            ${detailRow(t('route'), escapeHtml(orderRouteLine(order)))}
+            ${detailRow(t('recipient'), escapeHtml(receiverName))}
+            ${detailRow(t('amount'), escapeHtml(formatMoney(order.amount, order.currency, locale)), { strong: true, last: !order.npTtn && !extraRows })}
+            ${order.npTtn ? detailRow(t('ttn'), escapeHtml(order.npTtn), { strong: true, last: !extraRows }) : ''}
             ${extraRows}
           </table>
         </td>
@@ -398,12 +396,14 @@ function baseTemplate({
   bodyHtml,
   hero = null,
   useCid = useCidImages(),
+  locale = 'ru',
 }) {
   const year = new Date().getFullYear();
   const site = appUrl();
+  const t = (key, vars) => mailT(locale, key, vars);
 
   return `<!DOCTYPE html>
-<html lang="ru">
+<html lang="${escapeHtml(locale)}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -466,8 +466,8 @@ function baseTemplate({
           <tr>
             <td style="padding:10px 30px 30px;font-family:${FONT.body};">
               <p style="margin:0;font-size:14px;line-height:1.65;color:${BRAND.muted};font-weight:500;">
-                С уважением,<br />
-                <strong style="color:${BRAND.ink};font-family:${FONT.display};font-weight:700;">Команда MATE</strong>
+                ${escapeHtml(t('regards'))}<br />
+                <strong style="color:${BRAND.ink};font-family:${FONT.display};font-weight:700;">${escapeHtml(t('teamMate'))}</strong>
               </p>
             </td>
           </tr>
@@ -488,7 +488,7 @@ function baseTemplate({
           </tr>
         </table>
         <p style="margin:18px 0 0;font-family:${FONT.body};font-size:11px;line-height:1.55;color:#8B9098;max-width:600px;font-weight:500;">
-          Это автоматическое уведомление MATE. Если письмо пришло по ошибке — просто проигнорируйте его.
+          ${escapeHtml(t('autoNotice'))}
         </p>
       </td>
     </tr>
@@ -737,22 +737,27 @@ export async function sendProfileUpdatedEmail(user) {
 }
 
 export async function sendOrderCreatedEmail(order, meta = {}) {
+  const locale = localeFromOrder(order);
+  const t = (key, vars) => mailT(locale, key, vars);
   const payUrl = meta.checkoutUrl || appUrl();
-  const payLabel = meta.checkoutUrl ? 'Оплатить заказ' : 'Перейти к оплате';
+  const payLabel = meta.checkoutUrl ? t('payOrder') : t('goPay');
   const hero = HERO.order;
+  const pending = statusLabel(locale, 'pending_payment');
   const html = baseTemplate({
-    title: 'Заказ создан',
-    preheader: `Заказ ${order.orderNumber} оформлен и ожидает оплаты.`,
-    eyebrow: 'Новое отправление',
-    badge: statusBadge(STATUS_LABELS.pending_payment, 'lime'),
+    title: t('orderCreatedTitle'),
+    preheader: t('orderCreatedPre', { orderNumber: order.orderNumber }),
+    eyebrow: t('newShipment'),
+    badge: statusBadge(pending, 'lime'),
     hero,
+    locale,
     bodyHtml: `
       <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
-        Ваш заказ на доставку успешно оформлен и ожидает оплаты. После оплаты мы сразу начнём обработку отправления.
+        ${escapeHtml(t('orderCreatedBody'))}
       </p>
       ${orderSummaryBlock(
         order,
-        detailRow('Статус', escapeHtml(STATUS_LABELS.pending_payment), { strong: true, last: true }),
+        detailRow(t('status'), escapeHtml(pending), { strong: true, last: true }),
+        locale,
       )}
       ${ctaButton(payUrl, payLabel)}
     `,
@@ -760,7 +765,7 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
 
   return deliver({
     to: order.customerEmail,
-    subject: `MATE — заказ ${order.orderNumber} создан, ожидает оплаты`,
+    subject: t('orderCreatedSubject', { orderNumber: order.orderNumber }),
     html,
     hero,
     outboxName: `order-created-${order.id}.html`,
@@ -781,8 +786,10 @@ export async function sendOrderStatusEmail(order, previousStatus) {
     });
   }
 
-  const prevLabel = STATUS_LABELS[previousStatus] || previousStatus;
-  const nextLabel = STATUS_LABELS[status] || status;
+  const locale = localeFromOrder(order);
+  const t = (key, vars) => mailT(locale, key, vars);
+  const prevLabel = statusLabel(locale, previousStatus) || previousStatus;
+  const nextLabel = statusLabel(locale, status) || status;
   const hero = HERO.status;
 
   let title;
@@ -791,52 +798,54 @@ export async function sendOrderStatusEmail(order, previousStatus) {
   let badgeTone = 'lime';
 
   if (status === 'paid') {
-    title = 'Оплата получена';
-    intro = 'Оплата вашего заказа успешно получена. Мы начинаем обработку отправления.';
-    subject = `MATE — оплата по заказу ${order.orderNumber} получена`;
+    title = t('paidTitle');
+    intro = t('paidIntro');
+    subject = t('paidSubject', { orderNumber: order.orderNumber });
     badgeTone = 'lime';
   } else if (status === 'submitted') {
-    title = 'Посылка в пути';
-    intro = 'Ваше отправление принято перевозчиком и находится в пути.';
-    subject = `MATE — посылка ${order.orderNumber} в пути`;
+    title = t('submittedTitle');
+    intro = t('submittedIntro');
+    subject = t('submittedSubject', { orderNumber: order.orderNumber });
     badgeTone = 'dark';
   } else if (status === 'delivered') {
-    title = 'Посылка доставлена';
-    intro = 'Отправление успешно доставлено получателю.';
-    subject = `MATE — посылка ${order.orderNumber} доставлена`;
+    title = t('deliveredTitle');
+    intro = t('deliveredIntro');
+    subject = t('deliveredSubject', { orderNumber: order.orderNumber });
     badgeTone = 'lime';
   } else if (status === 'cancelled') {
-    title = 'Заказ отменён';
-    intro = 'Ваш заказ был отменён. Если оплата уже проходила, мы свяжемся с вами по возврату.';
-    subject = `MATE — заказ ${order.orderNumber} отменён`;
+    title = t('cancelledTitle');
+    intro = t('cancelledIntro');
+    subject = t('cancelledSubject', { orderNumber: order.orderNumber });
     badgeTone = 'danger';
   } else if (status === 'pending_payment') {
-    title = 'Требуется оплата';
-    intro = 'Статус заказа изменён: требуется оплата для продолжения отправки.';
-    subject = `MATE — заказ ${order.orderNumber} ожидает оплаты`;
+    title = t('pendingTitle');
+    intro = t('pendingIntro');
+    subject = t('pendingSubject', { orderNumber: order.orderNumber });
     badgeTone = 'lime';
   } else {
-    title = 'Статус заказа изменён';
-    intro = `Статус вашего заказа обновлён: ${prevLabel} → ${nextLabel}.`;
-    subject = `MATE — статус заказа ${order.orderNumber} обновлён`;
+    title = t('statusChangedTitle');
+    intro = t('statusChangedIntro', { prev: prevLabel, next: nextLabel });
+    subject = t('statusChangedSubject', { orderNumber: order.orderNumber });
     badgeTone = 'muted';
   }
 
   const html = baseTemplate({
     title,
     preheader: intro,
-    eyebrow: 'Обновление заказа',
+    eyebrow: t('orderUpdate'),
     badge: statusBadge(nextLabel, badgeTone),
     hero,
+    locale,
     bodyHtml: `
       <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         ${escapeHtml(intro)}
       </p>
       ${orderSummaryBlock(
         order,
-        detailRow('Статус', escapeHtml(nextLabel), { strong: true, last: true }),
+        detailRow(t('status'), escapeHtml(nextLabel), { strong: true, last: true }),
+        locale,
       )}
-      ${ctaButton(appUrl(), 'Отследить отправление')}
+      ${ctaButton(appUrl(), t('trackShipment'))}
     `,
   });
 
@@ -850,28 +859,32 @@ export async function sendOrderStatusEmail(order, previousStatus) {
 }
 
 export async function sendOrderTrackingEmail(order) {
+  const locale = localeFromOrder(order);
+  const t = (key, vars) => mailT(locale, key, vars);
   const hero = HERO.tracking;
   const html = baseTemplate({
-    title: 'Номер для отслеживания',
-    preheader: `ТТН ${order.npTtn} для заказа ${order.orderNumber}`,
-    eyebrow: 'Трекинг',
+    title: t('trackingTitle'),
+    preheader: t('trackingPre', { ttn: order.npTtn, orderNumber: order.orderNumber }),
+    eyebrow: t('trackingEyebrow'),
     badge: statusBadge('Tracking', 'lime'),
     hero,
+    locale,
     bodyHtml: `
       <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
-        Для вашего отправления доступен номер отслеживания (ТТН). Используйте его, чтобы проверить статус доставки.
+        ${escapeHtml(t('trackingBody'))}
       </p>
       ${orderSummaryBlock(
         order,
-        detailRow('Статус', escapeHtml(STATUS_LABELS[order.status] || order.status), { strong: true, last: true }),
+        detailRow(t('status'), escapeHtml(statusLabel(locale, order.status) || order.status), { strong: true, last: true }),
+        locale,
       )}
-      ${ctaButton(appUrl(), 'Отследить посылку')}
+      ${ctaButton(appUrl(), t('trackParcel'))}
     `,
   });
 
   return deliver({
     to: order.customerEmail,
-    subject: `MATE — трекинг ${order.orderNumber}: ${order.npTtn}`,
+    subject: t('trackingSubject', { orderNumber: order.orderNumber, ttn: order.npTtn }),
     html,
     hero,
     outboxName: `order-tracking-${order.id}-${Date.now()}.html`,

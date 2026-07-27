@@ -48,6 +48,7 @@ const basePayload = {
     description: 'Одежда',
   },
   cardLast4: '2729',
+  locale: 'ru',
 };
 
 const order = {
@@ -86,7 +87,7 @@ await sendOrderTrackingEmail({
   npTtn: 'SHHU0465193482',
 });
 
-// Mockup-faithful waiting_from_you emails (courier / branch / locker)
+// Mockup-faithful waiting_from_you emails (courier / branch / locker × locales)
 const waitingBase = {
   ...order,
   id: 'preview-waiting',
@@ -96,83 +97,91 @@ const waitingBase = {
   currency: 'HUF',
 };
 
-await sendOrderStatusEmail({
-  ...waitingBase,
-  id: 'preview-courier',
-  payload: {
-    ...basePayload,
-    tariff: {
-      fromCountry: 'HU',
-      toCountry: 'SK',
-      pickupType: 'home',
-      pickupMode: 'address',
-      deliveryType: 'locker',
-      pickupDate,
-      pickupTime: '10:00-11:30',
-      pickupLocation: {
-        kind: 'address',
-        countryCode: 'HU',
-        addressParts: {
-          city: 'Budapest',
-          street: 'Váci út',
-          building: '50',
-          postCode: '1134',
+const waitingModes = [
+  {
+    id: 'courier',
+    payloadExtra: {
+      tariff: {
+        fromCountry: 'HU',
+        toCountry: 'SK',
+        pickupType: 'home',
+        pickupMode: 'address',
+        deliveryType: 'locker',
+        pickupDate,
+        pickupTime: '10:00-11:30',
+        pickupLocation: {
+          kind: 'address',
+          countryCode: 'HU',
+          addressParts: {
+            city: 'Budapest',
+            street: 'Váci út',
+            building: '50',
+            postCode: '1134',
+          },
         },
       },
     },
   },
-}, 'paid');
-
-await sendOrderStatusEmail({
-  ...waitingBase,
-  id: 'preview-branch',
-  payload: {
-    ...basePayload,
-    tariff: {
-      fromCountry: 'HU',
-      toCountry: 'SK',
-      pickupType: 'branch',
-      pickupMode: 'branch',
-      deliveryType: 'locker',
-      pickupDate,
-      pickupTime: '10:00-11:30',
-      pickupLocation: {
-        kind: 'division',
-        countryCode: 'HU',
-        divisionId: 12,
-        provider: 'Отделение MATE №12 · Petržalka',
-        address: 'Bratislava, Farského 85108',
-        phone: '+421 2 445 15 12',
-        name: 'Отделение MATE №12',
+  {
+    id: 'branch',
+    payloadExtra: {
+      tariff: {
+        fromCountry: 'HU',
+        toCountry: 'SK',
+        pickupType: 'branch',
+        pickupMode: 'branch',
+        deliveryType: 'locker',
+        pickupDate,
+        pickupTime: '10:00-11:30',
+        pickupLocation: {
+          kind: 'division',
+          countryCode: 'HU',
+          divisionId: 12,
+          provider: 'Отделение MATE №12 · Petržalka',
+          address: 'Bratislava, Farského 85108',
+          phone: '+421 2 445 15 12',
+          name: 'Отделение MATE №12',
+        },
       },
     },
   },
-}, 'paid');
-
-await sendOrderStatusEmail({
-  ...waitingBase,
-  id: 'preview-locker',
-  payload: {
-    ...basePayload,
-    lockerCode: '418273',
-    tariff: {
-      fromCountry: 'HU',
-      toCountry: 'SK',
-      pickupType: 'locker',
-      pickupMode: 'locker',
-      deliveryType: 'locker',
-      pickupDate,
-      pickupTime: '10:00-11:30',
-      pickupLocation: {
-        kind: 'division',
-        countryCode: 'SK',
-        divisionId: 357025,
-        provider: 'Постамат SPS №357025',
-        address: 'Bratislava-Petržalka, Panónska 35/12a',
-        name: 'Постамат SPS №357025',
+  {
+    id: 'locker',
+    payloadExtra: {
+      lockerCode: '418273',
+      tariff: {
+        fromCountry: 'HU',
+        toCountry: 'SK',
+        pickupType: 'locker',
+        pickupMode: 'locker',
+        deliveryType: 'locker',
+        pickupDate,
+        pickupTime: '10:00-11:30',
+        pickupLocation: {
+          kind: 'division',
+          countryCode: 'SK',
+          divisionId: 357025,
+          provider: 'Постамат SPS №357025',
+          address: 'Bratislava-Petržalka, Panónska 35/12a',
+          name: 'Постамат SPS №357025',
+        },
       },
     },
   },
-}, 'paid');
+];
+
+for (const locale of ['ru', 'en', 'hu', 'uk']) {
+  for (const mode of waitingModes) {
+    await sendOrderStatusEmail({
+      ...waitingBase,
+      id: `preview-${mode.id}-${locale}`,
+      payload: {
+        ...basePayload,
+        ...mode.payloadExtra,
+        locale,
+      },
+    }, 'paid');
+  }
+}
 
 console.log('Preview emails written to server/outbox/');

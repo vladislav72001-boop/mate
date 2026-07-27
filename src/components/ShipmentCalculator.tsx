@@ -1765,6 +1765,7 @@ export function CalcForm({
         customerEmail: payEmail,
         amount: payAmount,
         currency: payCurrency,
+        locale,
         sender: {
           country: PICKUP_COUNTRY,
           line: pickupLabel,

@@ -7,6 +7,7 @@ import {
   mapNovaPostStatusToOrderStatus,
 } from './novapost/shipment.mjs';
 import { validateCheckoutBody } from './shipping-validate.mjs';
+import { normalizeMailLocale } from './mail-i18n.mjs';
 import {
   createOrder,
   findByPublicToken,
@@ -729,6 +730,15 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const existing = await findRecentPendingOrder(customerEmail, fingerprint);
       if (existing) {
         console.log(`[shipping] reusing pending order ${existing.orderNumber} (duplicate checkout prevented)`);
+        // Keep mail language in sync with the UI language of this checkout attempt.
+        const nextLocale = normalizeMailLocale(body.locale || body.lang || body.language);
+        const prevLocale = normalizeMailLocale(existing.payload?.locale || existing.payload?.lang);
+        if (nextLocale !== prevLocale || !existing.payload?.locale) {
+          const nextPayload = { ...(existing.payload || {}), locale: nextLocale };
+          const refreshed = await updateOrder(existing.id, { payload: nextPayload }, { notify: false });
+          if (refreshed) Object.assign(existing, refreshed);
+          else existing.payload = nextPayload;
+        }
         if (stripeEnabled()) {
           const checkoutUrl = await createStripeCheckoutForOrder(existing, customerEmail);
           return res.json({
@@ -782,6 +792,10 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       }
 
       // Nova Post shipment is created only after payment (confirm-payment).
+      const checkoutPayload = {
+        ...body,
+        locale: normalizeMailLocale(body.locale || body.lang || body.language),
+      };
       const order = await createOrder({
         orderNumber,
         userId: req.userId || null,
@@ -792,7 +806,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         currency: pricing.currency,
         status: 'pending_payment',
         paymentMode: stripeEnabled() ? 'stripe' : 'mock',
-        payload: body,
+        payload: checkoutPayload,
         priceBreakdown: pricing.breakdown || null,
         priceSource: pricing.priceSource || null,
         npRef: null,

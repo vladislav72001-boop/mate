@@ -3,6 +3,8 @@
  * Matching MATE mockups: courier / branch / postamat.
  */
 
+import { localeFromOrder, mailT, intlLocale } from './mail-i18n.mjs';
+
 const BRAND = {
   lime: '#D2E84D',
   black: '#0B0B0B',
@@ -53,14 +55,15 @@ function appUrl() {
   return String(process.env.APP_URL || 'http://localhost:5011').replace(/\/$/, '');
 }
 
-function formatMoney(amount, currency = 'EUR') {
+function formatMoney(amount, currency = 'EUR', locale = 'ru') {
   const num = Number(amount);
   if (!Number.isFinite(num)) return '—';
+  const intl = intlLocale(locale);
   try {
     if (String(currency).toUpperCase() === 'HUF') {
-      return `${Math.round(num).toLocaleString('hu-HU')} HUF`;
+      return `${Math.round(num).toLocaleString(intl)} HUF`;
     }
-    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(num);
+    return new Intl.NumberFormat(intl, { style: 'currency', currency }).format(num);
   } catch {
     return `${num.toFixed(2)} ${currency}`;
   }
@@ -78,14 +81,15 @@ export function pickupModeFromOrder(order) {
   return normalizeMode(tariff.pickupMode || tariff.pickupType);
 }
 
-function locationLabel(location, fallback) {
-  if (!location || typeof location !== 'object') return fallback || 'Уточняется';
+function locationLabel(location, fallback, locale = 'ru') {
+  const pending = mailT(locale, 'pendingLabel');
+  if (!location || typeof location !== 'object') return fallback || pending;
   if (location.kind === 'address' && location.addressParts) {
     const p = location.addressParts;
     const line = [p.city, [p.street, p.building].filter(Boolean).join(' '), p.postCode]
       .filter(Boolean)
       .join(', ');
-    return line || fallback || 'Уточняется';
+    return line || fallback || pending;
   }
   return (
     location.address
@@ -93,7 +97,7 @@ function locationLabel(location, fallback) {
     || location.name
     || location.provider
     || fallback
-    || 'Уточняется'
+    || pending
   );
 }
 
@@ -124,13 +128,13 @@ function parsePickupTime(raw) {
   return { start: '10:00', end: '11:30', label: text || '10:00-11:30' };
 }
 
-function formatRuDate(isoOrText) {
+function formatRuDate(isoOrText, locale = 'ru') {
   const raw = String(isoOrText || '').trim();
-  if (!raw) return 'дата уточняется';
-  if (/[а-яА-Я]/.test(raw)) return raw;
+  if (!raw) return mailT(locale, 'pendingLabel');
+  if (/[а-яА-ЯіІїЇєЄёЁ]/.test(raw) && locale === 'ru') return raw;
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  return d.toLocaleDateString(intlLocale(locale), { day: 'numeric', month: 'long' });
 }
 
 function isTomorrow(isoOrText) {
@@ -152,6 +156,8 @@ function cityFromCountry(code, fallbackLine) {
 }
 
 function orderContext(order) {
+  const locale = localeFromOrder(order);
+  const t = (key, vars) => mailT(locale, key, vars);
   const payload = order?.payload || {};
   const tariff = payload.tariff || {};
   const sender = payload.sender || {};
@@ -163,22 +169,23 @@ function orderContext(order) {
   const trackRaw = order?.npTtn || order?.orderNumber || '';
   const track = formatTrackDisplay(trackRaw);
   const time = parsePickupTime(tariff.pickupTime);
-  const dateLabel = formatRuDate(tariff.pickupDate);
+  const dateLabel = formatRuDate(tariff.pickupDate, locale);
   const tomorrow = isTomorrow(tariff.pickupDate);
   const senderName = sender.name || '—';
   const receiverName = [receiver.firstName, receiver.lastName].filter(Boolean).join(' ') || '—';
   const senderPhone = sender.phone || order?.senderPhone || '';
-  const pickupAddress = locationLabel(pickupLocation, sender.line);
+  const pickupAddress = locationLabel(pickupLocation, sender.line, locale);
   const pointName = pickupLocation.provider
     || pickupLocation.name
-    || (pickupMode === 'branch' ? 'Отделение MATE' : pickupMode === 'locker' ? 'Постамат' : '');
+    || (pickupMode === 'branch' ? t('branchMate') : pickupMode === 'locker' ? t('locker') : '');
   const fromCity = cityFromCountry(tariff.fromCountry || sender.country || 'HU', sender.line);
   const toCity = cityFromCountry(tariff.toCountry || receiver.country || 'SK', receiver.destinationLine);
   const boxSize = parcel.boxSize || 'S';
   const weightKg = parcel.weightKg || 5;
-  const contents = parcel.description || parcel.contents || 'Одежда';
-  const declared = parcel.declaredValue != null ? `до €${parcel.declaredValue}` : 'до €100';
-  const amount = formatMoney(order?.amount, order?.currency || 'HUF');
+  const contents = parcel.description || parcel.contents || '—';
+  const declaredAmount = parcel.declaredValue != null ? parcel.declaredValue : 100;
+  const declared = t('upToEur', { amount: declaredAmount });
+  const amount = formatMoney(order?.amount, order?.currency || 'HUF', locale);
   const cardTailRaw = String(payload.paymentLast4 || payload.cardLast4 || '').replace(/\D/g, '');
   const cardTail = cardTailRaw.slice(-4);
   const lockerCode = lockerCodeFromOrder(order);
@@ -207,6 +214,8 @@ function orderContext(order) {
 
   return {
     order,
+    locale,
+    t,
     payload,
     tariff,
     sender,
@@ -278,7 +287,7 @@ function pill(text, tone = 'gray') {
   return `<span style="display:inline-block;margin:0 6px 6px 0;padding:6px 10px;border-radius:999px;background:${bg};color:${color};font-family:${FONT.body};font-size:12px;font-weight:600;">${escapeHtml(text)}</span>`;
 }
 
-function mapBlock({ pinLabel, distanceLabel, fromLabel = 'Вы здесь' }) {
+function mapBlock({ pinLabel, distanceLabel, fromLabel }) {
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:${BRAND.map};border-radius:14px;overflow:hidden;">
       <tr>
@@ -349,7 +358,7 @@ function barcodeBlock({ title, track }) {
     </table>`;
 }
 
-function routeBlock(fromCity, toCity, eta = '2–3 рабочих дня') {
+function routeBlock(fromCity, toCity, eta) {
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">
       <tr>
@@ -367,20 +376,21 @@ function routeBlock(fromCity, toCity, eta = '2–3 рабочих дня') {
 }
 
 function orderTotalCard(ctx) {
+  const t = ctx.t;
   const paymentLabel = ctx.cardTail
-    ? `карта •••• ${ctx.cardTail}`
-    : 'карта / онлайн';
+    ? t('cardMasked', { card: ctx.cardTail })
+    : t('cardOnline');
   const rows = [
-    ['Получатель', ctx.receiverName],
-    ['Содержимое', `${ctx.contents} — ${ctx.declared}`],
-    ['Размер', `${ctx.boxSize} — до ${ctx.weightKg} кг`],
-    ['Оплата', paymentLabel],
+    [t('recipient'), ctx.receiverName],
+    [t('contents'), `${ctx.contents} — ${ctx.declared}`],
+    [t('size'), `${ctx.boxSize} — ${t('upToKg', { kg: ctx.weightKg })}`],
+    [t('payment'), paymentLabel],
   ];
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;background:${BRAND.black};border-radius:14px;overflow:hidden;">
       <tr>
         <td style="padding:14px 16px 8px;font-family:${FONT.body};font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#A1A1AA;font-weight:700;">
-          Итого заказа
+          ${escapeHtml(t('orderTotal'))}
         </td>
       </tr>
       ${rows.map(([label, value]) => `
@@ -397,17 +407,16 @@ function orderTotalCard(ctx) {
       <tr>
         <td style="padding:12px 16px 16px;">
           <div style="font-family:${FONT.display};font-size:28px;font-weight:700;color:${BRAND.lime};line-height:1;">${escapeHtml(ctx.amount)}</div>
-          <div style="margin-top:4px;font-family:${FONT.body};font-size:11px;color:#8B9098;">включая налоги и сборы</div>
+          <div style="margin-top:4px;font-family:${FONT.body};font-size:11px;color:#8B9098;">${escapeHtml(t('taxesIncluded'))}</div>
         </td>
       </tr>
     </table>`;
 }
 
-function footerSupport() {
+function footerSupport(locale = 'ru') {
   return `
     <p style="margin:8px 0 0;font-family:${FONT.body};font-size:12px;line-height:1.55;color:${BRAND.muted};">
-      Вопросы по доставке — ответьте на это письмо или напишите в чат в кабинете.<br />
-      Поддержка: +421 95 580 0110 · <a href="mailto:help@matedelivery.com" style="color:${BRAND.muted};">help@matedelivery.com</a>
+      ${mailT(locale, 'supportFooter')}
     </p>`;
 }
 
@@ -418,10 +427,9 @@ function sectionTitle(num, text) {
     </div>`;
 }
 
-function timelineBar(start, end) {
-  // Approximate day timeline 08:00–20:00 → highlight window
-  const toMin = (t) => {
-    const [h, m] = String(t).split(':').map(Number);
+function timelineBar(start, end, locale = 'ru') {
+  const toMin = (tm) => {
+    const [h, m] = String(tm).split(':').map(Number);
     return (h * 60 + (m || 0)) - 8 * 60;
   };
   const total = 12 * 60;
@@ -433,7 +441,7 @@ function timelineBar(start, end) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 14px;">
       <tr>
         <td style="padding:10px 12px;background:${BRAND.soft};border-radius:12px;">
-          <div style="font-family:${FONT.body};font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${BRAND.muted};font-weight:700;margin-bottom:8px;">Окно приезда</div>
+          <div style="font-family:${FONT.body};font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${BRAND.muted};font-weight:700;margin-bottom:8px;">${escapeHtml(mailT(locale, 'arrivalWindow'))}</div>
           <div style="position:relative;height:14px;background:#DFE1D8;border-radius:999px;overflow:hidden;">
             <div style="margin-left:${left.toFixed(1)}%;width:${width.toFixed(1)}%;height:14px;background:${BRAND.lime};border-radius:999px;"></div>
           </div>
@@ -449,7 +457,8 @@ function timelineBar(start, end) {
     </table>`;
 }
 
-function hoursBars() {
+function hoursBars(locale = 'ru') {
+  const t = (key) => mailT(locale, key);
   const row = (label, left, width, text, closed = false) => `
     <tr>
       <td width="54" style="padding:4px 0;font-family:${FONT.body};font-size:12px;color:${BRAND.muted};">${escapeHtml(label)}</td>
@@ -461,9 +470,9 @@ function hoursBars() {
     </tr>`;
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 10px;">
-      ${row('Пн–Пт', 8, 50, '08:00–20:00')}
-      ${row('Суббота', 16, 34, '10:00–18:00')}
-      ${row('Вс', 0, 100, 'выходной', true)}
+      ${row(t('monFri'), 8, 50, '08:00–20:00')}
+      ${row(t('saturday'), 16, 34, '10:00–18:00')}
+      ${row(t('sunday'), 0, 100, t('dayOff'), true)}
     </table>`;
 }
 
@@ -511,7 +520,7 @@ function lockerCodeDigits(code) {
     </table>`;
 }
 
-function lockerIllustration(code) {
+function lockerIllustration(code, locale = 'ru') {
   const cells = [];
   for (let i = 0; i < 12; i += 1) {
     const highlight = i === 9;
@@ -526,7 +535,7 @@ function lockerIllustration(code) {
         <td style="padding:16px;width:42%;vertical-align:top;">
           <div style="background:#111;border-radius:10px;padding:12px;border:1px solid #333;">
             <div style="height:28px;background:#0A0A0A;border-radius:6px;color:${BRAND.lime};font-family:${FONT.display};font-size:16px;font-weight:700;text-align:center;line-height:28px;letter-spacing:.12em;">${escapeHtml(code)}</div>
-            <div style="margin-top:10px;font-family:${FONT.body};font-size:10px;color:#9CA3AF;text-align:center;">экран постамата</div>
+            <div style="margin-top:10px;font-family:${FONT.body};font-size:10px;color:#9CA3AF;text-align:center;">${escapeHtml(mailT(locale, 'lockerScreen'))}</div>
           </div>
         </td>
         <td style="padding:16px 16px 16px 0;vertical-align:middle;">
@@ -535,135 +544,143 @@ function lockerIllustration(code) {
             <tr>${cells.slice(4, 8).join('')}</tr>
             <tr>${cells.slice(8, 12).join('')}</tr>
           </table>
-          <div style="margin-top:8px;font-family:${FONT.body};font-size:11px;color:${BRAND.lime};font-weight:700;">↑ ваша ячейка</div>
+          <div style="margin-top:8px;font-family:${FONT.body};font-size:11px;color:${BRAND.lime};font-weight:700;">${escapeHtml(mailT(locale, 'yourCell'))}</div>
         </td>
       </tr>
     </table>`;
 }
 
 function buildCourierBody(ctx) {
-  const dayLead = ctx.tomorrow ? 'Завтра' : 'Дата';
-  const headline = `${dayLead}, ${ctx.dateLabel} • с ${ctx.time.start} до ${ctx.time.end}`;
+  const t = ctx.t;
+  const dayLead = ctx.tomorrow ? t('tomorrow') : t('date');
+  const fromPart = t('fromTime');
+  const toPart = t('toTime');
+  const headline = fromPart
+    ? `${dayLead}, ${ctx.dateLabel} • ${fromPart} ${ctx.time.start} ${toPart} ${ctx.time.end}`
+    : `${dayLead}, ${ctx.dateLabel} • ${ctx.time.start}${toPart}${ctx.time.end}`;
   return `
     <h1 style="margin:0 0 8px;font-family:${FONT.display};font-size:26px;line-height:1.2;font-weight:700;color:${BRAND.ink};letter-spacing:-.02em;">
       ${escapeHtml(headline)}
     </h1>
     <p style="margin:0 0 12px;font-family:${FONT.body};font-size:14px;line-height:1.55;color:${BRAND.muted};">
-      Никуда идти не нужно. Курьер позвонит примерно за 30 минут до приезда.
+      ${escapeHtml(t('courierLead'))}
     </p>
-    ${timelineBar(ctx.time.start, ctx.time.end)}
-    ${dualButtons(ctx.manageUrl, 'Перенести на другой день', ctx.manageUrl, 'Отменить забор', true)}
+    ${timelineBar(ctx.time.start, ctx.time.end, ctx.locale)}
+    ${dualButtons(ctx.manageUrl, t('reschedule'), ctx.manageUrl, t('cancelPickup'), true)}
 
-    ${mapBlock({ pinLabel: 'Заберём здесь', distanceLabel: '4 мин', fromLabel: 'Курьер' })}
+    ${mapBlock({ pinLabel: t('pickupHere'), distanceLabel: `4 ${t('minShort')}`, fromLabel: t('courier') })}
     <div style="font-family:${FONT.display};font-size:18px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">${escapeHtml(ctx.pickupAddress)}</div>
     <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.muted};margin:0 0 8px;line-height:1.5;">
       ${escapeHtml(ctx.senderName)}${ctx.senderPhone ? ` · ${escapeHtml(ctx.senderPhone)}` : ''}
     </div>
     <div style="margin:0 0 12px;">
-      ${pill('Подъезд', 'gray')}${pill('Домофон', 'gray')}${pill('Курьеру нужно позвонить', 'lime')}
+      ${pill(t('entrance'), 'gray')}${pill(t('intercom'), 'gray')}${pill(t('callCourier'), 'lime')}
     </div>
-    <div style="margin:0 0 22px;">${btnOutline(ctx.manageUrl, 'Изменить адрес, этаж или контакт')}</div>
+    <div style="margin:0 0 22px;">${btnOutline(ctx.manageUrl, t('changeAddress'))}</div>
 
-    ${sectionTitle(null, 'Что нужно от вас')}
+    ${sectionTitle(null, t('needFromYou'))}
     ${checklist3([
-      { icon: '📦', text: 'Упаковать посылку. Можно в любую коробку или пакет — главное, чтобы была чистая.' },
-      { icon: '🏷', text: 'Наклейку не печатать. Курьер приедет со своей и сам наклеит.' },
+      { icon: '📦', text: t('packParcel') },
+      { icon: '🏷', text: t('noPrintLabel') },
       { icon: '💳', text: ctx.cardTail
-        ? `Курьеру не платить. Доставка уже оплачена картой ••••${ctx.cardTail}.`
-        : 'Курьеру не платить. Доставка уже оплачена онлайн.' },
+        ? t('noPayCourierCard', { card: ctx.cardTail })
+        : t('noPayCourierOnline') },
     ])}
 
-    ${sectionTitle(null, 'Как пройдёт забор')}
+    ${sectionTitle(null, t('howPickup'))}
     ${numberedSteps([
-      'Курьер позвонит примерно за 30 минут до приезда.',
-      'Вы передаёте посылку — он наклеит этикетку на месте.',
-      'После выезда статус обновится на «Принято».',
+      t('stepCall'),
+      t('stepHandOver'),
+      t('stepAccepted'),
     ])}
 
-    ${barcodeBlock({ title: 'Трек-номер — назовите курьеру', track: ctx.track })}
-    ${routeBlock(ctx.fromCity, ctx.toCity, '2–3 рабочих дня')}
+    ${barcodeBlock({ title: t('trackTellCourier'), track: ctx.track })}
+    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta23'))}
     ${orderTotalCard(ctx)}
-    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, 'Отследить посылку')}</div>
-    <div style="margin:0 0 8px;">${btnOutline(ctx.pdfUrl, 'Накладная PDF')}</div>
-    ${footerSupport()}
+    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, t('trackParcel'))}</div>
+    <div style="margin:0 0 8px;">${btnOutline(ctx.pdfUrl, t('waybillPdf'))}</div>
+    ${footerSupport(ctx.locale)}
   `;
 }
 
 function buildBranchBody(ctx) {
+  const t = ctx.t;
   const branchTitle = ctx.pointName
-    ? `Принесите посылку в ${ctx.pointName}`
-    : 'Принесите посылку в отделение';
+    ? t('bringToBranchNamed', { name: ctx.pointName })
+    : t('bringToBranch');
   return `
     <h1 style="margin:0 0 8px;font-family:${FONT.display};font-size:24px;line-height:1.2;font-weight:700;color:${BRAND.ink};letter-spacing:-.02em;">
       ${escapeHtml(branchTitle)}
     </h1>
     <p style="margin:0 0 14px;font-family:${FONT.body};font-size:14px;line-height:1.55;color:${BRAND.muted};">
-      Кода здесь нет — назовите на кассе трек-номер, остальное сделает оператор.
+      ${escapeHtml(t('branchNoCode'))}
     </p>
 
-    ${mapBlock({ pinLabel: ctx.pointName || 'Отделение', distanceLabel: '1.2 км' })}
+    ${mapBlock({ pinLabel: ctx.pointName || t('branch'), distanceLabel: '1.2 km', fromLabel: t('youAreHere') })}
     <div style="font-family:${FONT.display};font-size:17px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">
-      ${escapeHtml(ctx.pointName || 'Отделение MATE')} · ${escapeHtml(ctx.pickupAddress)}
+      ${escapeHtml(ctx.pointName || t('branchMate'))} · ${escapeHtml(ctx.pickupAddress)}
     </div>
     <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.muted};margin:0 0 8px;line-height:1.5;">
-      ${ctx.pointPhone ? escapeHtml(ctx.pointPhone) : 'Телефон отделения уточните в кабинете'}
+      ${ctx.pointPhone ? escapeHtml(ctx.pointPhone) : escapeHtml(t('branchPhoneHint'))}
     </div>
     <div style="margin:0 0 12px;">
-      ${pill('1.2 км · ~15 мин', 'gray')}${pill('Открыто до 20:00', 'lime')}${pill('Есть упаковка', 'gray')}
+      ${pill(`1.2 km · ~15 ${t('minShort')}`, 'gray')}${pill(t('openUntil'), 'lime')}${pill(t('hasPackaging'), 'gray')}
     </div>
     ${dualButtons(
     ctx.mapsUrl,
-    'Маршрут',
+    t('routeBtn'),
     ctx.pointPhone ? `tel:${String(ctx.pointPhone).replace(/\s+/g, '')}` : ctx.manageUrl,
-    'Позвонить',
+    t('callBtn'),
     true,
   )}
 
-    ${sectionTitle(2, 'Когда открыто')}
-    ${hoursBars()}
+    ${sectionTitle(2, t('whenOpen'))}
+    ${hoursBars(ctx.locale)}
     <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.5;color:${BRAND.muted};">
-      Сдать нужно до ${escapeHtml(ctx.dateLabel)}. Приходите в рабочие часы отделения.
+      ${escapeHtml(t('dropByDate', { date: ctx.dateLabel }))}
     </p>
 
-    ${sectionTitle(3, 'Возьмите с собой')}
+    ${sectionTitle(3, t('takeWithYou'))}
     ${checklist3([
-      { icon: '🪪', text: 'Паспорт или ID. Оригинал, копия или документ из госуслуг — требование таможни.' },
-      { icon: '☰', text: 'Трек-номер. Покажите на экране или назовите его оператору на кассе.' },
-      { icon: '📦', text: 'Посылку. Упаковка любая; в отделении помогут упаковать и взвесить.' },
+      { icon: '🪪', text: t('takeId') },
+      { icon: '☰', text: t('takeTrack') },
+      { icon: '📦', text: t('takeParcel') },
     ])}
 
-    ${barcodeBlock({ title: 'Трек-номер · назовите на кассе', track: ctx.track })}
-    ${routeBlock(ctx.fromCity, ctx.toCity, '4–6 рабочих дня')}
+    ${barcodeBlock({ title: t('trackAtCounter'), track: ctx.track })}
+    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta46'))}
     ${orderTotalCard(ctx)}
-    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, 'Отследить посылку')}</div>
-    ${dualButtons(ctx.pdfUrl, 'Накладная PDF', ctx.manageUrl, 'Сменить отделение', false)}
-    ${footerSupport()}
+    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, t('trackParcel'))}</div>
+    ${dualButtons(ctx.pdfUrl, t('waybillPdf'), ctx.manageUrl, t('changeBranch'), false)}
+    ${footerSupport(ctx.locale)}
   `;
 }
 
 function buildLockerBody(ctx) {
+  const t = ctx.t;
   const code = ctx.lockerCode || '';
   const spaced = code.length >= 6
     ? `${code.slice(0, 3)} ${code.slice(3)}`
     : (ctx.track || '—');
   const showDigits = code.length >= 6;
+  const timeSuffix = ctx.time.label ? `, ${ctx.time.end}` : '';
 
   return `
     <h1 style="margin:0 0 10px;font-family:${FONT.display};font-size:26px;line-height:1.2;font-weight:700;color:${BRAND.ink};letter-spacing:-.02em;">
-      ${showDigits ? `Код для ячейки — ${escapeHtml(spaced)}` : `Сдайте в постамат · трек ${escapeHtml(ctx.track)}`}
+      ${showDigits
+    ? escapeHtml(t('cellCodeTitle', { code: spaced }))
+    : escapeHtml(t('lockerDropTrack', { track: ctx.track }))}
     </h1>
     <p style="margin:0 0 12px;font-family:${FONT.body};font-size:14px;line-height:1.55;color:${BRAND.muted};">
-      ${showDigits
-    ? 'Введите этот код на экране постамата, чтобы открыть ячейку.'
-    : 'Назовите или отсканируйте трек-номер на постамате. Код ячейки появится в кабинете, когда перевозчик его выдаст.'}
+      ${escapeHtml(showDigits ? t('enterCode') : t('useTrackAtLocker'))}
     </p>
 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;background:${BRAND.black};border-radius:16px;overflow:hidden;">
       <tr>
         <td style="padding:16px 16px 8px;font-family:${FONT.body};font-size:12px;color:#C8CCD2;text-align:center;">
-          ${showDigits
-    ? `Код активен — сдайте посылку до ${escapeHtml(ctx.dateLabel)}${ctx.time.label ? `, ${escapeHtml(ctx.time.end)}` : ''}`
-    : `Сдайте посылку до ${escapeHtml(ctx.dateLabel)} · трек ${escapeHtml(ctx.track)}`}
+          ${escapeHtml(showDigits
+    ? t('codeActiveUntil', { date: ctx.dateLabel, time: timeSuffix })
+    : t('dropUntilTrack', { date: ctx.dateLabel, track: ctx.track }))}
         </td>
       </tr>
       <tr>
@@ -675,59 +692,59 @@ function buildLockerBody(ctx) {
       </tr>
       <tr>
         <td style="padding:0 16px 16px;font-family:${FONT.body};font-size:11px;color:#9CA3AF;text-align:center;">
-          Хранение ограничено · после срока ячейка освободится
+          ${escapeHtml(t('storageLimited'))}
         </td>
       </tr>
     </table>
 
-    ${mapBlock({ pinLabel: ctx.pointName || 'Постамат', distanceLabel: '250 м' })}
+    ${mapBlock({ pinLabel: ctx.pointName || t('locker'), distanceLabel: '250 m', fromLabel: t('youAreHere') })}
     <div style="font-family:${FONT.display};font-size:17px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">
-      ${escapeHtml(ctx.pointName || 'Постамат')} · ${escapeHtml(ctx.pickupAddress)}
+      ${escapeHtml(ctx.pointName || t('locker'))} · ${escapeHtml(ctx.pickupAddress)}
     </div>
     <div style="margin:0 0 12px;">
-      ${pill('24/7', 'lime')}${pill('Рядом', 'lime')}${pill('Легко найти', 'lime')}
+      ${pill('24/7', 'lime')}${pill(t('nearby'), 'lime')}${pill(t('easyFind'), 'lime')}
     </div>
-    <div style="margin:0 0 18px;">${btnPrimary(ctx.mapsUrl, 'Открыть маршрут в картах')}</div>
+    <div style="margin:0 0 18px;">${btnPrimary(ctx.mapsUrl, t('openInMaps'))}</div>
 
-    ${showDigits ? lockerIllustration(code) : ''}
+    ${showDigits ? lockerIllustration(code, ctx.locale) : ''}
     <p style="margin:0 0 12px;font-family:${FONT.body};font-size:13px;line-height:1.5;color:${BRAND.muted};">
-      ${showDigits
-    ? `Введите код на экране — откроется ячейка размера ${escapeHtml(ctx.boxSize)}.`
-    : `На экране выберите «Сдать посылку» и используйте трек-номер ${escapeHtml(ctx.track)}.`}
+      ${escapeHtml(showDigits
+    ? t('enterOpensSize', { size: ctx.boxSize })
+    : t('useTrackOnScreen', { track: ctx.track }))}
     </p>
     ${numberedSteps([
-      'На экране нажмите «Сдать посылку».',
+      t('lockerStep1'),
       showDigits
-        ? `Введите код ${spaced} или поднесите QR-код из письма к сканеру.`
-        : 'Введите или отсканируйте трек-номер из этого письма.',
-      'Положите посылку в ячейку и закройте дверцу до щелчка.',
-      'Через ~15 минут в кабинете обновится статус.',
+        ? t('lockerStep2Code', { code: spaced })
+        : t('lockerStep2Track'),
+      t('lockerStep3'),
+      t('lockerStep4'),
     ])}
 
-    ${barcodeBlock({ title: 'Трек-номер (ТТН)', track: ctx.track })}
-    ${routeBlock(ctx.fromCity, ctx.toCity, '1–2 рабочих дня')}
+    ${barcodeBlock({ title: t('trackTtn'), track: ctx.track })}
+    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta12'))}
     ${orderTotalCard(ctx)}
-    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, 'Отследить посылку')}</div>
-    ${dualButtons(ctx.pdfUrl, 'Накладная PDF', ctx.manageUrl, 'Изменить или отменить', false)}
-    ${footerSupport()}
+    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, t('trackParcel'))}</div>
+    ${dualButtons(ctx.pdfUrl, t('waybillPdf'), ctx.manageUrl, t('changeOrCancel'), false)}
+    ${footerSupport(ctx.locale)}
   `;
 }
 
-function methodBanner(mode) {
+function methodBanner(mode, locale = 'ru') {
   if (mode === 'home') {
-    return { icon: '🚚', text: 'Способ сдачи: Курьер заберёт с адреса' };
+    return { icon: '🚚', text: mailT(locale, 'methodCourier') };
   }
   if (mode === 'branch') {
-    return { icon: '🏪', text: 'Способ сдачи: Отделение · помогут упаковать и взвесить' };
+    return { icon: '🏪', text: mailT(locale, 'methodBranch') };
   }
-  return { icon: '▣', text: 'Способ сдачи: Постамат · круглосуточно, без очереди' };
+  return { icon: '▣', text: mailT(locale, 'methodLocker') };
 }
 
-function waitingShell({ track, mode, preheader, title, bodyHtml }) {
-  const banner = methodBanner(mode);
+function waitingShell({ track, mode, preheader, title, bodyHtml, locale = 'ru' }) {
+  const banner = methodBanner(mode, locale);
   const year = new Date().getFullYear();
   return `<!DOCTYPE html>
-<html lang="ru">
+<html lang="${escapeHtml(locale)}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -752,7 +769,7 @@ function waitingShell({ track, mode, preheader, title, bodyHtml }) {
                     MATE<span style="color:${BRAND.lime};">.</span>
                   </td>
                   <td align="right" style="font-family:${FONT.body};font-size:11px;color:#A8ADB4;letter-spacing:.04em;">
-                    ТРЕК: ${escapeHtml(track)}
+                    ${escapeHtml(mailT(locale, 'trackLabel'))}: ${escapeHtml(track)}
                   </td>
                 </tr>
               </table>
@@ -783,41 +800,59 @@ function waitingShell({ track, mode, preheader, title, bodyHtml }) {
 
 export function getWaitingFromYouSubject(order) {
   const ctx = orderContext(order);
+  const t = ctx.t;
   if (ctx.pickupMode === 'home') {
-    return `Курьер приедет ${ctx.tomorrow ? 'завтра' : ctx.dateLabel}, с ${ctx.time.start} до ${ctx.time.end}`;
+    return t('courierSubject', {
+      when: ctx.tomorrow ? t('tomorrowWord') : ctx.dateLabel,
+      start: ctx.time.start,
+      end: ctx.time.end,
+    });
   }
   if (ctx.pickupMode === 'branch') {
-    return `${ctx.pointName || 'Отделение'} — принесите посылку до ${ctx.dateLabel}`;
+    return t('branchSubject', {
+      name: ctx.pointName || t('branch'),
+      date: ctx.dateLabel,
+    });
   }
   const spaced = ctx.lockerCode.length >= 6
     ? `${ctx.lockerCode.slice(0, 3)} ${ctx.lockerCode.slice(3)}`
     : '';
   return spaced
-    ? `Код ${spaced} — сдайте посылку в постамат до ${ctx.dateLabel}`
-    : `Постамат — сдайте посылку до ${ctx.dateLabel} · ${ctx.track}`;
+    ? t('lockerSubjectCode', { code: spaced, date: ctx.dateLabel })
+    : t('lockerSubjectTrack', { date: ctx.dateLabel, track: ctx.track });
 }
 
 export function buildWaitingFromYouEmail(order) {
   const ctx = orderContext(order);
+  const t = ctx.t;
   let bodyHtml;
   let title;
   let preheader;
 
   if (ctx.pickupMode === 'home') {
-    title = `Завтра, ${ctx.dateLabel} • с ${ctx.time.start} до ${ctx.time.end}`;
-    preheader = 'Курьер заберёт посылку с адреса. Никуда идти не нужно.';
+    const fromPart = t('fromTime');
+    const toPart = t('toTime');
+    const dayLead = ctx.tomorrow ? t('tomorrow') : t('date');
+    title = fromPart
+      ? `${dayLead}, ${ctx.dateLabel} • ${fromPart} ${ctx.time.start} ${toPart} ${ctx.time.end}`
+      : `${dayLead}, ${ctx.dateLabel} • ${ctx.time.start}${toPart}${ctx.time.end}`;
+    preheader = t('courierPre');
     bodyHtml = buildCourierBody(ctx);
   } else if (ctx.pickupMode === 'branch') {
-    title = `Принесите посылку в ${ctx.pointName || 'отделение'}`;
-    preheader = 'Назовите на кассе трек-номер — оператор сделает остальное.';
+    title = ctx.pointName
+      ? t('bringToBranchNamed', { name: ctx.pointName })
+      : t('bringToBranch');
+    preheader = t('branchPre');
     bodyHtml = buildBranchBody(ctx);
   } else {
     const code = ctx.lockerCode || '';
     const spaced = code.length >= 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : '';
-    title = spaced ? `Код для ячейки — ${spaced}` : `Сдайте в постамат · ${ctx.track}`;
+    title = spaced
+      ? t('cellCodeTitle', { code: spaced })
+      : t('lockerDropTrack', { track: ctx.track });
     preheader = spaced
-      ? `Код ${spaced}. Сдайте посылку в постамат до ${ctx.dateLabel}.`
-      : `Сдайте посылку в постамат до ${ctx.dateLabel}. Трек: ${ctx.track}`;
+      ? t('lockerPreCode', { code: spaced, date: ctx.dateLabel })
+      : t('lockerPreTrack', { date: ctx.dateLabel, track: ctx.track });
     bodyHtml = buildLockerBody(ctx);
   }
 
@@ -827,6 +862,7 @@ export function buildWaitingFromYouEmail(order) {
     preheader,
     title,
     bodyHtml,
+    locale: ctx.locale,
   });
 
   return {
@@ -835,5 +871,6 @@ export function buildWaitingFromYouEmail(order) {
     title,
     preheader,
     mode: ctx.pickupMode,
+    locale: ctx.locale,
   };
 }
