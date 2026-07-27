@@ -107,7 +107,77 @@ const ENVELOPE_PRESET = { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.5 
 
 /** Preset sizes + custom dims. XXL removed — max tier is XL (30 kg). */
 const SIZE_OPTION_KEYS: Array<'S' | 'M' | 'L' | 'XL' | 'custom'> = ['S', 'M', 'L', 'XL', 'custom'];
-const MAX_CUSTOM_WEIGHT_KG = 30;
+const MAX_CUSTOM_WEIGHT_KG = 31;
+const CUSTOM_WEIGHT_MIN_KG = 0.1;
+
+const CUSTOM_WEIGHT_TIERS = [
+  {
+    key: 'XS',
+    maxKg: 2,
+    dims: { lengthCm: 50, widthCm: 35, heightCm: 5 },
+    title: { ru: 'XS · до 2 кг', en: 'XS · up to 2 kg', hu: 'XS · 2 kg-ig', uk: 'XS · до 2 кг' },
+    desc: {
+      ru: 'Украшения, косметика, документы, добавки',
+      en: 'Jewelry, cosmetics, documents, supplements',
+      hu: 'Ekszerek, kozmetikumok, dokumentumok, étrend-kiegészítők',
+      uk: 'Прикраси, косметика, документи, добавки',
+    },
+    dimsLabel: {
+      ru: 'до 5 × 35 × 50 см · доступны все способы доставки',
+      en: 'up to 5 × 35 × 50 cm · all delivery methods available',
+      hu: 'max. 5 × 35 × 50 cm · minden kézbesítési mód elérhető',
+      uk: 'до 5 × 35 × 50 см · доступні всі способи доставки',
+    },
+  },
+  {
+    key: 'S',
+    maxKg: 5,
+    dims: { ...PARCEL_PRESETS.S },
+    title: { ru: 'S · 5 кг', en: 'S · 5 kg', hu: 'S · 5 kg', uk: 'S · 5 кг' },
+    desc: {
+      ru: 'Повседневные вещи, обувь, аксессуары, небольшие коробки',
+      en: 'Everyday items, shoes, accessories, small boxes',
+      hu: 'Mindennapi holmik, cipők, kiegészítők, kisebb dobozok',
+      uk: 'Повсякденні речі, взуття, аксесуари, невеликі коробки',
+    },
+  },
+  {
+    key: 'M',
+    maxKg: 10,
+    dims: { ...PARCEL_PRESETS.M },
+    title: { ru: 'M · 10 кг', en: 'M · 10 kg', hu: 'M · 10 kg', uk: 'M · 10 кг' },
+    desc: {
+      ru: 'Одежда, бытовые товары, наборы косметики, техника',
+      en: 'Clothes, household goods, cosmetic sets, electronics',
+      hu: 'Ruhák, háztartási cikkek, kozmetikai csomagok, elektronika',
+      uk: 'Одяг, побутові товари, набори косметики, техніка',
+    },
+  },
+  {
+    key: 'L',
+    maxKg: 20,
+    dims: { ...PARCEL_PRESETS.L },
+    title: { ru: 'L · 20 кг', en: 'L · 20 kg', hu: 'L · 20 kg', uk: 'L · 20 кг' },
+    desc: {
+      ru: 'Крупные заказы, несколько коробок вещей, объёмные отправления',
+      en: 'Larger orders, multiple boxes, bulky shipments',
+      hu: 'Nagyobb rendelések, több doboz holmi, terjedelmes küldemények',
+      uk: 'Великі замовлення, кілька коробок речей, об’ємні відправлення',
+    },
+  },
+  {
+    key: 'XL',
+    maxKg: 31,
+    dims: { lengthCm: 150, widthCm: 50, heightCm: 25, weightKg: 31 },
+    title: { ru: 'XL · до 31 кг', en: 'XL · up to 31 kg', hu: 'XL · 31 kg-ig', uk: 'XL · до 31 кг' },
+    desc: {
+      ru: 'Крупногабаритные посылки и тяжёлые отправления',
+      en: 'Oversized parcels and heavy shipments',
+      hu: 'Túlméretes csomagok és nehéz küldemények',
+      uk: 'Великогабаритні посилки та важкі відправлення',
+    },
+  },
+] as const;
 
 const SIZE_ICONS: Record<ParcelKey, string> = {
   S: '📦',
@@ -289,6 +359,21 @@ function sizeToApiKey(
     return 'XL';
   }
   return sizeKey;
+}
+
+function customTierByWeight(weightKg: number) {
+  return CUSTOM_WEIGHT_TIERS.find((tier) => weightKg <= tier.maxKg) ?? CUSTOM_WEIGHT_TIERS[CUSTOM_WEIGHT_TIERS.length - 1];
+}
+
+function buildCustomSizeFromWeight(weightKg: number) {
+  const safeWeight = Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(CUSTOM_WEIGHT_MIN_KG, weightKg || CUSTOM_WEIGHT_MIN_KG));
+  const tier = customTierByWeight(safeWeight);
+  return {
+    l: String(tier.dims.lengthCm),
+    w: String(tier.dims.widthCm),
+    h: String(tier.dims.heightCm),
+    kg: String(Math.round(safeWeight * 10) / 10),
+  };
 }
 
 function normalizeSizeKey(sizeKey: SizeKey): SizeKey {
@@ -1000,13 +1085,25 @@ export function CalcForm({
 
   // Custom size: quote by actual dims + weight (not preset tier max weight).
   useEffect(() => {
+    if (sizeKey !== 'custom') return;
+    const synced = buildCustomSizeFromWeight(customWeightValue);
+    if (
+      customSize.l === synced.l
+      && customSize.w === synced.w
+      && customSize.h === synced.h
+      && customSize.kg === synced.kg
+    ) return;
+    setCustomSize(synced);
+  }, [sizeKey, customWeightValue, customSize.l, customSize.w, customSize.h, customSize.kg]);
+
+  useEffect(() => {
     if (sizeKey !== 'custom') {
       setCustomQuote(null);
       return;
     }
     if (step < 3 || step > 9) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
-    if (!customSize.l || !customSize.w || !customSize.h || !customSize.kg) {
+    if (!customSize.kg) {
       setCustomQuote(null);
       return;
     }
@@ -1535,7 +1632,7 @@ export function CalcForm({
     if (step === 3) {
       if (!SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
       if (sizeKey === 'custom') {
-        if (!customSize.l || !customSize.w || !customSize.h || !customSize.kg) {
+        if (!customSize.kg) {
           return t('calc.valCustomSize');
         }
         if (Number(customSize.kg) > MAX_CUSTOM_WEIGHT_KG) return t('calc.valMaxWeight');
@@ -1822,6 +1919,49 @@ export function CalcForm({
     })
   ), [t]);
 
+  const customWeightValue = Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(CUSTOM_WEIGHT_MIN_KG, Number(customSize.kg) || CUSTOM_WEIGHT_MIN_KG));
+  const activeCustomTier = customTierByWeight(customWeightValue);
+  const activeCustomTierIndex = CUSTOM_WEIGHT_TIERS.findIndex((tier) => tier.key === activeCustomTier.key);
+  const nextCustomTier = activeCustomTierIndex >= 0 ? CUSTOM_WEIGHT_TIERS[activeCustomTierIndex + 1] : undefined;
+  const customHeroTitle = locale === 'en'
+    ? 'How much does it weigh?'
+    : locale === 'hu'
+      ? 'Mennyit nyom?'
+      : locale === 'uk'
+        ? 'Скільки важить?'
+        : 'Сколько весит?';
+  const customHeroSubtitle = locale === 'en'
+    ? 'Move the slider and we will pick the tariff'
+    : locale === 'hu'
+      ? 'Mozgassa a csúszkát, és kiválasztjuk a tarifát'
+      : locale === 'uk'
+        ? 'Рухайте повзунок, і ми підберемо тариф'
+        : 'Двигайте ползунок — тариф подберётся сам';
+  const customCurrentPrice = customQuote ?? (
+    activeCustomTier.key === 'XS'
+      ? estimateParcelPrice({
+        lengthCm: activeCustomTier.dims.lengthCm,
+        widthCm: activeCustomTier.dims.widthCm,
+        heightCm: activeCustomTier.dims.heightCm,
+        weightKg: Math.min(activeCustomTier.maxKg, customWeightValue),
+      }, currency)
+      : parcelQuotes[activeCustomTier.key as ParcelKey] ?? null
+  );
+  const nextTierQuote = nextCustomTier
+    ? (nextCustomTier.key === 'XS'
+      ? customCurrentPrice
+      : parcelQuotes[nextCustomTier.key as ParcelKey] ?? null)
+    : null;
+  const nextTierHint = nextCustomTier
+    ? (locale === 'en'
+      ? `You are in the best-priced tariff. The next one starts from ${(activeCustomTier.maxKg + 0.1).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg and costs ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'more'}.`
+      : locale === 'hu'
+        ? `Most a legkedvezőbb díjszabásban van. A következő ${(activeCustomTier.maxKg + 0.1).toLocaleString('hu-HU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg-tól indul és ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'többe kerül'}.`
+        : locale === 'uk'
+          ? `Зараз у вас найдешевший тариф. Наступний почнеться з ${(activeCustomTier.maxKg + 0.1).toLocaleString('uk-UA', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} кг і коштуватиме ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'дорожче'}.`
+          : `Вы в самом дешёвом тарифе. Следующий начнётся с ${(activeCustomTier.maxKg + 0.1).toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} кг и будет стоить ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'дороже'}.`)
+    : null;
+
   const contentOptions = useMemo(() => CONTENT_KEYS.map((key) => ({
     key,
     label: t(`calc.content${key.charAt(0).toUpperCase()}${key.slice(1)}`),
@@ -1961,7 +2101,11 @@ export function CalcForm({
 
           {step === 3 && (
             <>
-              <StepHeader step={3} title={stepMeta[3].title} subtitle={stepMeta[3].sub} />
+              <StepHeader
+                step={3}
+                title={sizeKey === 'custom' ? customHeroTitle : stepMeta[3].title}
+                subtitle={sizeKey === 'custom' ? customHeroSubtitle : stepMeta[3].sub}
+              />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
                   const price = s.key === 'custom'
@@ -1991,40 +2135,13 @@ export function CalcForm({
               </div>
               {sizeKey === 'custom' && (
                 <div className="calc-custom-dims">
-                  <div className="calc-form__grid calc-form__grid--3">
-                    <div className="field-block">
-                      <label>{t('calc.lengthCm')}</label>
-                      <input
-                        inputMode="decimal"
-                        value={customSize.l}
-                        onChange={(e) => setCustomSize((p) => ({ ...p, l: e.target.value }))}
-                      />
-                    </div>
-                    <div className="field-block">
-                      <label>{t('calc.widthCm')}</label>
-                      <input
-                        inputMode="decimal"
-                        value={customSize.w}
-                        onChange={(e) => setCustomSize((p) => ({ ...p, w: e.target.value }))}
-                      />
-                    </div>
-                    <div className="field-block">
-                      <label>{t('calc.heightCm')}</label>
-                      <input
-                        inputMode="decimal"
-                        value={customSize.h}
-                        onChange={(e) => setCustomSize((p) => ({ ...p, h: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
                   <div className="calc-weight-slider">
                     <div className="calc-weight-slider__head">
                       <label className="calc-weight-slider__label">{t('calc.weightKg')}</label>
                       <b className="calc-weight-slider__value">
                         {(Number.isFinite(Number(customSize.kg))
                           ? (Math.round(Number(customSize.kg) * 10) / 10)
-                          : 0.1
+                          : CUSTOM_WEIGHT_MIN_KG
                         ).toLocaleString(locale === 'en' ? 'en-US' : 'ru-RU', {
                           minimumFractionDigits: 1,
                           maximumFractionDigits: 1,
@@ -2034,37 +2151,82 @@ export function CalcForm({
                     </div>
                     <div className="calc-weight-slider__rail">
                       <div className="calc-weight-slider__marks" aria-hidden>
-                        <span style={{ left: '20%' }} />
-                        <span style={{ left: '40%' }} />
-                        <span style={{ left: '66.6667%' }} />
-                        <span style={{ left: '100%' }} />
+                        {[
+                          { w: 2, key: 'xs' },
+                          { w: 5, key: 's' },
+                          { w: 10, key: 'm' },
+                          { w: 20, key: 'l' },
+                        ].map((m) => (
+                          <span
+                            key={m.key}
+                            style={{
+                              left: `${((m.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100}%`,
+                            }}
+                          />
+                        ))}
                       </div>
                       <input
                         type="range"
                         className="calc-weight-slider__range"
-                        min={0.1}
+                        min={CUSTOM_WEIGHT_MIN_KG}
                         max={MAX_CUSTOM_WEIGHT_KG}
                         step={0.1}
-                        value={Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(0.1, Number(customSize.kg) || 0.1))}
+                        value={customWeightValue}
                         aria-label={t('calc.weightKg')}
                         onChange={(e) => {
                           const n = Math.round(Number(e.target.value) * 10) / 10;
-                          setCustomSize((p) => ({ ...p, kg: String(n) }));
+                          setCustomSize(buildCustomSizeFromWeight(n));
                         }}
                         style={{
-                          ['--weight-pct' as string]: `${Math.min(100, Math.max(0, ((Number(customSize.kg) || 0.1) - 0.1) / (MAX_CUSTOM_WEIGHT_KG - 0.1) * 100))}%`,
+                          ['--weight-pct' as string]: `${Math.min(100, Math.max(0, ((customWeightValue - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100))}%`,
                         }}
                       />
                     </div>
                     <div className="calc-weight-slider__ticks" aria-hidden>
-                      <span><b>XS</b><small>0,1</small></span>
-                      <span><b>S</b><small>5</small></span>
-                      <span><b>M</b><small>10</small></span>
-                      <span><b>L</b><small>20</small></span>
-                      <span><small>{MAX_CUSTOM_WEIGHT_KG} kg</small></span>
+                      {[
+                        { w: 2, key: 'xs', main: 'XS', sub: '· до 2 кг' },
+                        { w: 5, key: 's', main: 'S', sub: '· 5' },
+                        { w: 10, key: 'm', main: 'M', sub: '· 10' },
+                        { w: 20, key: 'l', main: 'L', sub: '· 20' },
+                      ].map((tick) => (
+                        <span
+                          key={tick.key}
+                          className="calc-weight-slider__tick"
+                          style={{ left: `${((tick.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100}%` }}
+                        >
+                          <b>{tick.main}</b>
+                          <small>{tick.sub}</small>
+                        </span>
+                      ))}
+                      <span className="calc-weight-slider__tick calc-weight-slider__tick--end">
+                        <small>{MAX_CUSTOM_WEIGHT_KG} кг</small>
+                      </span>
                     </div>
                     <p className="calc-weight-slider__hint">{t('calc.weightHint')}</p>
                   </div>
+                  <div className="calc-weight-tier-card">
+                    <div className="calc-weight-tier-card__icon" aria-hidden>✉</div>
+                    <div className="calc-weight-tier-card__body">
+                      <div className="calc-weight-tier-card__row">
+                        <b>{activeCustomTier.title[locale]}</b>
+                        <strong>{customCurrentPrice != null ? formatMoney(customCurrentPrice) : '—'}</strong>
+                      </div>
+                      <p>{activeCustomTier.desc[locale]}</p>
+                      <small>
+                        {activeCustomTier.dimsLabel?.[locale]
+                          ?? t('calc.sizeDimsFmt', {
+                            l: activeCustomTier.dims.lengthCm,
+                            w: activeCustomTier.dims.widthCm,
+                            h: activeCustomTier.dims.heightCm,
+                          })}
+                      </small>
+                    </div>
+                  </div>
+                  {nextTierHint && (
+                    <div className="calc-weight-tier-note">
+                      <p>{nextTierHint}</p>
+                    </div>
+                  )}
                 </div>
               )}
               <label className="calc-form__check">
