@@ -9951,10 +9951,6 @@ body.calc-option-sheet-open {
     font-size: 0.88rem;
   }
 
-  .calc-weight-slider__ticks small {
-    font-size: 0.72rem;
-  }
-
   .calc-weight-tier-card {
     grid-template-columns: 56px minmax(0, 1fr);
     gap: 12px;
