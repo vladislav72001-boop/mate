@@ -1083,10 +1083,14 @@ export function CalcForm({
     applyCachedPreliminaryQuotes, fetchQuoteKeys,
   ]);
 
-  // Custom size: quote by actual dims + weight (not preset tier max weight).
+  // Keep custom L/W/H in sync with weight tier (dims are auto, not user-edited).
   useEffect(() => {
     if (sizeKey !== 'custom') return;
-    const synced = buildCustomSizeFromWeight(customWeightValue);
+    const weightKg = Math.min(
+      MAX_CUSTOM_WEIGHT_KG,
+      Math.max(CUSTOM_WEIGHT_MIN_KG, Number(customSize.kg) || CUSTOM_WEIGHT_MIN_KG),
+    );
+    const synced = buildCustomSizeFromWeight(weightKg);
     if (
       customSize.l === synced.l
       && customSize.w === synced.w
@@ -1094,7 +1098,7 @@ export function CalcForm({
       && customSize.kg === synced.kg
     ) return;
     setCustomSize(synced);
-  }, [sizeKey, customWeightValue, customSize.l, customSize.w, customSize.h, customSize.kg]);
+  }, [sizeKey, customSize.l, customSize.w, customSize.h, customSize.kg]);
 
   useEffect(() => {
     if (sizeKey !== 'custom') {
