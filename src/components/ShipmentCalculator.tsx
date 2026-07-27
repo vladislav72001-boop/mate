@@ -2029,32 +2029,39 @@ export function CalcForm({
                           minimumFractionDigits: 1,
                           maximumFractionDigits: 1,
                         })}{' '}
-                        kg
+                        <span>kg</span>
                       </b>
                     </div>
-                    <input
-                      type="range"
-                      className="calc-weight-slider__range"
-                      min={0.1}
-                      max={MAX_CUSTOM_WEIGHT_KG}
-                      step={0.1}
-                      value={Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(0.1, Number(customSize.kg) || 0.1))}
-                      aria-label={t('calc.weightKg')}
-                      onChange={(e) => {
-                        const n = Math.round(Number(e.target.value) * 10) / 10;
-                        setCustomSize((p) => ({ ...p, kg: String(n) }));
-                      }}
-                      style={{
-                        ['--weight-pct' as string]: `${Math.min(100, Math.max(0, ((Number(customSize.kg) || 0.1) - 0.1) / (MAX_CUSTOM_WEIGHT_KG - 0.1) * 100))}%`,
-                      }}
-                    />
+                    <div className="calc-weight-slider__rail">
+                      <div className="calc-weight-slider__marks" aria-hidden>
+                        <span style={{ left: '20%' }} />
+                        <span style={{ left: '40%' }} />
+                        <span style={{ left: '66.6667%' }} />
+                        <span style={{ left: '100%' }} />
+                      </div>
+                      <input
+                        type="range"
+                        className="calc-weight-slider__range"
+                        min={0.1}
+                        max={MAX_CUSTOM_WEIGHT_KG}
+                        step={0.1}
+                        value={Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(0.1, Number(customSize.kg) || 0.1))}
+                        aria-label={t('calc.weightKg')}
+                        onChange={(e) => {
+                          const n = Math.round(Number(e.target.value) * 10) / 10;
+                          setCustomSize((p) => ({ ...p, kg: String(n) }));
+                        }}
+                        style={{
+                          ['--weight-pct' as string]: `${Math.min(100, Math.max(0, ((Number(customSize.kg) || 0.1) - 0.1) / (MAX_CUSTOM_WEIGHT_KG - 0.1) * 100))}%`,
+                        }}
+                      />
+                    </div>
                     <div className="calc-weight-slider__ticks" aria-hidden>
-                      <span>0,1</span>
-                      <span>2</span>
-                      <span>5</span>
-                      <span>10</span>
-                      <span>20</span>
-                      <span>{MAX_CUSTOM_WEIGHT_KG}</span>
+                      <span><b>XS</b><small>0,1</small></span>
+                      <span><b>S</b><small>5</small></span>
+                      <span><b>M</b><small>10</small></span>
+                      <span><b>L</b><small>20</small></span>
+                      <span><small>{MAX_CUSTOM_WEIGHT_KG} kg</small></span>
                     </div>
                     <p className="calc-weight-slider__hint">{t('calc.weightHint')}</p>
                   </div>
