@@ -2,7 +2,7 @@ import { getPricing, tierForShipments } from './pricing-config.mjs';
 import { findOrdersForUser } from './orders.mjs';
 import { findById } from './store.mjs';
 
-const COUNTED_STATUSES = new Set(['paid', 'submitted']);
+const COUNTED_STATUSES = new Set(['paid', 'waiting_from_you', 'submitted', 'delivered']);
 
 /** Calendar month [start, end) in local time */
 export function calendarMonthBounds(date = new Date()) {

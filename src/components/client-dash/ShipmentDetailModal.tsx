@@ -30,6 +30,8 @@ function formatMoney(amount: number, currency: string) {
 
 function statusLabel(status: string, t: (key: string) => string) {
   if (status === 'submitted') return t('dash.statusSubmitted');
+  if (status === 'delivered') return t('dash.statusDelivered');
+  if (status === 'waiting_from_you') return t('dash.statusWaitingFromYou');
   if (status === 'paid') return t('dash.statusPaid');
   if (status === 'pending_payment') return t('dash.statusPending');
   if (status === 'cancelled') return t('dash.statusCancelled');
@@ -38,6 +40,8 @@ function statusLabel(status: string, t: (key: string) => string) {
 
 function statusClass(status: string) {
   if (status === 'submitted') return 'transit';
+  if (status === 'delivered') return 'delivered';
+  if (status === 'waiting_from_you') return 'waiting';
   if (status === 'paid') return 'paid';
   if (status === 'pending_payment') return 'pending';
   if (status === 'cancelled') return 'cancelled';
@@ -56,7 +60,7 @@ export function ShipmentDetailModal({
   const { t, locale, intlLocale } = useI18n();
   const canPay = order.status === 'pending_payment';
   const canCancel = order.status === 'pending_payment';
-  const canTrack = order.status === 'submitted' || Boolean(order.npTtn);
+  const canTrack = ['submitted', 'waiting_from_you', 'delivered'].includes(order.status) || Boolean(order.npTtn);
 
   return (
     <div className="ship-detail-overlay" role="dialog" aria-modal="true" onClick={onClose}>
@@ -78,7 +82,7 @@ export function ShipmentDetailModal({
             toCountry={order.toCountry}
             fromLine={order.senderLine}
             toLine={order.receiverLine}
-            active={order.status === 'submitted'}
+            active={order.status === 'submitted' || order.status === 'delivered'}
           />
         )}
 

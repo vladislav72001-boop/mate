@@ -2018,54 +2018,45 @@ export function CalcForm({
                     </div>
                   </div>
 
-                  <div className="calc-weight-stepper">
-                    <label className="calc-weight-stepper__label">{t('calc.weightKg')}</label>
-                    <div className="calc-weight-stepper__control">
-                      <button
-                        type="button"
-                        className="calc-weight-stepper__btn"
-                        aria-label={t('calc.decreaseWeight')}
-                        disabled={Number(customSize.kg) <= 0.1}
-                        onClick={() => setCustomSize((p) => ({
-                          ...p,
-                          kg: String(Math.max(0.1, Math.round((Number(p.kg) || 0.1) * 10 - 1) / 10)),
-                        }))}
-                      >
-                        −
-                      </button>
-                      <div className="calc-weight-stepper__value">
-                        <input
-                          className="calc-weight-stepper__input"
-                          inputMode="decimal"
-                          value={customSize.kg}
-                          aria-label={t('calc.weightKg')}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(',', '.').replace(/[^\d.]/g, '');
-                            setCustomSize((p) => ({ ...p, kg: raw }));
-                          }}
-                          onBlur={() => {
-                            let n = Number(customSize.kg);
-                            if (!Number.isFinite(n) || n < 0.1) n = 0.1;
-                            if (n > MAX_CUSTOM_WEIGHT_KG) n = MAX_CUSTOM_WEIGHT_KG;
-                            setCustomSize((p) => ({ ...p, kg: String(Math.round(n * 10) / 10) }));
-                          }}
-                        />
-                        <span>kg</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="calc-weight-stepper__btn"
-                        aria-label={t('calc.increaseWeight')}
-                        disabled={Number(customSize.kg) >= MAX_CUSTOM_WEIGHT_KG}
-                        onClick={() => setCustomSize((p) => ({
-                          ...p,
-                          kg: String(Math.min(MAX_CUSTOM_WEIGHT_KG, Math.round((Number(p.kg) || 0) * 10 + 1) / 10)),
-                        }))}
-                      >
-                        +
-                      </button>
+                  <div className="calc-weight-slider">
+                    <div className="calc-weight-slider__head">
+                      <label className="calc-weight-slider__label">{t('calc.weightKg')}</label>
+                      <b className="calc-weight-slider__value">
+                        {(Number.isFinite(Number(customSize.kg))
+                          ? (Math.round(Number(customSize.kg) * 10) / 10)
+                          : 0.1
+                        ).toLocaleString(locale === 'en' ? 'en-US' : 'ru-RU', {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}{' '}
+                        kg
+                      </b>
                     </div>
-                    <p className="calc-weight-stepper__hint">{t('calc.weightHint')}</p>
+                    <input
+                      type="range"
+                      className="calc-weight-slider__range"
+                      min={0.1}
+                      max={MAX_CUSTOM_WEIGHT_KG}
+                      step={0.1}
+                      value={Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(0.1, Number(customSize.kg) || 0.1))}
+                      aria-label={t('calc.weightKg')}
+                      onChange={(e) => {
+                        const n = Math.round(Number(e.target.value) * 10) / 10;
+                        setCustomSize((p) => ({ ...p, kg: String(n) }));
+                      }}
+                      style={{
+                        ['--weight-pct' as string]: `${Math.min(100, Math.max(0, ((Number(customSize.kg) || 0.1) - 0.1) / (MAX_CUSTOM_WEIGHT_KG - 0.1) * 100))}%`,
+                      }}
+                    />
+                    <div className="calc-weight-slider__ticks" aria-hidden>
+                      <span>0,1</span>
+                      <span>2</span>
+                      <span>5</span>
+                      <span>10</span>
+                      <span>20</span>
+                      <span>{MAX_CUSTOM_WEIGHT_KG}</span>
+                    </div>
+                    <p className="calc-weight-slider__hint">{t('calc.weightHint')}</p>
                   </div>
                 </div>
               )}
@@ -2618,12 +2609,14 @@ export function TrackShipment() {
             toCountry={order.toCountry}
             fromLine={order.senderLine}
             toLine={order.receiverLine}
-            active={order.status === 'submitted'}
+            active={order.status === 'submitted' || order.status === 'delivered'}
           />
           <b>{order.orderNumber}</b>
           <span>{countryLabel(order.fromCountry || 'HU', locale)} → {countryLabel(order.toCountry || '', locale)}</span>
           <span>{t('calc.statusLabel')}: {
             order.status === 'submitted' ? t('calc.statusSubmitted')
+            : order.status === 'delivered' ? t('dash.statusDelivered')
+            : order.status === 'waiting_from_you' ? t('dash.statusWaitingFromYou')
             : order.status === 'paid' ? t('calc.statusPaid')
             : order.status === 'pending_payment' ? t('dash.statusPending')
             : order.status === 'cancelled' ? t('dash.statusCancelled')
@@ -2641,6 +2634,6 @@ export function TrackShipment() {
 
 export async function resumePaymentFromUrl(token: string) {
   const status = await fetchOrderStatus(token);
-  if (status.status === 'submitted' || status.status === 'paid') return status;
+  if (['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(status.status)) return status;
   return confirmPayment(token);
 }

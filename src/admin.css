@@ -927,8 +927,10 @@
 }
 
 .admin-badge--pending_payment { background: #ffe7a8; color: #5c4500; }
+.admin-badge--waiting_from_you { background: #ffe0b8; color: #8a4a00; }
 .admin-badge--submitted { background: #cef0b8; color: #1a4a10; }
 .admin-badge--paid { background: #cfe6fb; color: #0d4a7a; }
+.admin-badge--delivered { background: #d4f5e8; color: #0d5c3d; }
 .admin-badge--cancelled { background: #e7e7e7; color: #4a4a4a; }
 .admin-badge--role-admin { background: #122023; color: #e1ff01; }
 .admin-badge--role-client { background: #e8eeef; color: #122023; }

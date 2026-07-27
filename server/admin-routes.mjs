@@ -33,7 +33,14 @@ import {
 import { resolveCheckoutAmount } from './shipping.mjs';
 import { sendPasswordChangedEmail, sendProfileUpdatedEmail } from './mail.mjs';
 
-const ALLOWED_STATUSES = ['pending_payment', 'paid', 'submitted', 'cancelled'];
+const ALLOWED_STATUSES = [
+  'pending_payment',
+  'paid',
+  'waiting_from_you',
+  'submitted',
+  'delivered',
+  'cancelled',
+];
 
 async function orderPriceBreakdown(order) {
   if (order.priceBreakdown?.log?.length) {
@@ -72,12 +79,14 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
       const stats = {
         totalOrders: orders.length,
         pendingPayment: orders.filter((o) => o.status === 'pending_payment').length,
+        waitingFromYou: orders.filter((o) => o.status === 'waiting_from_you').length,
         submitted: orders.filter((o) => o.status === 'submitted').length,
+        delivered: orders.filter((o) => o.status === 'delivered').length,
         paid: orders.filter((o) => o.status === 'paid' || o.paidAt).length,
         cancelled: orders.filter((o) => o.status === 'cancelled').length,
         users: users.length,
         revenue: orders
-          .filter((o) => o.status === 'submitted' || o.status === 'paid' || o.paidAt)
+          .filter((o) => ['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(o.status) || o.paidAt)
           .reduce((s, o) => s + (Number(o.amount) || 0), 0),
         currency: (await getSettings()).currency,
       };
@@ -166,7 +175,12 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
         }
         patch.status = req.body.status;
         if (req.body.status === 'cancelled') patch.cancelledAt = new Date().toISOString();
-        if (req.body.status === 'submitted' || req.body.status === 'paid') {
+        if (
+          req.body.status === 'submitted'
+          || req.body.status === 'paid'
+          || req.body.status === 'waiting_from_you'
+          || req.body.status === 'delivered'
+        ) {
           patch.paidAt = order.paidAt || new Date().toISOString();
           patch.cancelledAt = null;
         }

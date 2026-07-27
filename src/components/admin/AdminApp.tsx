@@ -108,7 +108,9 @@ const MODE_LABELS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   pending_payment: 'Ожидает оплаты',
   paid: 'Оплачено',
-  submitted: 'Отправлено',
+  waiting_from_you: 'Жду от Вас посылку',
+  submitted: 'В пути',
+  delivered: 'Доставлено',
   cancelled: 'Отменён',
 };
 
@@ -141,8 +143,10 @@ function formatDateParts(iso?: string | null) {
 const STATUS_FILTERS: { id: string; label: string }[] = [
   { id: 'all', label: 'Все' },
   { id: 'pending_payment', label: 'Ожидают оплаты' },
+  { id: 'waiting_from_you', label: 'Жду посылку' },
   { id: 'paid', label: 'Оплачено' },
-  { id: 'submitted', label: 'Отправлено' },
+  { id: 'submitted', label: 'В пути' },
+  { id: 'delivered', label: 'Доставлено' },
   { id: 'cancelled', label: 'Отменены' },
 ];
 

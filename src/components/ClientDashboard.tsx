@@ -57,6 +57,8 @@ const NAV_LABEL_KEYS: Record<Tab, { full: string; short: string }> = {
 
 function statusClass(status: string) {
   if (status === 'submitted') return 'transit';
+  if (status === 'delivered') return 'delivered';
+  if (status === 'waiting_from_you') return 'waiting';
   if (status === 'paid') return 'paid';
   if (status === 'pending_payment') return 'pending';
   if (status === 'cancelled') return 'cancelled';
@@ -131,6 +133,8 @@ export function ClientDashboard({
   const statusLabel = useCallback((status: string) => {
     switch (status) {
       case 'submitted': return t('dash.statusSubmitted');
+      case 'delivered': return t('dash.statusDelivered');
+      case 'waiting_from_you': return t('dash.statusWaitingFromYou');
       case 'paid': return t('dash.statusPaid');
       case 'pending_payment': return t('dash.statusPending');
       case 'cancelled': return t('dash.statusCancelled');
@@ -240,18 +244,18 @@ export function ClientDashboard({
 
   const stats = useMemo(() => ({
     total: orders.filter((o) => o.status !== 'cancelled').length,
-    transit: orders.filter((o) => o.status === 'submitted').length,
-    paid: orders.filter((o) => o.status === 'paid' || o.paidAt).length,
+    transit: orders.filter((o) => o.status === 'submitted' || o.status === 'delivered').length,
+    paid: orders.filter((o) => o.status === 'paid' || o.status === 'waiting_from_you' || o.paidAt).length,
     pending: orders.filter((o) => o.status === 'pending_payment').length,
   }), [orders]);
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || orders[0] || trackOrder;
-  const paidOrders = orders.filter((o) => o.paidAt || o.status === 'submitted' || o.status === 'paid');
+  const paidOrders = orders.filter((o) => o.paidAt || ['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(o.status));
 
   const filteredOrders = useMemo(() => {
     switch (shipFilter) {
-      case 'transit': return orders.filter((o) => o.status === 'submitted');
-      case 'paid': return orders.filter((o) => o.paidAt || o.status === 'paid');
+      case 'transit': return orders.filter((o) => o.status === 'submitted' || o.status === 'delivered');
+      case 'paid': return orders.filter((o) => o.paidAt || ['paid', 'waiting_from_you', 'submitted', 'delivered'].includes(o.status));
       case 'pending': return orders.filter((o) => o.status === 'pending_payment');
       default: return orders;
     }
@@ -395,12 +399,12 @@ export function ClientDashboard({
         });
       });
     orders
-      .filter((o) => o.status === 'submitted')
+      .filter((o) => o.status === 'submitted' || o.status === 'waiting_from_you' || o.status === 'delivered')
       .slice(0, 5)
       .forEach((o) => {
         items.push({
           id: `track-${o.id}`,
-          title: t('dash.notifInTransit'),
+          title: o.status === 'waiting_from_you' ? t('dash.statusWaitingFromYou') : t('dash.notifInTransit'),
           text: o.npTtn ? t('dash.ttnFmt', { ttn: o.npTtn }) : o.orderNumber,
           time: formatDate(o.paidAt || o.createdAt),
           onClick: () => {
@@ -415,7 +419,7 @@ export function ClientDashboard({
 
   const unreadCount = notifications.filter((n) => !readNotifIds.has(n.id)).length;
   const hasCompletedOrders = orders.some(
-    (o) => o.status === 'submitted' || o.status === 'paid' || Boolean(o.paidAt),
+    (o) => ['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(o.status) || Boolean(o.paidAt),
   );
   const welcomeDiscountAvailable = !hasCompletedOrders && (
     loyalty
@@ -785,7 +789,7 @@ export function ClientDashboard({
                 {orders.length > 0 && (
                   <div className="client-dash__track-list">
                     <p className="client-dash__label">{t('dash.yourShipments')}</p>
-                    {orders.filter((o) => o.npTtn || o.status === 'submitted').map((o) => (
+                    {orders.filter((o) => o.npTtn || ['submitted', 'waiting_from_you', 'delivered'].includes(o.status)).map((o) => (
                       <button key={o.id} type="button" className={`client-dash__track-item${selectedOrder?.id === o.id ? ' active' : ''}`} onClick={() => { setSelectedOrderId(o.id); setTrackOrder(o); if (o.npTtn) setTrackQuery(o.npTtn); }}>
                         <b>{o.orderNumber}</b>
                         <span>{countryLabel(o.fromCountry || 'HU', locale)} → {countryLabel(o.toCountry || '', locale)}</span>
@@ -803,7 +807,7 @@ export function ClientDashboard({
                       toCountry={selectedOrder.toCountry}
                       fromLine={selectedOrder.senderLine}
                       toLine={selectedOrder.receiverLine}
-                      active={selectedOrder.status === 'submitted'}
+                      active={selectedOrder.status === 'submitted' || selectedOrder.status === 'delivered'}
                     />
                     <div className="client-dash__track-meta">
                       <div><span>{t('dash.orderLabel')}</span><b>{selectedOrder.orderNumber}</b></div>
@@ -877,7 +881,7 @@ export function ClientDashboard({
                         order={o}
                         dateLabel={formatDate(o.paidAt || o.createdAt)}
                         amountLabel={formatMoney(o.amount, o.currency)}
-                        statusLabel={o.status === 'pending_payment' ? t('dash.statusPending') : t('dash.statusPaid')}
+                        statusLabel={statusLabel(o.status)}
                         statusClass={statusClass(o.status)}
                         onOpen={() => openDetail(o)}
                         onPay={o.status === 'pending_payment' ? () => handlePayOrder(o) : undefined}
@@ -906,7 +910,7 @@ export function ClientDashboard({
                               <td className="client-dash__amount">{formatMoney(o.amount, o.currency)}</td>
                               <td>
                                 <span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>
-                                  {o.status === 'pending_payment' ? t('dash.statusPending') : t('dash.statusPaid')}
+                                  {statusLabel(o.status)}
                                 </span>
                               </td>
                               <td className="client-dash__cell-actions" onClick={(e) => e.stopPropagation()}>

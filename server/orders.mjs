@@ -108,7 +108,7 @@ export function checkoutPayloadFingerprint(body) {
   });
 }
 
-/** Prevent duplicate NP drafts when user double-clicks Pay. */
+/** Prevent duplicate checkouts when user double-clicks Pay. */
 export async function findRecentPendingOrder(customerEmail, fingerprint, maxAgeMs = 5 * 60 * 1000) {
   const email = String(customerEmail || '').trim().toLowerCase();
   const since = new Date(Date.now() - maxAgeMs);
@@ -124,7 +124,6 @@ export async function findRecentPendingOrder(customerEmail, fingerprint, maxAgeM
 
   for (const row of candidates) {
     const order = mapOrder(row);
-    if (String(order.npRef || '').startsWith('mock-')) continue;
     if (checkoutPayloadFingerprint(order.payload) !== fingerprint) continue;
     return order;
   }
@@ -204,7 +203,6 @@ export function publicOrder(order) {
 }
 
 function buildTrackingTimeline(order) {
-  const created = new Date(order.createdAt);
   const events = [
     { id: 'created', title: 'Заявка создана', at: order.createdAt, done: true },
   ];
@@ -216,14 +214,39 @@ function buildTrackingTimeline(order) {
     events.push({ id: 'payment', title: 'Ожидает оплаты', at: order.createdAt, done: false, current: true });
     return events;
   }
+
   events.push({ id: 'payment', title: 'Оплачено', at: order.paidAt || order.createdAt, done: true });
-  if (order.status === 'submitted' || order.npTtn) {
-    const pickup = new Date(created.getTime() + 24 * 3600 * 1000);
-    const transit = new Date(created.getTime() + 48 * 3600 * 1000);
-    events.push({ id: 'pickup', title: 'Забор посылки', at: pickup.toISOString(), done: true });
-    events.push({ id: 'transit', title: 'В пути', at: transit.toISOString(), done: true, current: true });
+
+  if (order.status === 'waiting_from_you' || order.status === 'paid') {
+    events.push({
+      id: 'waiting',
+      title: 'Жду от Вас посылку',
+      at: order.paidAt || order.createdAt,
+      done: false,
+      current: true,
+    });
+    events.push({ id: 'pickup', title: 'Забор посылки', at: null, done: false });
+    events.push({ id: 'transit', title: 'В пути', at: null, done: false });
     events.push({ id: 'delivery', title: 'Доставка получателю', at: null, done: false });
+    return events;
   }
+
+  if (order.status === 'submitted') {
+    events.push({ id: 'waiting', title: 'Жду от Вас посылку', at: order.paidAt || order.createdAt, done: true });
+    events.push({ id: 'pickup', title: 'Забор посылки', at: order.updatedAt || order.paidAt, done: true });
+    events.push({ id: 'transit', title: 'В пути', at: order.updatedAt || order.paidAt, done: true, current: true });
+    events.push({ id: 'delivery', title: 'Доставка получателю', at: null, done: false });
+    return events;
+  }
+
+  if (order.status === 'delivered') {
+    events.push({ id: 'waiting', title: 'Жду от Вас посылку', at: order.paidAt || order.createdAt, done: true });
+    events.push({ id: 'pickup', title: 'Забор посылки', at: order.paidAt, done: true });
+    events.push({ id: 'transit', title: 'В пути', at: order.paidAt, done: true });
+    events.push({ id: 'delivery', title: 'Доставлено', at: order.updatedAt || order.paidAt, done: true, current: true });
+    return events;
+  }
+
   return events;
 }
 

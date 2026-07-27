@@ -282,6 +282,72 @@ function isNovaPostShipmentGoneError(err) {
   return /shipment_was_deleted|shipment not found|not found/i.test(msg);
 }
 
+/**
+ * Map Nova Post shipment status string → Mate order status.
+ * ReadyToShip = waiting for sender to drop off; Delivered* = done; else in transit.
+ */
+export function mapNovaPostStatusToOrderStatus(npStatus) {
+  const raw = String(npStatus || '').trim();
+  if (!raw) return null;
+  const s = raw.toLowerCase().replace(/[\s_-]+/g, '');
+
+  if (s === 'readytoship' || s === 'created' || s === 'draft' || s === 'new') {
+    return 'waiting_from_you';
+  }
+  if (
+    s.includes('delivered')
+    || s === 'completed'
+    || s === 'received'
+    || s === 'pickedupbyrecipient'
+  ) {
+    return 'delivered';
+  }
+  if (
+    s.includes('cancel')
+    || s.includes('deleted')
+    || s === 'void'
+  ) {
+    return null; // do not auto-cancel from NP sync
+  }
+  // In transit / picked up / on the way / etc.
+  return 'submitted';
+}
+
+function extractNovaPostStatus(response) {
+  if (!response || typeof response !== 'object') return null;
+  const candidates = [
+    response.status,
+    response.shipmentStatus,
+    response.state,
+    response?.shipment?.status,
+    response?.data?.status,
+    response?.items?.[0]?.status,
+  ];
+  for (const c of candidates) {
+    if (c != null && String(c).trim()) return String(c).trim();
+  }
+  return null;
+}
+
+/** Fetch live shipment status from Nova Post by internal id (npRef). */
+export async function fetchInternationalShipmentStatus(shipmentId) {
+  if (isNovaPostMock() || !shipmentId || String(shipmentId).startsWith('mock-')) {
+    return { npStatus: null, orderStatus: null, raw: null };
+  }
+  const jwt = await getNovaPostJwt();
+  const response = await novaPostFetchJson(`/shipments/${encodeURIComponent(shipmentId)}`, {
+    method: 'GET',
+    headers: novaPostAuthHeader(jwt),
+  });
+  const npStatus = extractNovaPostStatus(response);
+  return {
+    npStatus,
+    orderStatus: mapNovaPostStatusToOrderStatus(npStatus),
+    raw: response,
+    number: response?.number ?? response?.ttn ?? null,
+  };
+}
+
 export async function deleteInternationalShipment(shipmentId) {
   if (isNovaPostMock() || !shipmentId || shipmentId.startsWith('mock-')) return;
   try {

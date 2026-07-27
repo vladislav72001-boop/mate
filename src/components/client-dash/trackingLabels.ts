@@ -3,6 +3,7 @@ import type { TrackingEvent } from '../../api/client-types';
 const EVENT_KEYS: Record<string, string> = {
   created: 'dash.trackCreated',
   cancelled: 'dash.trackCancelled',
+  waiting: 'dash.trackWaiting',
   pickup: 'dash.trackPickup',
   transit: 'dash.trackTransit',
   delivery: 'dash.trackDelivery',

@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { calculateBatch, calculateSingle, normalizeCountryCode } from './novapost/calculate.mjs';
-import { createInternationalShipment, deleteInternationalShipment, tryCreateCheckoutShipment } from './novapost/shipment.mjs';
+import {
+  createInternationalShipment,
+  deleteInternationalShipment,
+  fetchInternationalShipmentStatus,
+  mapNovaPostStatusToOrderStatus,
+} from './novapost/shipment.mjs';
 import { validateCheckoutBody } from './shipping-validate.mjs';
 import {
   createOrder,
@@ -212,31 +217,57 @@ export async function resolveCheckoutAmount(body, userId = null) {
   return { total, currency, priceSource, breakdown };
 }
 
-async function ensureNpShipmentForOrder(order) {
-  if (!isMockNpOrder(order)) return order;
-
-  const body = order.payload;
-  if (!body) throw new Error('Нет данных заказа для создания отправления в Nova Post');
-
-  const shipment = await createInternationalShipment(body, order.orderNumber);
-  if (!shipment.npTtn || String(shipment.npRef).startsWith('mock-')) {
-    throw new Error('Не удалось создать отправление в Nova Post');
-  }
-
-  return updateOrder(order.id, {
-    npRef: shipment.npRef,
-    npTtn: shipment.npTtn,
-    npSnapshot: shipment.snapshot,
-    status: order.status === 'cancelled' ? 'pending_payment' : order.status,
-    cancelledAt: order.status === 'cancelled' ? null : order.cancelledAt,
-  });
-}
-
 async function maybeConsumeWelcomeDiscount(order) {
   if (!order?.userId) return;
   const pct = Number(order.priceBreakdown?.welcomeDiscountPercent) || 0;
   if (pct <= 0) return;
   await consumeWelcomeDiscount(order.userId);
+}
+
+const NP_STATUS_CACHE = new Map();
+const NP_STATUS_TTL_MS = Number(process.env.NOVAPOST_STATUS_TTL_MS ?? 90_000);
+const SYNCABLE_STATUSES = new Set(['waiting_from_you', 'submitted', 'paid']);
+
+/** Best-effort refresh of order.status from Nova Post (cached). */
+async function syncOrderStatusFromNovaPost(order) {
+  if (!order?.npRef || String(order.npRef).startsWith('mock-')) return order;
+  if (order.status === 'pending_payment' || order.status === 'cancelled' || order.status === 'delivered') {
+    return order;
+  }
+  if (!SYNCABLE_STATUSES.has(order.status) && order.status !== 'waiting_from_you') {
+    return order;
+  }
+
+  const cacheKey = String(order.npRef);
+  const cached = NP_STATUS_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (cached.orderStatus && cached.orderStatus !== order.status) {
+      return updateOrder(order.id, { status: cached.orderStatus }, { notify: false }) || order;
+    }
+    return order;
+  }
+
+  try {
+    const result = await fetchInternationalShipmentStatus(order.npRef);
+    NP_STATUS_CACHE.set(cacheKey, {
+      orderStatus: result.orderStatus,
+      npStatus: result.npStatus,
+      expiresAt: Date.now() + Math.max(15_000, NP_STATUS_TTL_MS),
+    });
+    if (!result.orderStatus || result.orderStatus === order.status) return order;
+
+    const patch = { status: result.orderStatus };
+    if (result.number && !order.npTtn) patch.npTtn = String(result.number);
+    return (await updateOrder(order.id, patch)) || order;
+  } catch (err) {
+    console.warn(`[shipping] NP status sync failed for ${order.orderNumber}:`, err?.message || err);
+    NP_STATUS_CACHE.set(cacheKey, {
+      orderStatus: null,
+      npStatus: null,
+      expiresAt: Date.now() + 30_000,
+    });
+    return order;
+  }
 }
 
 export function createShippingRouter({ authMiddleware, optionalAuth }) {
@@ -694,7 +725,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
       const fingerprint = checkoutPayloadFingerprint(body);
       const existing = await findRecentPendingOrder(customerEmail, fingerprint);
-      if (existing && !String(existing.npRef || '').startsWith('mock-')) {
+      if (existing) {
         console.log(`[shipping] reusing pending order ${existing.orderNumber} (duplicate checkout prevented)`);
         if (stripeEnabled()) {
           const checkoutUrl = await createStripeCheckoutForOrder(existing, customerEmail);
@@ -727,48 +758,17 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const monthlyShipments = Number(body.monthlyShipments)
         || await resolveUserMonthlyShipments(req.userId);
 
-      const [pricingResult, shipmentResult] = await Promise.allSettled([
-        withTimeout(
+      let pricing;
+      try {
+        pricing = await withTimeout(
           resolveCheckoutAmount({ ...body, monthlyShipments }, req.userId),
           Number(process.env.CHECKOUT_PRICING_TIMEOUT_MS ?? 25_000),
           'checkout-pricing',
-        ),
-        withTimeout(
-          tryCreateCheckoutShipment(body, orderNumber),
-          Number(process.env.CHECKOUT_NP_TIMEOUT_MS ?? 18_000),
-          'checkout-np',
-        ),
-      ]);
-
-      if (pricingResult.status === 'rejected') {
-        if (shipmentResult.status === 'fulfilled' && shipmentResult.value?.shipment?.npRef
-          && !String(shipmentResult.value.shipment.npRef).startsWith('mock-')) {
-          deleteInternationalShipment(shipmentResult.value.shipment.npRef).catch(() => {});
-        }
+        );
+      } catch (pricingErr) {
         return res.status(500).json({
-          error: pricingResult.reason?.message || 'Не удалось рассчитать стоимость',
+          error: pricingErr?.message || 'Не удалось рассчитать стоимость',
         });
-      }
-
-      const pricing = pricingResult.value;
-      const shipmentOutcome = shipmentResult.status === 'fulfilled'
-        ? shipmentResult.value
-        : {
-          shipment: {
-            npRef: null,
-            npTtn: null,
-            snapshot: {
-              provider: 'deferred',
-              error: String(shipmentResult.reason?.message || shipmentResult.reason || 'unknown'),
-              clientOrder: orderNumber,
-            },
-          },
-          deferred: true,
-        };
-      const shipment = shipmentOutcome.shipment;
-
-      if (shipmentOutcome.deferred) {
-        console.warn(`[shipping] NP shipment deferred for ${orderNumber} — will retry after payment`);
       }
 
       if (clientCurrency !== pricing.currency) {
@@ -779,6 +779,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         console.warn(`[shipping] amount mismatch client=${clientAmount} server=${pricing.total}`);
       }
 
+      // Nova Post shipment is created only after payment (confirm-payment).
       const order = await createOrder({
         orderNumber,
         userId: req.userId || null,
@@ -792,9 +793,9 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         payload: body,
         priceBreakdown: pricing.breakdown || null,
         priceSource: pricing.priceSource || null,
-        npRef: shipment.npRef,
-        npTtn: shipment.npTtn,
-        npSnapshot: shipment.snapshot,
+        npRef: null,
+        npTtn: null,
+        npSnapshot: { provider: 'deferred', reason: 'awaiting_payment', clientOrder: orderNumber },
       }, { notify: false });
 
       if (stripeEnabled()) {
@@ -842,7 +843,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     try {
       const order = await findByPublicToken(req.params.publicToken);
       if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-      if (order.status === 'paid' || order.status === 'submitted') {
+      if (['paid', 'submitted', 'waiting_from_you', 'delivered'].includes(order.status)) {
         return res.json({ data: publicOrder(order) });
       }
 
@@ -859,11 +860,13 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       // mock payment mode — skip Stripe verification
 
       const body = order.payload;
+      const paidAt = order.paidAt || new Date().toISOString();
 
-      if (order.npRef && order.npTtn) {
+      // Legacy: shipment already created before payment — just mark waiting.
+      if (order.npRef && order.npTtn && !isMockNpOrder(order)) {
         const updated = await updateOrder(order.id, {
-          status: 'submitted',
-          paidAt: new Date().toISOString(),
+          status: 'waiting_from_you',
+          paidAt,
         });
         await maybeConsumeWelcomeDiscount(order);
         return res.json({ data: publicOrder(updated) });
@@ -873,11 +876,11 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       npRef = shipment.npRef;
 
       const updated = await updateOrder(order.id, {
-        status: 'submitted',
+        status: 'waiting_from_you',
         npRef: shipment.npRef,
         npTtn: shipment.npTtn,
         npSnapshot: shipment.snapshot,
-        paidAt: new Date().toISOString(),
+        paidAt,
       });
 
       await maybeConsumeWelcomeDiscount(order);
@@ -936,7 +939,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
   router.post('/orders/:publicToken/pay', async (req, res) => {
     try {
-      let order = await findByPublicToken(req.params.publicToken);
+      const order = await findByPublicToken(req.params.publicToken);
       if (!order) return res.status(404).json({ error: 'Заказ не найден' });
       if (order.status !== 'pending_payment') {
         return res.status(400).json({ error: 'Заказ уже оплачен или отправлен' });
@@ -945,15 +948,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         return res.status(503).json({ error: 'Оплата не настроена' });
       }
 
-      if (isMockNpOrder(order)) {
-        try {
-          order = await ensureNpShipmentForOrder(order);
-        } catch (npErr) {
-          return res.status(422).json({
-            error: npErr?.message || 'Не удалось создать отправление в Nova Post. Проверьте телефон и адрес.',
-          });
-        }
-      }
+      // Nova Post is created only after payment confirmation — not here.
 
       const customerEmail = order.customerEmail || order.payload?.customerEmail;
       const checkoutUrl = await createStripeCheckoutForOrder(order, customerEmail);
@@ -974,8 +969,9 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
   router.get('/orders/status/:publicToken', async (req, res) => {
     try {
-      const order = await findByPublicToken(req.params.publicToken);
+      let order = await findByPublicToken(req.params.publicToken);
       if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      order = await syncOrderStatusFromNovaPost(order);
       res.json({ data: publicOrder(order) });
     } catch (err) {
       console.error('[shipping] status:', err);
@@ -988,7 +984,19 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const user = await findById(req.userId);
       if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
       const orders = await findOrdersForUser(user);
-      res.json({ data: orders });
+      // Sync a limited batch of active NP shipments so the dashboard stays fresh.
+      const synced = await Promise.all(
+        orders.slice(0, 25).map(async (o) => {
+          if (!o.npTtn && !o.npValid) return o;
+          const full = await findByPublicToken(o.publicToken);
+          if (!full) return o;
+          const updated = await syncOrderStatusFromNovaPost(full);
+          return publicOrder(updated);
+        }),
+      );
+      // Keep any remaining orders beyond the sync window unchanged.
+      const rest = orders.slice(25);
+      res.json({ data: [...synced, ...rest] });
     } catch (err) {
       console.error('[shipping] orders/me:', err);
       res.status(500).json({ error: 'Не удалось загрузить отправки' });
@@ -997,10 +1005,11 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
   router.get('/track/:ttn', async (req, res) => {
     try {
-      const order = await findByTrackQuery(req.params.ttn);
+      let order = await findByTrackQuery(req.params.ttn);
       if (!order) {
         return res.status(404).json({ error: 'Отправление не найдено' });
       }
+      order = await syncOrderStatusFromNovaPost(order);
       res.json({ data: publicOrder(order) });
     } catch (err) {
       console.error('[shipping] track:', err);

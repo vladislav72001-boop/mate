@@ -60,7 +60,19 @@ export function deliveryServiceLabel(mode: string | null | undefined, t: TFn) {
 }
 
 export function orderStatusHeadline(order: ShippingOrder, t: TFn) {
-  if (order.status === 'submitted' || order.npTtn) {
+  if (order.status === 'delivered') {
+    return {
+      label: t('dash.statusDelivered'),
+      hint: t('orderSuccess.statusSubmittedHint'),
+    };
+  }
+  if (order.status === 'waiting_from_you') {
+    return {
+      label: t('dash.statusWaitingFromYou'),
+      hint: t('orderSuccess.statusPaidHint'),
+    };
+  }
+  if (order.status === 'submitted') {
     return {
       label: t('orderSuccess.statusSubmitted'),
       hint: t('orderSuccess.statusSubmittedHint'),

@@ -31,7 +31,9 @@ const FONT = {
 const STATUS_LABELS = {
   pending_payment: 'Ожидает оплаты',
   paid: 'Оплачено',
+  waiting_from_you: 'Жду от Вас посылку',
   submitted: 'Посылка в пути',
+  delivered: 'Доставлено',
   cancelled: 'Отменён',
 };
 
@@ -780,10 +782,15 @@ export async function sendOrderStatusEmail(order, previousStatus) {
     intro = 'Оплата вашего заказа успешно получена. Мы начинаем обработку отправления.';
     subject = `MATE — оплата по заказу ${order.orderNumber} получена`;
     badgeTone = 'lime';
+  } else if (status === 'waiting_from_you') {
+    title = 'Жду от Вас посылку';
+    intro = 'Оплата прошла успешно. Передайте посылку в пункт приёма — дальше мы доставим её получателю.';
+    subject = `MATE — ждём посылку по заказу ${order.orderNumber}`;
+    badgeTone = 'lime';
   } else if (status === 'submitted') {
-    if (previousStatus === 'pending_payment') {
-      title = 'Оплата получена — посылка в пути';
-      intro = 'Оплата прошла успешно. Ваше отправление принято и передано в доставку.';
+    if (previousStatus === 'pending_payment' || previousStatus === 'waiting_from_you') {
+      title = 'Посылка в пути';
+      intro = 'Ваше отправление принято перевозчиком и находится в пути.';
       subject = `MATE — посылка ${order.orderNumber} в пути`;
     } else {
       title = 'Посылка в пути';
@@ -791,6 +798,11 @@ export async function sendOrderStatusEmail(order, previousStatus) {
       subject = `MATE — посылка ${order.orderNumber} в пути`;
     }
     badgeTone = 'dark';
+  } else if (status === 'delivered') {
+    title = 'Посылка доставлена';
+    intro = 'Отправление успешно доставлено получателю.';
+    subject = `MATE — посылка ${order.orderNumber} доставлена`;
+    badgeTone = 'lime';
   } else if (status === 'cancelled') {
     title = 'Заказ отменён';
     intro = 'Ваш заказ был отменён. Если оплата уже проходила, мы свяжемся с вами по возврату.';
