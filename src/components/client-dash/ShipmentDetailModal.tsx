@@ -1,4 +1,5 @@
 import type { ShippingOrder } from '../../api/shipping';
+import { openWaybillPdf } from '../../api/shipping';
 import { countryLabel } from '../../constants/shipping';
 import { useI18n } from '../../i18n/context';
 import { TrackingMap } from './TrackingMap';
@@ -146,6 +147,11 @@ export function ShipmentDetailModal({
           )}
           {canTrack && onTrack && (
             <button className="btn btn-outline" type="button" onClick={() => onTrack(order)}>{t('dash.track')}</button>
+          )}
+          {order.status !== 'cancelled' && (
+            <button className="btn btn-outline" type="button" onClick={() => openWaybillPdf(order.publicToken)}>
+              {t('orderSuccess.downloadPdf')}
+            </button>
           )}
           <button className="btn btn-outline" type="button" onClick={onClose}>{t('dash.close')}</button>
         </div>

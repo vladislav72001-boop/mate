@@ -66,3 +66,34 @@ export async function assertStripeSessionPaid(sessionId) {
   }
   return session;
 }
+
+/** Last4 / brand from paid Checkout Session (best-effort). */
+export async function getStripeCheckoutPaymentDetails(sessionId) {
+  if (!sessionId || !stripeEnabled()) return null;
+  try {
+    const stripe = await getStripe();
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent.payment_method'],
+    });
+    const pm = session.payment_intent?.payment_method
+      || session.payment_method_types?.[0];
+    const card = typeof pm === 'object' ? pm?.card : null;
+    if (card?.last4) {
+      return { last4: String(card.last4), brand: card.brand || null };
+    }
+    // Fallback: charge list
+    const piId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.payment_intent?.id;
+    if (piId) {
+      const pi = await stripe.paymentIntents.retrieve(piId, {
+        expand: ['payment_method'],
+      });
+      const c = pi.payment_method?.card;
+      if (c?.last4) return { last4: String(c.last4), brand: c.brand || null };
+    }
+  } catch (err) {
+    console.warn('[stripe] payment details:', err?.message || err);
+  }
+  return null;
+}

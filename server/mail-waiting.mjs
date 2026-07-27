@@ -107,17 +107,14 @@ function formatTrackDisplay(raw) {
 }
 
 function lockerCodeFromOrder(order) {
+  const snap = order?.npSnapshot || {};
+  const fromSnap = String(snap.lockerCode || snap.cellCode || snap.pin || '').replace(/\D/g, '');
+  if (fromSnap.length >= 6) return fromSnap.slice(0, 6);
   const fromPayload = String(order?.payload?.lockerCode || order?.payload?.cellCode || '').replace(/\D/g, '');
   if (fromPayload.length >= 6) return fromPayload.slice(0, 6);
-  const digits = String(order?.npTtn || order?.orderNumber || order?.id || '')
-    .replace(/\D/g, '');
+  const digits = String(order?.npTtn || '').replace(/\D/g, '');
   if (digits.length >= 6) return digits.slice(-6);
-  let hash = 0;
-  const seed = String(order?.id || order?.orderNumber || 'mate');
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) % 1000000;
-  }
-  return String(418273 + (hash % 500000)).slice(0, 6);
+  return '';
 }
 
 function parsePickupTime(raw) {
@@ -182,13 +179,31 @@ function orderContext(order) {
   const contents = parcel.description || parcel.contents || 'Одежда';
   const declared = parcel.declaredValue != null ? `до €${parcel.declaredValue}` : 'до €100';
   const amount = formatMoney(order?.amount, order?.currency || 'HUF');
-  const cardTail = String(payload.paymentLast4 || payload.cardLast4 || '2729').slice(-4);
+  const cardTailRaw = String(payload.paymentLast4 || payload.cardLast4 || '').replace(/\D/g, '');
+  const cardTail = cardTailRaw.slice(-4);
   const lockerCode = lockerCodeFromOrder(order);
-  const dash = `${appUrl()}/#/cabinet`;
+  const hasRealLockerCode = Boolean(
+    String(payload.lockerCode || payload.cellCode || '').replace(/\D/g, '').length >= 6
+    || order?.npSnapshot?.lockerCode
+    || order?.npSnapshot?.cellCode,
+  );
+  const publicToken = order?.publicToken || '';
+  const site = appUrl();
+  const trackQuery = encodeURIComponent(order?.npTtn || order?.orderNumber || '');
+  const trackUrl = trackQuery
+    ? `${site}/?track=${trackQuery}`
+    : `${site}/?cabinet=tracking`;
+  const pdfUrl = publicToken
+    ? `${site}/api/shipping/orders/${encodeURIComponent(publicToken)}/waybill.pdf`
+    : trackUrl;
+  const manageUrl = publicToken
+    ? `${site}/?order=${encodeURIComponent(publicToken)}`
+    : `${site}/?cabinet=shipments`;
+  const dash = `${site}/?cabinet=shipments`;
   const mapsQuery = encodeURIComponent(pickupAddress);
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
   const phoneHref = senderPhone ? `tel:${String(senderPhone).replace(/\s+/g, '')}` : dash;
-  const pointPhone = pickupLocation.phone || '+421 2 445 15 12';
+  const pointPhone = pickupLocation.phone || '';
 
   return {
     order,
@@ -219,6 +234,11 @@ function orderContext(order) {
     amount,
     cardTail,
     lockerCode,
+    hasRealLockerCode,
+    publicToken,
+    trackUrl,
+    pdfUrl,
+    manageUrl,
     dash,
     mapsUrl,
     phoneHref,
@@ -347,11 +367,14 @@ function routeBlock(fromCity, toCity, eta = '2–3 рабочих дня') {
 }
 
 function orderTotalCard(ctx) {
+  const paymentLabel = ctx.cardTail
+    ? `карта •••• ${ctx.cardTail}`
+    : 'карта / онлайн';
   const rows = [
     ['Получатель', ctx.receiverName],
     ['Содержимое', `${ctx.contents} — ${ctx.declared}`],
     ['Размер', `${ctx.boxSize} — до ${ctx.weightKg} кг`],
-    ['Оплата', `карта •••• ${ctx.cardTail}`],
+    ['Оплата', paymentLabel],
   ];
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;background:${BRAND.black};border-radius:14px;overflow:hidden;">
@@ -529,7 +552,7 @@ function buildCourierBody(ctx) {
       Никуда идти не нужно. Курьер позвонит примерно за 30 минут до приезда.
     </p>
     ${timelineBar(ctx.time.start, ctx.time.end)}
-    ${dualButtons(ctx.dash, 'Перенести на другой день', ctx.dash, 'Отменить забор', true)}
+    ${dualButtons(ctx.manageUrl, 'Перенести на другой день', ctx.manageUrl, 'Отменить забор', true)}
 
     ${mapBlock({ pinLabel: 'Заберём здесь', distanceLabel: '4 мин', fromLabel: 'Курьер' })}
     <div style="font-family:${FONT.display};font-size:18px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">${escapeHtml(ctx.pickupAddress)}</div>
@@ -539,13 +562,15 @@ function buildCourierBody(ctx) {
     <div style="margin:0 0 12px;">
       ${pill('Подъезд', 'gray')}${pill('Домофон', 'gray')}${pill('Курьеру нужно позвонить', 'lime')}
     </div>
-    <div style="margin:0 0 22px;">${btnOutline(ctx.dash, 'Изменить адрес, этаж или контакт')}</div>
+    <div style="margin:0 0 22px;">${btnOutline(ctx.manageUrl, 'Изменить адрес, этаж или контакт')}</div>
 
     ${sectionTitle(null, 'Что нужно от вас')}
     ${checklist3([
       { icon: '📦', text: 'Упаковать посылку. Можно в любую коробку или пакет — главное, чтобы была чистая.' },
       { icon: '🏷', text: 'Наклейку не печатать. Курьер приедет со своей и сам наклеит.' },
-      { icon: '💳', text: `Курьеру не платить. Доставка уже оплачена картой ••••${ctx.cardTail}.` },
+      { icon: '💳', text: ctx.cardTail
+        ? `Курьеру не платить. Доставка уже оплачена картой ••••${ctx.cardTail}.`
+        : 'Курьеру не платить. Доставка уже оплачена онлайн.' },
     ])}
 
     ${sectionTitle(null, 'Как пройдёт забор')}
@@ -558,8 +583,8 @@ function buildCourierBody(ctx) {
     ${barcodeBlock({ title: 'Трек-номер — назовите курьеру', track: ctx.track })}
     ${routeBlock(ctx.fromCity, ctx.toCity, '2–3 рабочих дня')}
     ${orderTotalCard(ctx)}
-    <div style="margin:0 0 10px;">${btnPrimary(ctx.dash, 'Отследить посылку')}</div>
-    <div style="margin:0 0 8px;">${btnOutline(ctx.dash, 'Накладная PDF')}</div>
+    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, 'Отследить посылку')}</div>
+    <div style="margin:0 0 8px;">${btnOutline(ctx.pdfUrl, 'Накладная PDF')}</div>
     ${footerSupport()}
   `;
 }
@@ -581,12 +606,18 @@ function buildBranchBody(ctx) {
       ${escapeHtml(ctx.pointName || 'Отделение MATE')} · ${escapeHtml(ctx.pickupAddress)}
     </div>
     <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.muted};margin:0 0 8px;line-height:1.5;">
-      ${escapeHtml(ctx.pointPhone)}
+      ${ctx.pointPhone ? escapeHtml(ctx.pointPhone) : 'Телефон отделения уточните в кабинете'}
     </div>
     <div style="margin:0 0 12px;">
       ${pill('1.2 км · ~15 мин', 'gray')}${pill('Открыто до 20:00', 'lime')}${pill('Есть упаковка', 'gray')}
     </div>
-    ${dualButtons(ctx.mapsUrl, 'Маршрут', `tel:${String(ctx.pointPhone).replace(/\s+/g, '')}`, 'Позвонить', true)}
+    ${dualButtons(
+    ctx.mapsUrl,
+    'Маршрут',
+    ctx.pointPhone ? `tel:${String(ctx.pointPhone).replace(/\s+/g, '')}` : ctx.manageUrl,
+    'Позвонить',
+    true,
+  )}
 
     ${sectionTitle(2, 'Когда открыто')}
     ${hoursBars()}
@@ -602,33 +633,44 @@ function buildBranchBody(ctx) {
     ])}
 
     ${barcodeBlock({ title: 'Трек-номер · назовите на кассе', track: ctx.track })}
-    ${routeBlock(ctx.fromCity, ctx.toCity, '4–6 рабочих дней')}
+    ${routeBlock(ctx.fromCity, ctx.toCity, '4–6 рабочих дня')}
     ${orderTotalCard(ctx)}
-    <div style="margin:0 0 10px;">${btnPrimary(ctx.dash, 'Отследить посылку')}</div>
-    ${dualButtons(ctx.dash, 'Накладная PDF', ctx.dash, 'Сменить отделение', false)}
+    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, 'Отследить посылку')}</div>
+    ${dualButtons(ctx.pdfUrl, 'Накладная PDF', ctx.manageUrl, 'Сменить отделение', false)}
     ${footerSupport()}
   `;
 }
 
 function buildLockerBody(ctx) {
-  const spaced = `${ctx.lockerCode.slice(0, 3)} ${ctx.lockerCode.slice(3)}`;
+  const code = ctx.lockerCode || '';
+  const spaced = code.length >= 6
+    ? `${code.slice(0, 3)} ${code.slice(3)}`
+    : (ctx.track || '—');
+  const showDigits = code.length >= 6;
+
   return `
     <h1 style="margin:0 0 10px;font-family:${FONT.display};font-size:26px;line-height:1.2;font-weight:700;color:${BRAND.ink};letter-spacing:-.02em;">
-      Код для ячейки — ${escapeHtml(spaced)}
+      ${showDigits ? `Код для ячейки — ${escapeHtml(spaced)}` : `Сдайте в постамат · трек ${escapeHtml(ctx.track)}`}
     </h1>
     <p style="margin:0 0 12px;font-family:${FONT.body};font-size:14px;line-height:1.55;color:${BRAND.muted};">
-      Введите этот код на экране постамата, чтобы открыть ячейку.
+      ${showDigits
+    ? 'Введите этот код на экране постамата, чтобы открыть ячейку.'
+    : 'Назовите или отсканируйте трек-номер на постамате. Код ячейки появится в кабинете, когда перевозчик его выдаст.'}
     </p>
 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;background:${BRAND.black};border-radius:16px;overflow:hidden;">
       <tr>
         <td style="padding:16px 16px 8px;font-family:${FONT.body};font-size:12px;color:#C8CCD2;text-align:center;">
-          Код активен — сдайте посылку до ${escapeHtml(ctx.dateLabel)}${ctx.time.label ? `, ${escapeHtml(ctx.time.end)}` : ''}
+          ${showDigits
+    ? `Код активен — сдайте посылку до ${escapeHtml(ctx.dateLabel)}${ctx.time.label ? `, ${escapeHtml(ctx.time.end)}` : ''}`
+    : `Сдайте посылку до ${escapeHtml(ctx.dateLabel)} · трек ${escapeHtml(ctx.track)}`}
         </td>
       </tr>
       <tr>
         <td align="center" style="padding:4px 8px 8px;">
-          ${lockerCodeDigits(ctx.lockerCode)}
+          ${showDigits
+    ? lockerCodeDigits(code)
+    : `<div style="font-family:${FONT.display};font-size:22px;font-weight:700;color:${BRAND.lime};letter-spacing:.08em;padding:16px;">${escapeHtml(ctx.track)}</div>`}
         </td>
       </tr>
       <tr>
@@ -647,13 +689,17 @@ function buildLockerBody(ctx) {
     </div>
     <div style="margin:0 0 18px;">${btnPrimary(ctx.mapsUrl, 'Открыть маршрут в картах')}</div>
 
-    ${lockerIllustration(ctx.lockerCode)}
+    ${showDigits ? lockerIllustration(code) : ''}
     <p style="margin:0 0 12px;font-family:${FONT.body};font-size:13px;line-height:1.5;color:${BRAND.muted};">
-      Введите код на экране — откроется ячейка размера ${escapeHtml(ctx.boxSize)} в нижнем ряду.
+      ${showDigits
+    ? `Введите код на экране — откроется ячейка размера ${escapeHtml(ctx.boxSize)}.`
+    : `На экране выберите «Сдать посылку» и используйте трек-номер ${escapeHtml(ctx.track)}.`}
     </p>
     ${numberedSteps([
       'На экране нажмите «Сдать посылку».',
-      `Введите код ${spaced} или поднесите QR-код из письма к сканеру.`,
+      showDigits
+        ? `Введите код ${spaced} или поднесите QR-код из письма к сканеру.`
+        : 'Введите или отсканируйте трек-номер из этого письма.',
       'Положите посылку в ячейку и закройте дверцу до щелчка.',
       'Через ~15 минут в кабинете обновится статус.',
     ])}
@@ -661,8 +707,8 @@ function buildLockerBody(ctx) {
     ${barcodeBlock({ title: 'Трек-номер (ТТН)', track: ctx.track })}
     ${routeBlock(ctx.fromCity, ctx.toCity, '1–2 рабочих дня')}
     ${orderTotalCard(ctx)}
-    <div style="margin:0 0 10px;">${btnPrimary(ctx.dash, 'Отследить посылку')}</div>
-    ${dualButtons(ctx.dash, 'Накладная PDF', ctx.dash, 'Изменить или отменить', false)}
+    <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, 'Отследить посылку')}</div>
+    ${dualButtons(ctx.pdfUrl, 'Накладная PDF', ctx.manageUrl, 'Изменить или отменить', false)}
     ${footerSupport()}
   `;
 }
@@ -743,8 +789,12 @@ export function getWaitingFromYouSubject(order) {
   if (ctx.pickupMode === 'branch') {
     return `${ctx.pointName || 'Отделение'} — принесите посылку до ${ctx.dateLabel}`;
   }
-  const spaced = `${ctx.lockerCode.slice(0, 3)} ${ctx.lockerCode.slice(3)}`;
-  return `Код ${spaced} — сдайте посылку в постамат до ${ctx.dateLabel}`;
+  const spaced = ctx.lockerCode.length >= 6
+    ? `${ctx.lockerCode.slice(0, 3)} ${ctx.lockerCode.slice(3)}`
+    : '';
+  return spaced
+    ? `Код ${spaced} — сдайте посылку в постамат до ${ctx.dateLabel}`
+    : `Постамат — сдайте посылку до ${ctx.dateLabel} · ${ctx.track}`;
 }
 
 export function buildWaitingFromYouEmail(order) {
@@ -762,9 +812,12 @@ export function buildWaitingFromYouEmail(order) {
     preheader = 'Назовите на кассе трек-номер — оператор сделает остальное.';
     bodyHtml = buildBranchBody(ctx);
   } else {
-    const spaced = `${ctx.lockerCode.slice(0, 3)} ${ctx.lockerCode.slice(3)}`;
-    title = `Код для ячейки — ${spaced}`;
-    preheader = `Код ${spaced}. Сдайте посылку в постамат до ${ctx.dateLabel}.`;
+    const code = ctx.lockerCode || '';
+    const spaced = code.length >= 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : '';
+    title = spaced ? `Код для ячейки — ${spaced}` : `Сдайте в постамат · ${ctx.track}`;
+    preheader = spaced
+      ? `Код ${spaced}. Сдайте посылку в постамат до ${ctx.dateLabel}.`
+      : `Сдайте посылку в постамат до ${ctx.dateLabel}. Трек: ${ctx.track}`;
     bodyHtml = buildLockerBody(ctx);
   }
 

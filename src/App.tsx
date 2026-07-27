@@ -385,7 +385,12 @@ function App() {
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcResumeSignal, setCalcResumeSignal] = useState(0);
   const [draftTick, setDraftTick] = useState(0);
-  const [dashNav, setDashNav] = useState<{ tab: ClientDashTab; openCalc?: boolean } | null>(null);
+  const [dashNav, setDashNav] = useState<{
+    tab: ClientDashTab;
+    openCalc?: boolean;
+    trackQuery?: string;
+    orderToken?: string;
+  } | null>(null);
   const [ordersRefresh, setOrdersRefresh] = useState(0);
   const [clientAuthMode, setClientAuthMode] = useState<ClientAuthMode | null>(null);
   const [clientAuthStep, setClientAuthStep] = useState(0);
@@ -554,6 +559,25 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     const payment = params.get('payment');
     const token = params.get('token');
+    const track = params.get('track');
+    const orderToken = params.get('order');
+    const cabinet = params.get('cabinet');
+
+    const hasDeepLink = Boolean(track || orderToken || cabinet);
+    if (hasDeepLink) {
+      const tab = (cabinet === 'tracking' || track
+        ? 'tracking'
+        : cabinet === 'shipments' || orderToken
+          ? 'shipments'
+          : 'home') as ClientDashTab;
+      setDashNav({
+        tab,
+        trackQuery: track || undefined,
+        orderToken: orderToken || undefined,
+      });
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     if (payment === 'success' && token) {
       resumePaymentFromUrl(token)
         .then(async (order) => {
@@ -584,7 +608,18 @@ function App() {
       window.history.replaceState({}, '', window.location.pathname);
       if (user) setPage('client-dashboard');
     }
-  }, [user]);
+  // run once on mount for payment/deep links
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!dashNav) return;
+    if (user) {
+      setPage('client-dashboard');
+      return;
+    }
+    setClientAuthMode((mode) => mode || 'login');
+  }, [dashNav, user]);
 
   const handleAuthSuccess = useCallback((authUser: AuthUser, token: string) => {
     storeSession(token);
@@ -1388,9 +1423,12 @@ function App() {
           order={paymentNotice.order}
           onTrack={() => {
             setPaymentNotice(null);
+            const q = paymentNotice.order?.npTtn || paymentNotice.order?.orderNumber || '';
             if (user) {
-              setDashNav({ tab: 'tracking' });
+              setDashNav({ tab: 'tracking', trackQuery: q || undefined });
               setPage('client-dashboard');
+            } else if (q) {
+              window.location.assign(`/?track=${encodeURIComponent(q)}`);
             } else {
               goPage('home');
               window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1404,7 +1442,10 @@ function App() {
           }}
           onOpenDashboard={user ? () => {
             setPaymentNotice(null);
-            setDashNav({ tab: 'shipments' });
+            setDashNav({
+              tab: 'shipments',
+              orderToken: paymentNotice.order?.publicToken,
+            });
             setPage('client-dashboard');
           } : undefined}
         />
@@ -1450,6 +1491,8 @@ function App() {
           ordersRefresh={ordersRefresh}
           initialTab={dashNav?.tab}
           openShipmentOnMount={dashNav?.openCalc}
+          initialTrackQuery={dashNav?.trackQuery}
+          initialOrderToken={dashNav?.orderToken}
           onNavigated={() => setDashNav(null)}
         />
       )}

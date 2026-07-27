@@ -296,6 +296,16 @@ export async function cancelOrder(publicToken: string) {
   return res.data;
 }
 
+export function waybillPdfUrl(publicToken: string) {
+  const base = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${base}/api/shipping/orders/${encodeURIComponent(publicToken)}/waybill.pdf`;
+}
+
+export function openWaybillPdf(publicToken: string) {
+  const url = waybillPdfUrl(publicToken);
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 export async function fetchCoverage(params: {
   fromCountry: string;
   fromCity: string;

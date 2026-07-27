@@ -500,6 +500,7 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
       };
       const baseOrder = {
         orderNumber: 'MD-B2C-PREVIEW',
+        publicToken: 'preview-token',
         customerEmail: to,
         amount: 4040,
         currency: 'HUF',

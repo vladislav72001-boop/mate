@@ -53,6 +53,7 @@ const basePayload = {
 const order = {
   id: 'preview-order',
   orderNumber: 'MD-B2C-MRNA2TOE9D7921',
+  publicToken: 'preview-public-token',
   customerEmail: user.email,
   amount: 4040,
   currency: 'HUF',

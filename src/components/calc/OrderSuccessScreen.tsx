@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { ShippingOrder } from '../../api/client-types';
+import { openWaybillPdf } from '../../api/shipping';
 import { useI18n } from '../../i18n/context';
 import { CountryFlag } from './CountryFlag';
 import {
@@ -199,12 +200,21 @@ export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDash
             <button
               type="button"
               className="btn btn-outline order-success__secondary-btn"
-              onClick={onOpenDashboard}
-              disabled={!onOpenDashboard}
+              onClick={() => openWaybillPdf(order.publicToken)}
             >
               <span aria-hidden>⎙</span>
               {t('orderSuccess.downloadPdf')}
             </button>
+            {onOpenDashboard && (
+              <button
+                type="button"
+                className="btn btn-outline order-success__secondary-btn"
+                onClick={onOpenDashboard}
+              >
+                <span aria-hidden>☰</span>
+                {t('common.toDashboard')}
+              </button>
+            )}
           </div>
         </div>
 

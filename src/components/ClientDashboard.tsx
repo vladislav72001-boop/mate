@@ -41,6 +41,8 @@ type Props = {
   ordersRefresh?: number;
   initialTab?: Tab;
   openShipmentOnMount?: boolean;
+  initialTrackQuery?: string | null;
+  initialOrderToken?: string | null;
   onNavigated?: () => void;
 };
 
@@ -125,6 +127,8 @@ export function ClientDashboard({
   ordersRefresh = 0,
   initialTab,
   openShipmentOnMount,
+  initialTrackQuery = null,
+  initialOrderToken = null,
   onNavigated,
 }: Props) {
   const { t, intlLocale, locale } = useI18n();
@@ -236,11 +240,46 @@ export function ClientDashboard({
   }, [t]);
 
   useEffect(() => {
-    if (!initialTab && !openShipmentOnMount) return;
+    if (!initialTab && !openShipmentOnMount && !initialTrackQuery && !initialOrderToken) return;
     if (initialTab) setTab(initialTab);
     if (openShipmentOnMount) onCreateShipment();
+    if (initialTrackQuery) {
+      setTrackQuery(initialTrackQuery);
+      setTab('tracking');
+    }
+    if (initialOrderToken) setTab('shipments');
     onNavigated?.();
-  }, [initialTab, openShipmentOnMount, onCreateShipment, onNavigated]);
+  }, [initialTab, openShipmentOnMount, initialTrackQuery, initialOrderToken, onCreateShipment, onNavigated]);
+
+  useEffect(() => {
+    if (!initialTrackQuery) return;
+    let cancelled = false;
+    (async () => {
+      setTrackLoading(true);
+      try {
+        const found = await trackByTtn(initialTrackQuery.trim());
+        if (cancelled) return;
+        setTrackOrder(found);
+        setSelectedOrderId(found.id);
+        setTab('tracking');
+      } catch {
+        /* user can retry from tracking tab */
+      } finally {
+        if (!cancelled) setTrackLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initialTrackQuery]);
+
+  useEffect(() => {
+    if (!initialOrderToken || !orders.length) return;
+    const found = orders.find((o) => o.publicToken === initialOrderToken);
+    if (found) {
+      setSelectedOrderId(found.id);
+      setDetailOrder(found);
+      setTab('shipments');
+    }
+  }, [initialOrderToken, orders]);
 
   const stats = useMemo(() => ({
     total: orders.filter((o) => o.status !== 'cancelled').length,

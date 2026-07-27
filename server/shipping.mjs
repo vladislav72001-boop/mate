@@ -27,6 +27,7 @@ import {
   buildStripeReturnUrls,
   createB2CCheckoutSession,
   stripeEnabled,
+  getStripeCheckoutPaymentDetails,
 } from './stripe.mjs';
 import {
   getSettings,
@@ -45,6 +46,7 @@ import { resolveUserMonthlyShipments } from './loyalty.mjs';
 import { resolveWelcomeDiscountPercent, consumeWelcomeDiscount } from './welcome-discount.mjs';
 import { sendOrderCreatedEmail } from './mail.mjs';
 import { geocodeAddressSuggestions } from './geocode.mjs';
+import { buildWaybillPdf, waybillFilename } from './waybill-pdf.mjs';
 
 function buildSideCoverage({ country, city, npCounts, useFallback }) {
   const mateBranches = filterCatalogPoints(MATE_BRANCHES, country, city);
@@ -859,14 +861,26 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       }
       // mock payment mode — skip Stripe verification
 
-      const body = order.payload;
+      const body = order.payload || {};
       const paidAt = order.paidAt || new Date().toISOString();
+
+      let paymentMeta = {};
+      if (order.paymentMode === 'stripe' && order.stripeSessionId) {
+        const details = await getStripeCheckoutPaymentDetails(order.stripeSessionId);
+        if (details?.last4) {
+          paymentMeta = { cardLast4: details.last4, cardBrand: details.brand || null };
+        }
+      }
+      const nextPayload = Object.keys(paymentMeta).length
+        ? { ...body, ...paymentMeta }
+        : body;
 
       // Legacy: shipment already created before payment — just mark waiting.
       if (order.npRef && order.npTtn && !isMockNpOrder(order)) {
         const updated = await updateOrder(order.id, {
           status: 'waiting_from_you',
           paidAt,
+          ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
         });
         await maybeConsumeWelcomeDiscount(order);
         return res.json({ data: publicOrder(updated) });
@@ -881,6 +895,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         npTtn: shipment.npTtn,
         npSnapshot: shipment.snapshot,
         paidAt,
+        payload: nextPayload,
       });
 
       await maybeConsumeWelcomeDiscount(order);
@@ -976,6 +991,26 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     } catch (err) {
       console.error('[shipping] status:', err);
       res.status(500).json({ error: 'Не удалось получить статус' });
+    }
+  });
+
+  /** Public waybill PDF — token in URL is the access key. */
+  router.get('/orders/:publicToken/waybill.pdf', async (req, res) => {
+    try {
+      const order = await findByPublicToken(req.params.publicToken);
+      if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      if (order.status === 'cancelled') {
+        return res.status(400).json({ error: 'Накладная недоступна для отменённого заказа' });
+      }
+      const pdf = await buildWaybillPdf(order);
+      const filename = waybillFilename(order);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.send(pdf);
+    } catch (err) {
+      console.error('[shipping] waybill.pdf:', err);
+      res.status(500).json({ error: err?.message || 'Не удалось сформировать PDF' });
     }
   });
 
