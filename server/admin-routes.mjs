@@ -31,7 +31,7 @@ import {
   publicOrder,
 } from './orders.mjs';
 import { resolveCheckoutAmount } from './shipping.mjs';
-import { sendPasswordChangedEmail, sendProfileUpdatedEmail } from './mail.mjs';
+import { sendPasswordChangedEmail, sendProfileUpdatedEmail, sendOrderStatusEmail } from './mail.mjs';
 
 const ALLOWED_STATUSES = [
   'pending_payment',
@@ -462,6 +462,146 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Не удалось обновить ячейку' });
+    }
+  });
+
+  /** Send the 3 waiting_from_you mockup emails (courier / branch / locker) to a mailbox. */
+  router.post('/mail/preview-waiting', async (req, res) => {
+    try {
+      const to = String(req.body?.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        return res.status(400).json({ error: 'Укажите корректный email' });
+      }
+
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const pickupDate = tomorrow.toISOString().slice(0, 10);
+      const basePayload = {
+        sender: {
+          name: 'Bohdan Rushchak',
+          phone: '+36 20 445 2212',
+          country: 'HU',
+          line: 'Budapest, Váci út 50, 1134',
+        },
+        receiver: {
+          firstName: 'Bohdan',
+          lastName: 'Pashchak',
+          country: 'SK',
+          destinationLine: 'Bratislava, Farského 12',
+          phone: '+421 905 111 222',
+        },
+        parcel: {
+          boxSize: 'S',
+          weightKg: 5,
+          declaredValue: 100,
+          description: 'Одежда',
+        },
+        cardLast4: '2729',
+      };
+      const baseOrder = {
+        orderNumber: 'MD-B2C-PREVIEW',
+        customerEmail: to,
+        amount: 4040,
+        currency: 'HUF',
+        status: 'waiting_from_you',
+        npTtn: 'SHHU0465193482',
+      };
+
+      const samples = [
+        {
+          id: 'preview-courier',
+          payload: {
+            ...basePayload,
+            tariff: {
+              fromCountry: 'HU',
+              toCountry: 'SK',
+              pickupType: 'home',
+              pickupMode: 'address',
+              deliveryType: 'locker',
+              pickupDate,
+              pickupTime: '10:00-11:30',
+              pickupLocation: {
+                kind: 'address',
+                countryCode: 'HU',
+                addressParts: {
+                  city: 'Budapest',
+                  street: 'Váci út',
+                  building: '50',
+                  postCode: '1134',
+                },
+              },
+            },
+          },
+        },
+        {
+          id: 'preview-branch',
+          payload: {
+            ...basePayload,
+            tariff: {
+              fromCountry: 'HU',
+              toCountry: 'SK',
+              pickupType: 'branch',
+              pickupMode: 'branch',
+              deliveryType: 'locker',
+              pickupDate,
+              pickupTime: '10:00-11:30',
+              pickupLocation: {
+                kind: 'division',
+                countryCode: 'HU',
+                divisionId: 12,
+                provider: 'Отделение MATE №12 · Petržalka',
+                address: 'Bratislava, Farského 85108',
+                phone: '+421 2 445 15 12',
+                name: 'Отделение MATE №12',
+              },
+            },
+          },
+        },
+        {
+          id: 'preview-locker',
+          payload: {
+            ...basePayload,
+            lockerCode: '418273',
+            tariff: {
+              fromCountry: 'HU',
+              toCountry: 'SK',
+              pickupType: 'locker',
+              pickupMode: 'locker',
+              deliveryType: 'locker',
+              pickupDate,
+              pickupTime: '10:00-11:30',
+              pickupLocation: {
+                kind: 'division',
+                countryCode: 'SK',
+                divisionId: 357025,
+                provider: 'Постамат SPS №357025',
+                address: 'Bratislava-Petržalka, Panónska 35/12a',
+                name: 'Постамат SPS №357025',
+              },
+            },
+          },
+        },
+      ];
+
+      const results = [];
+      for (const sample of samples) {
+        const result = await sendOrderStatusEmail({
+          ...baseOrder,
+          ...sample,
+        }, 'paid');
+        results.push({
+          id: sample.id,
+          skipped: Boolean(result?.skipped),
+          messageId: result?.messageId || null,
+          provider: result?.provider || null,
+          preview: result?.preview || null,
+        });
+      }
+
+      res.json({ ok: true, to, results });
+    } catch (err) {
+      console.error('[admin] preview-waiting mail:', err);
+      res.status(500).json({ error: err?.message || 'Не удалось отправить превью писем' });
     }
   });
 
