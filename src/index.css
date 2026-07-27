@@ -8162,42 +8162,38 @@ body {
 
 .calc-weight-slider__ticks {
   position: relative;
-  height: 48px;
+  height: 28px;
   font-size: 0.74rem;
   font-weight: 700;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .calc-weight-slider__ticks .calc-weight-slider__tick {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
-  display: flex;
-  flex-direction: row;
-  gap: 6px;
-  align-items: center;
+  white-space: nowrap;
   text-align: center;
+}
+
+.calc-weight-slider__tick--start {
+  left: 0;
+  transform: none;
+  text-align: left;
 }
 
 .calc-weight-slider__tick--end {
   left: auto;
   right: 0;
   transform: none;
-  align-items: flex-end;
   text-align: right;
 }
 
 .calc-weight-slider__ticks b {
-  font-size: 1.02rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: #6d7069;
-}
-
-.calc-weight-slider__ticks small {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: #8a8e86;
 }
 
 .calc-weight-slider__hint {

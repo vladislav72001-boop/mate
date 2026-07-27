@@ -2187,23 +2187,25 @@ export function CalcForm({
                       />
                     </div>
                     <div className="calc-weight-slider__ticks" aria-hidden>
+                      <span className="calc-weight-slider__tick calc-weight-slider__tick--start">
+                        <b>XS</b>
+                      </span>
                       {[
-                        { w: 2, key: 'xs', main: 'XS', sub: '· до 2 кг' },
-                        { w: 5, key: 's', main: 'S', sub: '· 5' },
-                        { w: 10, key: 'm', main: 'M', sub: '· 10' },
-                        { w: 20, key: 'l', main: 'L', sub: '· 20' },
+                        { w: 2, key: '2', label: '2' },
+                        { w: 5, key: 's', label: 'S · 5' },
+                        { w: 10, key: 'm', label: 'M · 10' },
+                        { w: 20, key: 'l', label: 'L · 20' },
                       ].map((tick) => (
                         <span
                           key={tick.key}
                           className="calc-weight-slider__tick"
                           style={{ left: `${((tick.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100}%` }}
                         >
-                          <b>{tick.main}</b>
-                          <small>{tick.sub}</small>
+                          <b>{tick.label}</b>
                         </span>
                       ))}
                       <span className="calc-weight-slider__tick calc-weight-slider__tick--end">
-                        <small>{MAX_CUSTOM_WEIGHT_KG} кг</small>
+                        <b>{MAX_CUSTOM_WEIGHT_KG} кг</b>
                       </span>
                     </div>
                     <p className="calc-weight-slider__hint">{t('calc.weightHint')}</p>
