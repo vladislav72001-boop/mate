@@ -3,6 +3,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildWaitingFromYouEmail } from './mail-waiting.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outboxDir = path.join(__dirname, 'outbox');
@@ -768,6 +769,18 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
 
 export async function sendOrderStatusEmail(order, previousStatus) {
   const status = order.status;
+
+  if (status === 'waiting_from_you') {
+    const built = buildWaitingFromYouEmail(order);
+    return deliver({
+      to: order.customerEmail,
+      subject: built.subject,
+      html: built.html,
+      hero: null,
+      outboxName: `order-status-${order.id}-${status}-${built.mode}-${Date.now()}.html`,
+    });
+  }
+
   const prevLabel = STATUS_LABELS[previousStatus] || previousStatus;
   const nextLabel = STATUS_LABELS[status] || status;
   const hero = HERO.status;
@@ -782,21 +795,10 @@ export async function sendOrderStatusEmail(order, previousStatus) {
     intro = 'Оплата вашего заказа успешно получена. Мы начинаем обработку отправления.';
     subject = `MATE — оплата по заказу ${order.orderNumber} получена`;
     badgeTone = 'lime';
-  } else if (status === 'waiting_from_you') {
-    title = 'Жду от Вас посылку';
-    intro = 'Оплата прошла успешно. Передайте посылку в пункт приёма — дальше мы доставим её получателю.';
-    subject = `MATE — ждём посылку по заказу ${order.orderNumber}`;
-    badgeTone = 'lime';
   } else if (status === 'submitted') {
-    if (previousStatus === 'pending_payment' || previousStatus === 'waiting_from_you') {
-      title = 'Посылка в пути';
-      intro = 'Ваше отправление принято перевозчиком и находится в пути.';
-      subject = `MATE — посылка ${order.orderNumber} в пути`;
-    } else {
-      title = 'Посылка в пути';
-      intro = 'Ваше отправление принято перевозчиком и находится в пути.';
-      subject = `MATE — посылка ${order.orderNumber} в пути`;
-    }
+    title = 'Посылка в пути';
+    intro = 'Ваше отправление принято перевозчиком и находится в пути.';
+    subject = `MATE — посылка ${order.orderNumber} в пути`;
     badgeTone = 'dark';
   } else if (status === 'delivered') {
     title = 'Посылка доставлена';
