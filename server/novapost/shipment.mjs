@@ -197,11 +197,19 @@ export async function createInternationalShipment(body, clientOrder) {
     body.tariff?.deliveryLocation,
   );
 
+  // Non-cash payment under Mate↔Nova Post contract (per NP support).
+  // Without payerContractNumber NP treats the shipment as unpaid/cash.
+  const payerContractNumber = (
+    process.env.NOVAPOST_PAYER_CONTRACT_NUMBER
+    || '21/04/2026-1'
+  ).trim();
+
   const payload = {
     status: 'ReadyToShip',
     clientOrder: clientOrder.slice(0, 50),
     note: `Mate B2C ${clientOrder}`.slice(0, 255),
-    payerType: body.tariff?.payerType === 'Recipient' ? 'Recipient' : 'Sender',
+    payerType: 'Sender',
+    payerContractNumber,
     parcels: [{
       rowNumber: 1,
       cargoCategory: 'parcel',
