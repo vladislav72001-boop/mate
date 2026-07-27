@@ -32,6 +32,7 @@ import {
 } from './orders.mjs';
 import { resolveCheckoutAmount } from './shipping.mjs';
 import { sendPasswordChangedEmail, sendProfileUpdatedEmail, sendOrderStatusEmail } from './mail.mjs';
+import { localeFromRequest } from './mail-i18n.mjs';
 
 const ALLOWED_STATUSES = [
   'pending_payment',
@@ -346,11 +347,11 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
       const updated = publicUser(saved);
       const profileChanged = name !== current.name || phone !== current.phone || email !== current.email;
       if (password) {
-        sendPasswordChangedEmail(updated).catch((err) => {
+        sendPasswordChangedEmail(updated, { locale: localeFromRequest(req) }).catch((err) => {
           console.error('[mail] admin password changed notify failed:', err);
         });
       } else if (profileChanged) {
-        sendProfileUpdatedEmail(updated).catch((err) => {
+        sendProfileUpdatedEmail(updated, { locale: localeFromRequest(req) }).catch((err) => {
           console.error('[mail] admin profile updated notify failed:', err);
         });
       }

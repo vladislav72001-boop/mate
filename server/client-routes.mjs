@@ -5,6 +5,7 @@ import { findById, publicUser, updateUser, isEmailTaken } from './store.mjs';
 import { getLoyaltyForUser } from './loyalty.mjs';
 import { getWelcomeDiscountStatus } from './welcome-discount.mjs';
 import { sendPasswordChangedEmail, sendProfileUpdatedEmail } from './mail.mjs';
+import { localeFromRequest } from './mail-i18n.mjs';
 
 export function createClientRouter({ authMiddleware }) {
   const router = Router();
@@ -83,11 +84,11 @@ export function createClientRouter({ authMiddleware }) {
       if (!saved) return res.status(404).json({ error: 'Пользователь не найден' });
       const updated = publicUser(saved);
       if (password) {
-        sendPasswordChangedEmail(updated).catch((err) => {
+        sendPasswordChangedEmail(updated, { locale: localeFromRequest(req) }).catch((err) => {
           console.error('[mail] password changed notify failed:', err);
         });
       } else if (profileChanged) {
-        sendProfileUpdatedEmail(updated).catch((err) => {
+        sendProfileUpdatedEmail(updated, { locale: localeFromRequest(req) }).catch((err) => {
           console.error('[mail] profile updated notify failed:', err);
         });
       }

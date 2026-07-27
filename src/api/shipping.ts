@@ -1,9 +1,14 @@
 import { getStoredToken } from './auth';
+import { getRuntimeLocale } from '../i18n/translate';
 import type { AddressEntry, ShippingOrder } from './client-types';
 
 export type { ShippingOrder, AddressEntry } from './client-types';
 
 type ApiData<T> = { data: T };
+
+function localeHeaders(): Record<string, string> {
+  return { 'X-Mate-Locale': getRuntimeLocale() };
+}
 
 async function shippingRequest<T>(path: string, options: RequestInit = {}, timeoutMs = 30000): Promise<T> {
   const controller = new AbortController();
@@ -16,6 +21,7 @@ async function shippingRequest<T>(path: string, options: RequestInit = {}, timeo
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
+        ...localeHeaders(),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers || {}),
       },

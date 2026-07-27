@@ -1,3 +1,7 @@
+import { getRuntimeLocale } from '../i18n/translate';
+import { LOCALE_STORAGE_KEY } from '../i18n/config';
+import type { Locale } from '../i18n/types';
+
 export type AuthUser = {
   id: string;
   name: string;
@@ -21,6 +25,22 @@ type AuthResponse = {
 const TOKEN_KEY = 'mate_token';
 const REQUEST_TIMEOUT_MS = 8000;
 
+function currentLocale(): Locale {
+  try {
+    const fromRuntime = getRuntimeLocale();
+    if (fromRuntime) return fromRuntime;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (stored === 'en' || stored === 'hu' || stored === 'ru' || stored === 'uk') return stored;
+  } catch {
+    /* ignore */
+  }
+  return 'en';
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -31,6 +51,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
+        'X-Mate-Locale': currentLocale(),
         ...(options.headers || {}),
       },
     });
@@ -76,28 +97,28 @@ export async function registerClient(payload: {
 }) {
   return request<AuthResponse>('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, locale: currentLocale() }),
   });
 }
 
 export async function loginClient(payload: { email: string; password: string }) {
   return request<AuthResponse>('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, locale: currentLocale() }),
   });
 }
 
 export async function socialClient(provider: 'apple' | 'google') {
   return request<AuthResponse>('/api/auth/social', {
     method: 'POST',
-    body: JSON.stringify({ provider }),
+    body: JSON.stringify({ provider, locale: currentLocale() }),
   });
 }
 
 export async function googleAuthClient(payload: { credential: string; phone?: string }) {
   return request<AuthResponse>('/api/auth/google', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, locale: currentLocale() }),
   });
 }
 
@@ -110,7 +131,7 @@ export async function appleAuthClient(payload: {
 }) {
   return request<AuthResponse>('/api/auth/apple', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, locale: currentLocale() }),
   });
 }
 
@@ -132,7 +153,7 @@ export async function updateClientProfile(
   return request<{ user: AuthUser }>('/api/client/profile', {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, locale: currentLocale() }),
   });
 }
 

@@ -9,6 +9,7 @@ import {
   mailT,
   statusLabel,
   intlLocale,
+  normalizeMailLocale,
 } from './mail-i18n.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -582,17 +583,20 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export async function sendWelcomeEmail(user) {
+export async function sendWelcomeEmail(user, meta = {}) {
+  const locale = normalizeMailLocale(meta.locale || user?.locale);
+  const t = (key, vars) => mailT(locale, key, vars);
   const hero = HERO.welcome;
   const html = baseTemplate({
-    title: `Добро пожаловать, ${user.name}!`,
-    preheader: 'Ваш аккаунт MATE создан — доставка по Европе стала проще.',
-    eyebrow: 'Аккаунт создан',
+    title: t('welcomeTitle', { name: user.name }),
+    preheader: t('welcomePre'),
+    eyebrow: t('welcomeEyebrow'),
     badge: statusBadge('Welcome', 'lime'),
     hero,
+    locale,
     bodyHtml: `
       <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
-        Ваш аккаунт MATE успешно создан. Считайте стоимость, оформляйте отправления и отслеживайте посылки в одном кабинете.
+        ${escapeHtml(t('welcomeBody'))}
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
         <tr>
@@ -603,13 +607,13 @@ export async function sendWelcomeEmail(user) {
           </td>
         </tr>
       </table>
-      ${ctaButton(appUrl(), 'Перейти в личный кабинет')}
+      ${ctaButton(appUrl(), t('welcomeCta'))}
     `,
   });
 
   return deliver({
     to: user.email,
-    subject: 'Добро пожаловать в MATE — аккаунт создан',
+    subject: t('welcomeSubject'),
     html,
     hero,
     outboxName: `welcome-${user.id}.html`,
@@ -617,18 +621,21 @@ export async function sendWelcomeEmail(user) {
 }
 
 export async function sendLoginEmail(user, meta = {}) {
-  const when = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Berlin' });
+  const locale = normalizeMailLocale(meta.locale || user?.locale);
+  const t = (key, vars) => mailT(locale, key, vars);
+  const when = new Date().toLocaleString(intlLocale(locale), { timeZone: 'Europe/Berlin' });
   const ip = normalizeIp(meta.ip);
   const hero = HERO.login;
   const html = baseTemplate({
-    title: 'Вход в ваш аккаунт',
-    preheader: `Успешный вход в MATE — ${when}`,
-    eyebrow: 'Безопасность',
+    title: t('loginTitle'),
+    preheader: t('loginPre', { when }),
+    eyebrow: t('loginEyebrow'),
     badge: statusBadge('Login', 'dark'),
     hero,
+    locale,
     bodyHtml: `
       <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
-        Здравствуйте, ${escapeHtml(user.name)}! Вы успешно вошли в личный кабинет MATE.
+        ${escapeHtml(t('loginBody', { name: user.name }))}
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:16px;border:1px solid ${BRAND.line};">
         <tr>
@@ -637,99 +644,105 @@ export async function sendLoginEmail(user, meta = {}) {
         <tr>
           <td style="padding:16px 20px 18px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-              ${detailRow('Время', escapeHtml(when), { strong: true, last: !ip })}
-              ${ip ? detailRow('IP', escapeHtml(ip), { last: true }) : ''}
+              ${detailRow(t('loginTime'), escapeHtml(when), { strong: true, last: !ip })}
+              ${ip ? detailRow(t('loginIp'), escapeHtml(ip), { last: true }) : ''}
             </table>
           </td>
         </tr>
       </table>
       <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
-        Если это были не вы — немедленно смените пароль в настройках аккаунта.
+        ${escapeHtml(t('loginWarn'))}
       </p>
-      ${ctaButton(appUrl(), 'Открыть личный кабинет')}
+      ${ctaButton(appUrl(), t('loginCta'))}
     `,
   });
 
   return deliver({
     to: user.email,
-    subject: 'Вход в аккаунт MATE',
+    subject: t('loginSubject'),
     html,
     hero,
     outboxName: `login-${user.id}-${Date.now()}.html`,
   });
 }
 
-export async function sendPasswordChangedEmail(user) {
-  const when = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Berlin' });
+export async function sendPasswordChangedEmail(user, meta = {}) {
+  const locale = normalizeMailLocale(meta.locale || user?.locale);
+  const t = (key, vars) => mailT(locale, key, vars);
+  const when = new Date().toLocaleString(intlLocale(locale), { timeZone: 'Europe/Berlin' });
   const hero = HERO.security;
   const html = baseTemplate({
-    title: 'Пароль обновлён',
-    preheader: 'Пароль вашего аккаунта MATE был изменён.',
-    eyebrow: 'Безопасность',
+    title: t('passwordTitle'),
+    preheader: t('passwordPre'),
+    eyebrow: t('securityEyebrow'),
     badge: statusBadge('Security', 'dark'),
     hero,
+    locale,
     bodyHtml: `
       <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
-        Здравствуйте, ${escapeHtml(user.name)}! Пароль вашего аккаунта MATE был успешно изменён.
+        ${escapeHtml(t('passwordBody', { name: user.name }))}
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
         <tr>
           <td style="padding:18px 20px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-              ${detailRow('Время', escapeHtml(when), { strong: true, last: true })}
+              ${detailRow(t('loginTime'), escapeHtml(when), { strong: true, last: true })}
             </table>
           </td>
         </tr>
       </table>
       <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
-        Если вы не меняли пароль — свяжитесь с поддержкой и смените пароль в настройках.
+        ${escapeHtml(t('passwordWarn'))}
       </p>
-      ${ctaButton(appUrl(), 'Открыть личный кабинет')}
+      ${ctaButton(appUrl(), t('passwordCta'))}
     `,
   });
 
   return deliver({
     to: user.email,
-    subject: 'Пароль аккаунта MATE изменён',
+    subject: t('passwordSubject'),
     html,
     hero,
     outboxName: `password-${user.id}-${Date.now()}.html`,
   });
 }
 
-export async function sendProfileUpdatedEmail(user) {
-  const when = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Berlin' });
+export async function sendProfileUpdatedEmail(user, meta = {}) {
+  const locale = normalizeMailLocale(meta.locale || user?.locale);
+  const t = (key, vars) => mailT(locale, key, vars);
+  const when = new Date().toLocaleString(intlLocale(locale), { timeZone: 'Europe/Berlin' });
   const hero = HERO.security;
   const html = baseTemplate({
-    title: 'Данные профиля обновлены',
-    preheader: 'В личном кабинете MATE изменены данные профиля.',
-    eyebrow: 'Профиль',
+    title: t('profileTitle'),
+    preheader: t('profilePre'),
+    eyebrow: t('profileEyebrow'),
     badge: statusBadge('Updated', 'muted'),
     hero,
+    locale,
     bodyHtml: `
       <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
-        Здравствуйте, ${escapeHtml(user.name)}! Ваши данные в личном кабинете MATE были изменены.
+        ${escapeHtml(t('profileBody', { name: user.name }))}
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
         <tr>
           <td style="padding:18px 20px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
               ${detailRow('Email', escapeHtml(user.email), { strong: true })}
-              ${detailRow('Телефон', escapeHtml(user.phone))}
-              ${detailRow('Время', escapeHtml(when), { last: true })}
+              ${detailRow(t('profilePhone'), escapeHtml(user.phone))}
+              ${detailRow(t('loginTime'), escapeHtml(when), { last: true })}
             </table>
           </td>
         </tr>
       </table>
       <p style="margin:0;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
-        Если это были не вы — свяжитесь с поддержкой.
+        ${escapeHtml(t('profileWarn'))}
       </p>
     `,
   });
 
   return deliver({
     to: user.email,
-    subject: 'Профиль MATE обновлён',
+    subject: t('profileSubject'),
     html,
     hero,
     outboxName: `profile-${user.id}-${Date.now()}.html`,

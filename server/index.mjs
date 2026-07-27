@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUser, findByAppleId, findByEmail, findByGoogleId, findById, findByIdentifier, publicUser, updateUser } from './store.mjs';
 import { sendWelcomeEmail, sendLoginEmail, assertMailAssets, probeSmtp } from './mail.mjs';
+import { localeFromRequest } from './mail-i18n.mjs';
 import { verifyGoogleCredential, isGoogleAuthConfigured } from './google-auth.mjs';
 import { getAppleAuthPublicConfig, isAppleAuthConfigured, verifyAppleIdToken } from './apple-auth.mjs';
 import { createShippingRouter } from './shipping.mjs';
@@ -198,7 +199,7 @@ app.post('/api/auth/register', async (req, res) => {
     const token = signToken(user);
     const pub = publicUser(user);
 
-    sendWelcomeEmail(pub).catch((mailErr) => {
+    sendWelcomeEmail(pub, { locale: localeFromRequest(req) }).catch((mailErr) => {
       console.error('[mail] welcome failed:', mailErr);
     });
 
@@ -233,7 +234,7 @@ app.post('/api/auth/login', async (req, res) => {
     const token = signToken(user);
 
     if (user.type !== 'admin') {
-      sendLoginEmail(pub, { ip: req.ip }).catch((mailErr) => {
+      sendLoginEmail(pub, { ip: req.ip, locale: localeFromRequest(req) }).catch((mailErr) => {
         console.error('[mail] login failed:', mailErr);
       });
     }
@@ -314,9 +315,9 @@ app.post('/api/auth/google', async (req, res) => {
     const token = signToken(user);
 
     if (isNew) {
-      sendWelcomeEmail(pub).catch((err) => console.error('[mail] google welcome failed:', err));
+      sendWelcomeEmail(pub, { locale: localeFromRequest(req) }).catch((err) => console.error('[mail] google welcome failed:', err));
     } else {
-      sendLoginEmail(pub, { ip: req.ip }).catch((err) => console.error('[mail] google login failed:', err));
+      sendLoginEmail(pub, { ip: req.ip, locale: localeFromRequest(req) }).catch((err) => console.error('[mail] google login failed:', err));
     }
 
     res.json({
@@ -417,9 +418,9 @@ app.post('/api/auth/apple', async (req, res) => {
     const token = signToken(user);
 
     if (isNew) {
-      sendWelcomeEmail(pub).catch((err) => console.error('[mail] apple welcome failed:', err));
+      sendWelcomeEmail(pub, { locale: localeFromRequest(req) }).catch((err) => console.error('[mail] apple welcome failed:', err));
     } else {
-      sendLoginEmail(pub, { ip: req.ip }).catch((err) => console.error('[mail] apple login failed:', err));
+      sendLoginEmail(pub, { ip: req.ip, locale: localeFromRequest(req) }).catch((err) => console.error('[mail] apple login failed:', err));
     }
 
     res.json({
