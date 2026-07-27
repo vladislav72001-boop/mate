@@ -1,7 +1,7 @@
 {
   "name": "Mate Delivery",
   "short_name": "MATE",
-  "description": "Logistics, Moving & Storage Across Europe – Mate Delivery",
+  "description": "Mate Delivery — parcel delivery from Hungary across Europe",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#E1FF01",
