@@ -620,6 +620,7 @@ void probeSmtp()
 
 // Production: serve Vite build from the same origin as /api
 const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
+const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 if (existsSync(distDir)) {
   app.use(express.static(distDir, {
     index: false,
@@ -629,9 +630,24 @@ if (existsSync(distDir)) {
       if (/\bog-mate-hungary\.png$/i.test(filePath) || /\bog-share\.png$/i.test(filePath)) {
         res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
       }
+      // Favicons: short cache so Safari/Google pick up Mate mark after Vite-icon purge.
+      if (/\.(ico|webmanifest)$/i.test(filePath) || /favicon|mate-icon|mate-apple|apple-touch/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+      }
     },
   }));
-  app.get(/^(?!\/api).*/, (_req, res) => {
+  // Fallback brand assets from /public (same build) if missing from dist.
+  if (existsSync(publicDir)) {
+    app.use(express.static(publicDir, {
+      index: false,
+      maxAge: '5m',
+    }));
+  }
+  app.get(/^(?!\/api).*/, (req, res) => {
+    // Never return SPA HTML for missing static assets (browsers cache that as a "favicon").
+    if (/\.(ico|png|jpe?g|gif|svg|webp|woff2?|ttf|txt|xml|webmanifest|map)$/i.test(req.path)) {
+      return res.status(404).type('text/plain').send('Not found');
+    }
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.sendFile(path.join(distDir, 'index.html'));
