@@ -85,6 +85,12 @@ export type QuoteLocation =
       kind: 'division';
       countryCode: string;
       divisionId: number;
+      /** Display-only fields for emails/UI — ignored by Nova Post quote/create */
+      name?: string;
+      address?: string;
+      phone?: string;
+      lat?: number;
+      lng?: number;
     }
   | {
       kind: 'address';

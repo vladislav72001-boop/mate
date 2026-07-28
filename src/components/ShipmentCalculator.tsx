@@ -175,10 +175,36 @@ function addressQuoteLocation(
   };
 }
 
-function divisionQuoteLocation(countryCode: string, id: string): QuoteLocation | undefined {
+function divisionQuoteLocation(
+  countryCode: string,
+  id: string,
+  meta?: {
+    name?: string;
+    address?: string;
+    phone?: string;
+    lat?: number;
+    lng?: number;
+  },
+): QuoteLocation | undefined {
   const divisionId = Number(id);
   if (!Number.isInteger(divisionId) || divisionId <= 0) return undefined;
-  return { kind: 'division', countryCode, divisionId };
+  const loc: QuoteLocation = { kind: 'division', countryCode, divisionId };
+  if (meta?.name) loc.name = meta.name;
+  if (meta?.address) loc.address = meta.address;
+  if (meta?.phone) loc.phone = meta.phone;
+  if (Number.isFinite(meta?.lat) && meta!.lat !== 0) loc.lat = meta!.lat;
+  if (Number.isFinite(meta?.lng) && meta!.lng !== 0) loc.lng = meta!.lng;
+  return loc;
+}
+
+function pointMeta(point: ShippingPoint | null | undefined) {
+  if (!point) return undefined;
+  return {
+    name: point.provider || undefined,
+    address: point.address || undefined,
+    lat: point.lat || undefined,
+    lng: point.lng || undefined,
+  };
 }
 
 function isNpDivisionId(id: string | number | null | undefined): boolean {
@@ -1908,8 +1934,20 @@ export function CalcForm({
           deliveryMode: deliveryType,
           payer,
           payerType: quotePayerType,
-          pickupLocation: pickupQuoteLocation,
-          deliveryLocation: deliveryQuoteLocation,
+          pickupLocation: pickupType === 'home'
+            ? pickupQuoteLocation
+            : divisionQuoteLocation(
+              PICKUP_COUNTRY,
+              pickupType === 'locker' ? pickupLocker : pickupBranch,
+              pointMeta(pickupLocationObj),
+            ),
+          deliveryLocation: deliveryType === 'home'
+            ? deliveryQuoteLocation
+            : divisionQuoteLocation(
+              toCountry,
+              deliveryType === 'locker' ? destLocker : destBranch,
+              pointMeta(destLocationObj),
+            ),
         },
       });
 

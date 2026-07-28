@@ -101,6 +101,16 @@ function locationLabel(location, fallback, locale = 'ru') {
   );
 }
 
+function mapsUrlForLocation(location, addressFallback) {
+  const lat = Number(location?.lat);
+  const lng = Number(location?.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) {
+    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }
+  const q = encodeURIComponent(addressFallback || '');
+  return `https://www.google.com/maps/search/?api=1&query=${q}`;
+}
+
 function formatTrackDisplay(raw) {
   const clean = String(raw || '').replace(/\s+/g, '').toUpperCase();
   if (!clean) return '—';
@@ -175,9 +185,12 @@ function orderContext(order) {
   const receiverName = [receiver.firstName, receiver.lastName].filter(Boolean).join(' ') || '—';
   const senderPhone = sender.phone || order?.senderPhone || '';
   const pickupAddress = locationLabel(pickupLocation, sender.line, locale);
-  const pointName = pickupLocation.provider
-    || pickupLocation.name
+  const pointName = pickupLocation.name
+    || pickupLocation.provider
     || (pickupMode === 'branch' ? t('branchMate') : pickupMode === 'locker' ? t('locker') : '');
+  const pointDetail = pickupLocation.address
+    || pickupLocation.addressLine
+    || (pickupAddress !== sender.line ? pickupAddress : '');
   const fromCity = cityFromCountry(tariff.fromCountry || sender.country || 'HU', sender.line);
   const toCity = cityFromCountry(tariff.toCountry || receiver.country || 'SK', receiver.destinationLine);
   const boxSize = parcel.boxSize || 'S';
@@ -207,8 +220,7 @@ function orderContext(order) {
     ? `${site}/?order=${encodeURIComponent(publicToken)}`
     : `${site}/?cabinet=shipments`;
   const dash = `${site}/?cabinet=shipments`;
-  const mapsQuery = encodeURIComponent(pickupAddress);
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
+  const mapsUrl = mapsUrlForLocation(pickupLocation, pickupAddress || pointName);
   const phoneHref = senderPhone ? `tel:${String(senderPhone).replace(/\s+/g, '')}` : dash;
   const pointPhone = pickupLocation.phone || '';
 
@@ -234,6 +246,7 @@ function orderContext(order) {
     senderPhone,
     pickupAddress,
     pointName,
+    pointDetail,
     fromCity,
     toCity,
     boxSize,
@@ -486,7 +499,8 @@ function checklist3(items) {
               <tr>
                 <td style="padding:12px 10px;">
                   <div style="width:28px;height:28px;border-radius:8px;border:1.5px solid ${BRAND.black};text-align:center;line-height:28px;font-size:14px;margin-bottom:8px;">${it.icon}</div>
-                  <div style="font-family:${FONT.body};font-size:12px;line-height:1.45;color:${BRAND.ink};">${escapeHtml(it.text)}</div>
+                  ${it.title ? `<div style="font-family:${FONT.body};font-size:13px;font-weight:700;line-height:1.35;color:${BRAND.ink};margin-bottom:4px;">${escapeHtml(it.title)}</div>` : ''}
+                  <div style="font-family:${FONT.body};font-size:12px;line-height:1.45;color:${BRAND.muted};">${escapeHtml(it.text)}</div>
                 </td>
               </tr>
             </table>
@@ -608,6 +622,10 @@ function buildBranchBody(ctx) {
   const branchTitle = ctx.pointName
     ? t('bringToBranchNamed', { name: ctx.pointName })
     : t('bringToBranch');
+  const addressLine = ctx.pointDetail || ctx.pickupAddress;
+  const callHref = ctx.pointPhone
+    ? `tel:${String(ctx.pointPhone).replace(/\s+/g, '')}`
+    : ctx.manageUrl;
   return `
     <h1 style="margin:0 0 8px;font-family:${FONT.display};font-size:24px;line-height:1.2;font-weight:700;color:${BRAND.ink};letter-spacing:-.02em;">
       ${escapeHtml(branchTitle)}
@@ -616,23 +634,27 @@ function buildBranchBody(ctx) {
       ${escapeHtml(t('branchNoCode'))}
     </p>
 
+    ${sectionTitle(1, t('branchWhere'))}
     ${mapBlock({ pinLabel: ctx.pointName || t('branch'), distanceLabel: '1.2 km', fromLabel: t('youAreHere') })}
-    <div style="font-family:${FONT.display};font-size:17px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">
-      ${escapeHtml(ctx.pointName || t('branchMate'))} · ${escapeHtml(ctx.pickupAddress)}
-    </div>
-    <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.muted};margin:0 0 8px;line-height:1.5;">
-      ${ctx.pointPhone ? escapeHtml(ctx.pointPhone) : escapeHtml(t('branchPhoneHint'))}
-    </div>
-    <div style="margin:0 0 12px;">
-      ${pill(`1.2 km · ~15 ${t('minShort')}`, 'gray')}${pill(t('openUntil'), 'lime')}${pill(t('hasPackaging'), 'gray')}
-    </div>
-    ${dualButtons(
-    ctx.mapsUrl,
-    t('routeBtn'),
-    ctx.pointPhone ? `tel:${String(ctx.pointPhone).replace(/\s+/g, '')}` : ctx.manageUrl,
-    t('callBtn'),
-    true,
-  )}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px;border:1px solid ${BRAND.line};border-radius:14px;background:${BRAND.white};">
+      <tr>
+        <td style="padding:14px 16px;">
+          <div style="font-family:${FONT.display};font-size:17px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">
+            ${escapeHtml(ctx.pointName || t('branchMate'))}
+          </div>
+          <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.ink};margin:0 0 6px;line-height:1.45;">
+            ${escapeHtml(addressLine)}
+          </div>
+          <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.muted};margin:0 0 10px;line-height:1.5;">
+            ${ctx.pointPhone ? escapeHtml(ctx.pointPhone) : escapeHtml(t('branchPhoneHint'))}
+          </div>
+          <div>
+            ${pill(t('openUntil'), 'lime')}${pill(t('hasPackaging'), 'gray')}
+          </div>
+        </td>
+      </tr>
+    </table>
+    ${dualButtons(ctx.mapsUrl, t('routeBtn'), callHref, t('callBtn'), true)}
 
     ${sectionTitle(2, t('whenOpen'))}
     ${hoursBars(ctx.locale)}
@@ -642,9 +664,9 @@ function buildBranchBody(ctx) {
 
     ${sectionTitle(3, t('takeWithYou'))}
     ${checklist3([
-      { icon: '🪪', text: t('takeId') },
-      { icon: '☰', text: t('takeTrack') },
-      { icon: '📦', text: t('takeParcel') },
+      { icon: '🪪', title: t('takeIdTitle'), text: t('takeId') },
+      { icon: '☰', title: t('takeTrackTitle'), text: t('takeTrack') },
+      { icon: '📦', title: t('takeParcelTitle'), text: t('takeParcel') },
     ])}
 
     ${barcodeBlock({ title: t('trackAtCounter'), track: ctx.track })}
@@ -699,7 +721,10 @@ function buildLockerBody(ctx) {
 
     ${mapBlock({ pinLabel: ctx.pointName || t('locker'), distanceLabel: '250 m', fromLabel: t('youAreHere') })}
     <div style="font-family:${FONT.display};font-size:17px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">
-      ${escapeHtml(ctx.pointName || t('locker'))} · ${escapeHtml(ctx.pickupAddress)}
+      ${escapeHtml(ctx.pointName || t('locker'))}
+    </div>
+    <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.muted};margin:0 0 8px;line-height:1.5;">
+      ${escapeHtml(ctx.pointDetail || ctx.pickupAddress)}
     </div>
     <div style="margin:0 0 12px;">
       ${pill('24/7', 'lime')}${pill(t('nearby'), 'lime')}${pill(t('easyFind'), 'lime')}
@@ -809,10 +834,11 @@ export function getWaitingFromYouSubject(order) {
     });
   }
   if (ctx.pickupMode === 'branch') {
-    return t('branchSubject', {
-      name: ctx.pointName || t('branch'),
-      date: ctx.dateLabel,
-    });
+    const name = ctx.pointName || t('branch');
+    const address = ctx.pointDetail || ctx.pickupAddress || '';
+    return address
+      ? t('branchSubject', { name, address, date: ctx.dateLabel })
+      : t('branchSubjectShort', { name, date: ctx.dateLabel });
   }
   const spaced = ctx.lockerCode.length >= 6
     ? `${ctx.lockerCode.slice(0, 3)} ${ctx.lockerCode.slice(3)}`
