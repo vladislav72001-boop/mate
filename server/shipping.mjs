@@ -876,7 +876,10 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     try {
       const order = await findByPublicToken(req.params.publicToken);
       if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-      if (['paid', 'submitted', 'waiting_from_you', 'delivered'].includes(order.status)) {
+
+      // Already fully registered in Nova Post — idempotent OK.
+      if (['submitted', 'waiting_from_you', 'delivered'].includes(order.status)
+        || (order.status === 'paid' && order.npRef && order.npTtn && !isMockNpOrder(order))) {
         return res.json({ data: publicOrder(order) });
       }
 
@@ -887,10 +890,11 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           const status = payErr.status || 402;
           return res.status(status).json({ error: payErr.message || 'Оплата не завершена' });
         }
-      } else if (order.paymentMode === 'stripe') {
+      } else if (order.paymentMode === 'stripe' && order.status !== 'paid') {
         return res.status(402).json({ error: 'Сначала завершите оплату на странице Stripe' });
       }
       // mock payment mode — skip Stripe verification
+      // status===paid (retry after NP failure) — Stripe already confirmed
 
       const body = order.payload || {};
       const paidAt = order.paidAt || new Date().toISOString();
@@ -906,32 +910,56 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         ? { ...body, ...paymentMeta }
         : body;
 
-      // Legacy: shipment already created before payment — just mark waiting.
-      if (order.npRef && order.npTtn && !isMockNpOrder(order)) {
-        const updated = await updateOrder(order.id, {
-          status: 'waiting_from_you',
+      // Persist payment BEFORE Nova Post create — money is already captured by Stripe.
+      // If NP fails, the order stays "paid" and confirm-payment can retry NP.
+      let paidOrder = order;
+      if (order.status === 'pending_payment' || !order.paidAt) {
+        paidOrder = await updateOrder(order.id, {
+          status: 'paid',
           paidAt,
           ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
+        }) || order;
+        await maybeConsumeWelcomeDiscount(paidOrder);
+      }
+
+      // Legacy: shipment already created before payment — just mark waiting.
+      if (paidOrder.npRef && paidOrder.npTtn && !isMockNpOrder(paidOrder)) {
+        const updated = await updateOrder(paidOrder.id, {
+          status: 'waiting_from_you',
+          paidAt: paidOrder.paidAt || paidAt,
+          ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
         });
-        await maybeConsumeWelcomeDiscount(order);
         return res.json({ data: publicOrder(updated) });
       }
 
-      const shipment = await createInternationalShipment(body, order.orderNumber);
-      npRef = shipment.npRef;
+      try {
+        const shipment = await createInternationalShipment(body, paidOrder.orderNumber);
+        npRef = shipment.npRef;
 
-      const updated = await updateOrder(order.id, {
-        status: 'waiting_from_you',
-        npRef: shipment.npRef,
-        npTtn: shipment.npTtn,
-        npSnapshot: shipment.snapshot,
-        paidAt,
-        payload: nextPayload,
-      });
+        const updated = await updateOrder(paidOrder.id, {
+          status: 'waiting_from_you',
+          npRef: shipment.npRef,
+          npTtn: shipment.npTtn,
+          npSnapshot: shipment.snapshot,
+          paidAt: paidOrder.paidAt || paidAt,
+          payload: nextPayload,
+        });
 
-      await maybeConsumeWelcomeDiscount(order);
-
-      res.json({ data: publicOrder(updated) });
+        return res.json({ data: publicOrder(updated) });
+      } catch (npErr) {
+        console.error('[shipping] NP after payment failed:', npErr);
+        if (npRef) {
+          deleteInternationalShipment(npRef).catch((e) => console.error('[shipping] rollback failed:', e));
+        }
+        // Payment is kept — client/admin can retry confirm-payment after fixing NP config.
+        const msg = npErr instanceof Error ? npErr.message : String(npErr);
+        return res.status(502).json({
+          error: msg,
+          code: 'NP_AFTER_PAYMENT_FAILED',
+          paymentCaptured: true,
+          data: publicOrder(paidOrder),
+        });
+      }
     } catch (err) {
       console.error('[shipping] confirm-payment:', err);
       if (npRef) {

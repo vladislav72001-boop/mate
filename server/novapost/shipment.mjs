@@ -118,6 +118,9 @@ function applyShipmentLocation(party, location) {
 
 function formatNovaPostShipmentError(err) {
   const raw = String(err?.message || err);
+  if (raw.includes('ContractEntity.number') || raw.includes('validation.exists')) {
+    return 'Оплата прошла, но Nova Post не принял номер договора (payerContractNumber). Проверьте NOVAPOST_PAYER_CONTRACT_NUMBER в Railway — заявка останется оплаченной, отправление можно создать повторно.';
+  }
   if (raw.includes('validation.phone')) {
     return 'Некорректный номер телефона отправителя или получателя. Проверьте код страны и количество цифр.';
   }
