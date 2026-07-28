@@ -2175,7 +2175,7 @@ export function CalcForm({
                     <button
                       key={s.key}
                       type="button"
-                      className={`calc-form__size${sizeKey === s.key ? ' active' : ''}${s.key === 'custom' ? ' calc-form__size--wide' : ''}`}
+                      className={`calc-form__size${sizeKey === s.key ? ' active' : ''}`}
                       onClick={() => setSizeKey(s.key)}
                     >
                       <span className="calc-form__size-icon" aria-hidden>{s.icon}</span>
