@@ -40,13 +40,8 @@ import {
 } from '../constants/shipping';
 import { TrackingMap } from './client-dash/TrackingMap';
 import {
-  DEST_BRANCHES,
-  DEST_LOCKERS,
   LockerPicker,
-  PICKUP_BRANCHES,
-  PICKUP_LOCKERS,
   detectCityByGeolocation,
-  filterPointsByCity,
 } from './calc/LockerPicker';
 import {
   citiesForCountry,
@@ -190,15 +185,18 @@ function isNpDivisionId(id: string | number | null | undefined): boolean {
   return /^\d+$/.test(String(id || '')) && Number(id) > 0;
 }
 
-/** Prefer Nova Post numeric division IDs — catalog placeholders cannot be quoted. */
+/** Keep only Nova Post numeric division IDs — catalog placeholders cannot be quoted. */
 function preferQuoteablePoints<T extends { id: string }>(points: T[]): T[] {
-  const np = points.filter((p) => isNpDivisionId(p.id));
-  return np.length ? np : points;
+  return points.filter((p) => isNpDivisionId(p.id));
 }
 
 function firstNpDivisionId(points: Array<{ id: string }>): string {
   const hit = points.find((p) => isNpDivisionId(p.id));
   return hit ? String(hit.id) : '';
+}
+
+function sanitizeDivisionId(id: string | null | undefined): string {
+  return isNpDivisionId(id) ? String(id) : '';
 }
 
 async function fetchFirstDivisionLocation(
@@ -567,10 +565,10 @@ export function CalcForm({
   const [pickupCityTouched, setPickupCityTouched] = useState(saved?.pickupCityTouched ?? false);
   const [pickupDate, setPickupDate] = useState(saved?.pickupDate || tomorrowIso());
   const [pickupTime, setPickupTime] = useState(saved?.pickupTime ?? PICKUP_TIMES[0]);
-  const [pickupLocker, setPickupLocker] = useState(saved?.pickupLocker ?? PICKUP_LOCKERS[0].id);
-  const [pickupBranch, setPickupBranch] = useState(saved?.pickupBranch ?? PICKUP_BRANCHES[0].id);
-  const [destLocker, setDestLocker] = useState(saved?.destLocker ?? DEST_LOCKERS[0].id);
-  const [destBranch, setDestBranch] = useState(saved?.destBranch ?? DEST_BRANCHES[0].id);
+  const [pickupLocker, setPickupLocker] = useState(sanitizeDivisionId(saved?.pickupLocker));
+  const [pickupBranch, setPickupBranch] = useState(sanitizeDivisionId(saved?.pickupBranch));
+  const [destLocker, setDestLocker] = useState(sanitizeDivisionId(saved?.destLocker));
+  const [destBranch, setDestBranch] = useState(sanitizeDivisionId(saved?.destBranch));
 
   const [fragile, setFragile] = useState(saved?.fragile ?? false);
   const [insurance, setInsurance] = useState(saved?.insurance ?? false);
@@ -859,6 +857,8 @@ export function CalcForm({
     setPickupCityTouched(true);
     setPickupCityFromGeo(false);
     resetPickupAddressRefinement();
+    setLivePickupLockers(null);
+    setLivePickupBranches(null);
   }, [resetPickupAddressRefinement]);
 
   const apiParcelKey = sizeToApiKey(sizeKey, customSize);
@@ -942,13 +942,13 @@ export function CalcForm({
       cacheKey?: string;
       allowWithoutLocations?: boolean;
     },
-  ) => {
-    if (!keys.length) return;
+  ): Promise<boolean> => {
+    if (!keys.length) return false;
     const usePickup = options?.pickupLocation ?? pickupQuoteLocation;
     const useDelivery = options?.deliveryLocation ?? deliveryQuoteLocation;
     const useMode = options?.deliveryMode ?? quoteDeliveryMode;
     const usePickupMode = options?.pickupMode ?? quotePickupMode;
-    if (!options?.allowWithoutLocations && !(usePickup && useDelivery)) return;
+    if (!options?.allowWithoutLocations && !(usePickup && useDelivery)) return false;
 
     quoteInFlight.current = true;
     const reqId = ++quoteRequestId.current;
@@ -966,7 +966,7 @@ export function CalcForm({
         payerType: quotePayerType,
         sizes,
       });
-      if (reqId !== quoteRequestId.current) return;
+      if (reqId !== quoteRequestId.current) return false;
 
       const code = (data.currency?.code || DEFAULT_QUOTE_CURRENCY).toUpperCase();
       setCurrency(code);
@@ -1001,14 +1001,16 @@ export function CalcForm({
       } else {
         setQuoteWarning(null);
       }
+      return Object.keys(updates).length > 0;
     } catch {
-      if (reqId !== quoteRequestId.current) return;
+      if (reqId !== quoteRequestId.current) return false;
       if (usePickup && useDelivery) {
         setQuoteWarning(t('calc.quoteNpFail'));
       } else {
         applyEstimateFallback(keys);
         setQuoteWarning(t('calc.quoteEst'));
       }
+      return false;
     } finally {
       quoteInFlight.current = false;
       if (reqId === quoteRequestId.current) setQuoteRefreshing(false);
@@ -1028,7 +1030,7 @@ export function CalcForm({
       pickupMode?: 'locker' | 'branch' | 'address';
       allowWithoutLocations?: boolean;
     },
-  ) => {
+  ): Promise<boolean> => {
     const tier = sizeToApiKey('custom', {
       l: String(preset.lengthCm),
       w: String(preset.widthCm),
@@ -1041,7 +1043,7 @@ export function CalcForm({
     const useDelivery = options?.deliveryLocation ?? deliveryQuoteLocation;
     const useMode = options?.deliveryMode ?? quoteDeliveryMode;
     const usePickupMode = options?.pickupMode ?? quotePickupMode;
-    if (!options?.allowWithoutLocations && !(usePickup && useDelivery)) return;
+    if (!options?.allowWithoutLocations && !(usePickup && useDelivery)) return false;
 
     const reqId = ++customQuoteRequestId.current;
     setQuoteRefreshing(true);
@@ -1057,7 +1059,7 @@ export function CalcForm({
         payerType: quotePayerType,
         sizes: [{ boxSize: quoteKey, lengthCm: preset.lengthCm, widthCm: preset.widthCm, heightCm: preset.heightCm, weightKg: preset.weightKg }],
       });
-      if (reqId !== customQuoteRequestId.current) return;
+      if (reqId !== customQuoteRequestId.current) return false;
 
       const code = (data.currency?.code || DEFAULT_QUOTE_CURRENCY).toUpperCase();
       setCurrency(code);
@@ -1076,11 +1078,13 @@ export function CalcForm({
       } else {
         setQuoteWarning(null);
       }
+      return total != null;
     } catch {
-      if (reqId !== customQuoteRequestId.current) return;
+      if (reqId !== customQuoteRequestId.current) return false;
       setCustomQuote(estimateParcelPrice(preset, DEFAULT_QUOTE_CURRENCY));
       setQuotesFromNp(false);
       setQuoteWarning(t('calc.quoteEst'));
+      return false;
     } finally {
       if (reqId === customQuoteRequestId.current) setQuoteRefreshing(false);
     }
@@ -1239,16 +1243,16 @@ export function CalcForm({
     if (sizeKey === 'custom') {
       const preset = sizeToPreset(sizeKey, customSize);
       quoteDebounce.current = setTimeout(() => {
-        void fetchCustomQuote(preset).then(() => {
-          lastExactQuoteKey.current = exactQuoteKey;
+        void fetchCustomQuote(preset).then((ok) => {
+          if (ok) lastExactQuoteKey.current = exactQuoteKey;
         });
       }, 120);
     } else if (applyCachedRouteQuotes()) {
       lastExactQuoteKey.current = exactQuoteKey;
     } else {
       quoteDebounce.current = setTimeout(() => {
-        void fetchQuoteKeys(STEP3_QUOTE_KEYS).then(() => {
-          lastExactQuoteKey.current = exactQuoteKey;
+        void fetchQuoteKeys(STEP3_QUOTE_KEYS).then((ok) => {
+          if (ok) lastExactQuoteKey.current = exactQuoteKey;
         });
       }, 80);
     }
@@ -1310,29 +1314,22 @@ export function CalcForm({
   const insurancePercentLabel = quoteSettings?.insurancePercent ?? 1;
 
   const pickupLockersForCity = useMemo(() => {
-    const raw = livePickupLockers
-      ? (livePickupLockers as typeof PICKUP_LOCKERS)
-      : filterPointsByCity(PICKUP_LOCKERS, pickupCity, PICKUP_COUNTRY);
-    return preferQuoteablePoints(raw);
-  }, [livePickupLockers, pickupCity]);
+    // Only live NP points are quoteable; never fall back to catalog placeholders.
+    if (livePickupLockers == null) return [];
+    return preferQuoteablePoints(livePickupLockers);
+  }, [livePickupLockers]);
   const pickupBranchesForCity = useMemo(() => {
-    const raw = livePickupBranches?.length
-      ? (livePickupBranches as typeof PICKUP_BRANCHES)
-      : filterPointsByCity(PICKUP_BRANCHES, pickupCity, PICKUP_COUNTRY);
-    return preferQuoteablePoints(raw);
-  }, [livePickupBranches, pickupCity]);
+    if (livePickupBranches == null) return [];
+    return preferQuoteablePoints(livePickupBranches);
+  }, [livePickupBranches]);
   const destLockersForCity = useMemo(() => {
-    const raw = liveDestLockers
-      ? (liveDestLockers as typeof DEST_LOCKERS)
-      : filterPointsByCity(DEST_LOCKERS, destCity, toCountry);
-    return preferQuoteablePoints(raw);
-  }, [liveDestLockers, destCity, toCountry]);
+    if (liveDestLockers == null) return [];
+    return preferQuoteablePoints(liveDestLockers);
+  }, [liveDestLockers]);
   const destBranchesForCity = useMemo(() => {
-    const raw = liveDestBranches?.length
-      ? (liveDestBranches as typeof DEST_BRANCHES)
-      : filterPointsByCity(DEST_BRANCHES, destCity, toCountry);
-    return preferQuoteablePoints(raw);
-  }, [liveDestBranches, destCity, toCountry]);
+    if (liveDestBranches == null) return [];
+    return preferQuoteablePoints(liveDestBranches);
+  }, [liveDestBranches]);
 
   const loadCoverage = useCallback(async () => {
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return null;
@@ -1366,11 +1363,13 @@ export function CalcForm({
   // Reset live points when cities change
   useEffect(() => {
     setLivePickupLockers(null);
+    setLivePickupBranches(null);
     setCoverage(null);
   }, [pickupCity]);
 
   useEffect(() => {
     setLiveDestLockers(null);
+    setLiveDestBranches(null);
     setCoverage(null);
   }, [destCity, toCountry]);
 
@@ -1429,11 +1428,15 @@ export function CalcForm({
     setDestBranch('');
   }, []);
 
-  // Load concrete pickup/delivery points immediately after mode selection.
+  // Load concrete pickup/delivery points for mode steps and draft restore later.
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (step === 5 && pickupType === 'locker' && pickupCity.trim()) {
+      const needPickupPoints = step >= 5 && (pickupType === 'locker' || pickupType === 'branch');
+      const needDeliveryPoints = step >= 6 && (deliveryType === 'locker' || deliveryType === 'branch');
+      if (!needPickupPoints && !needDeliveryPoints) return;
+
+      if (needPickupPoints && pickupType === 'locker' && pickupCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1443,16 +1446,19 @@ export function CalcForm({
             side: 'pickup',
           });
           if (!cancelled) {
-            setLivePickupLockers(res.points);
-            if (res.points[0]) setPickupLocker(res.points[0].id);
+            const points = preferQuoteablePoints(res.points || []);
+            setLivePickupLockers(points);
+            setPickupLocker((prev) => (
+              points.some((p) => p.id === prev) ? prev : (firstNpDivisionId(points) || '')
+            ));
           }
         } catch {
-          if (!cancelled) setLivePickupLockers(null);
+          if (!cancelled) setLivePickupLockers([]);
         } finally {
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 5 && pickupType === 'branch' && pickupCity.trim()) {
+      if (needPickupPoints && pickupType === 'branch' && pickupCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1461,14 +1467,20 @@ export function CalcForm({
             kind: 'branch',
             side: 'pickup',
           });
-          if (!cancelled) setLivePickupBranches(res.points);
+          if (!cancelled) {
+            const points = preferQuoteablePoints(res.points || []);
+            setLivePickupBranches(points);
+            setPickupBranch((prev) => (
+              points.some((p) => p.id === prev) ? prev : (firstNpDivisionId(points) || '')
+            ));
+          }
         } catch {
-          if (!cancelled) setLivePickupBranches(null);
+          if (!cancelled) setLivePickupBranches([]);
         } finally {
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 6 && deliveryType === 'locker' && destCity.trim()) {
+      if (needDeliveryPoints && deliveryType === 'locker' && destCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1478,16 +1490,19 @@ export function CalcForm({
             side: 'delivery',
           });
           if (!cancelled) {
-            setLiveDestLockers(res.points);
-            if (res.points[0]) setDestLocker((prev) => prev || res.points[0].id);
+            const points = preferQuoteablePoints(res.points || []);
+            setLiveDestLockers(points);
+            setDestLocker((prev) => (
+              points.some((p) => p.id === prev) ? prev : (firstNpDivisionId(points) || '')
+            ));
           }
         } catch {
-          if (!cancelled) setLiveDestLockers(null);
+          if (!cancelled) setLiveDestLockers([]);
         } finally {
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (step === 6 && deliveryType === 'branch' && destCity.trim()) {
+      if (needDeliveryPoints && deliveryType === 'branch' && destCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
@@ -1497,11 +1512,14 @@ export function CalcForm({
             side: 'delivery',
           });
           if (!cancelled) {
-            setLiveDestBranches(res.points);
-            if (res.points[0]) setDestBranch((prev) => prev || res.points[0].id);
+            const points = preferQuoteablePoints(res.points || []);
+            setLiveDestBranches(points);
+            setDestBranch((prev) => (
+              points.some((p) => p.id === prev) ? prev : (firstNpDivisionId(points) || '')
+            ));
           }
         } catch {
-          if (!cancelled) setLiveDestBranches(null);
+          if (!cancelled) setLiveDestBranches([]);
         } finally {
           if (!cancelled) setPointsLoading(false);
         }
@@ -1518,22 +1536,32 @@ export function CalcForm({
     }
   }, [step, coverage, coverageLoading, pickupCity, destCity, loadCoverage]);
 
+  // Sync selection once live lists arrive. Keep a valid NP draft id while loading (null).
   useEffect(() => {
-    if (pickupLockersForCity.length && !pickupLockersForCity.some((l) => l.id === pickupLocker)) {
-      setPickupLocker(firstNpDivisionId(pickupLockersForCity) || pickupLockersForCity[0].id);
+    if (livePickupLockers == null) {
+      if (pickupLocker && !isNpDivisionId(pickupLocker)) setPickupLocker('');
+      return;
     }
-  }, [pickupLockersForCity, pickupLocker]);
+    if (pickupLockersForCity.some((l) => l.id === pickupLocker)) return;
+    setPickupLocker(firstNpDivisionId(pickupLockersForCity));
+  }, [livePickupLockers, pickupLockersForCity, pickupLocker]);
 
   useEffect(() => {
-    if (pickupBranchesForCity.length && !pickupBranchesForCity.some((l) => l.id === pickupBranch)) {
-      setPickupBranch(firstNpDivisionId(pickupBranchesForCity) || pickupBranchesForCity[0].id);
+    if (livePickupBranches == null) {
+      if (pickupBranch && !isNpDivisionId(pickupBranch)) setPickupBranch('');
+      return;
     }
-  }, [pickupBranchesForCity, pickupBranch]);
+    if (pickupBranchesForCity.some((l) => l.id === pickupBranch)) return;
+    setPickupBranch(firstNpDivisionId(pickupBranchesForCity));
+  }, [livePickupBranches, pickupBranchesForCity, pickupBranch]);
 
   useEffect(() => {
-    if (!destLockersForCity.length) return;
+    if (liveDestLockers == null) {
+      if (destLocker && !isNpDivisionId(destLocker)) setDestLocker('');
+      return;
+    }
     if (destLockersForCity.some((l) => l.id === destLocker)) return;
-    if (destAddressFocus) {
+    if (destAddressFocus && destLockersForCity.length) {
       const { lat, lng } = destAddressFocus;
       const toRad = (d: number) => (d * Math.PI) / 180;
       const distKm = (aLat: number, aLng: number) => {
@@ -1548,16 +1576,21 @@ export function CalcForm({
       const nearest = [...destLockersForCity].sort(
         (a, b) => distKm(a.lat, a.lng) - distKm(b.lat, b.lng),
       )[0];
-      if (nearest) setDestLocker(nearest.id);
-      return;
+      if (nearest) {
+        setDestLocker(nearest.id);
+        return;
+      }
     }
-    setDestLocker(firstNpDivisionId(destLockersForCity) || destLockersForCity[0].id);
-  }, [destLockersForCity, destLocker, destAddressFocus]);
+    setDestLocker(firstNpDivisionId(destLockersForCity));
+  }, [liveDestLockers, destLockersForCity, destLocker, destAddressFocus]);
 
   useEffect(() => {
-    if (!destBranchesForCity.length) return;
+    if (liveDestBranches == null) {
+      if (destBranch && !isNpDivisionId(destBranch)) setDestBranch('');
+      return;
+    }
     if (destBranchesForCity.some((l) => l.id === destBranch)) return;
-    if (destAddressFocus) {
+    if (destAddressFocus && destBranchesForCity.length) {
       const { lat, lng } = destAddressFocus;
       const toRad = (d: number) => (d * Math.PI) / 180;
       const distKm = (aLat: number, aLng: number) => {
@@ -1572,21 +1605,23 @@ export function CalcForm({
       const nearest = [...destBranchesForCity].sort(
         (a, b) => distKm(a.lat, a.lng) - distKm(b.lat, b.lng),
       )[0];
-      if (nearest) setDestBranch(nearest.id);
-      return;
+      if (nearest) {
+        setDestBranch(nearest.id);
+        return;
+      }
     }
-    setDestBranch(firstNpDivisionId(destBranchesForCity) || destBranchesForCity[0].id);
-  }, [destBranchesForCity, destBranch, destAddressFocus]);
+    setDestBranch(firstNpDivisionId(destBranchesForCity));
+  }, [liveDestBranches, destBranchesForCity, destBranch, destAddressFocus]);
 
   const pickupLocationObj = pickupType === 'branch'
-    ? pickupBranchesForCity.find((l) => l.id === pickupBranch) || PICKUP_BRANCHES.find((l) => l.id === pickupBranch)
+    ? pickupBranchesForCity.find((l) => l.id === pickupBranch) || null
     : pickupType === 'locker'
-      ? pickupLockersForCity.find((l) => l.id === pickupLocker) || PICKUP_LOCKERS.find((l) => l.id === pickupLocker)
+      ? pickupLockersForCity.find((l) => l.id === pickupLocker) || null
       : null;
   const destLocationObj = deliveryType === 'branch'
-    ? destBranchesForCity.find((l) => l.id === destBranch) || DEST_BRANCHES.find((l) => l.id === destBranch)
+    ? destBranchesForCity.find((l) => l.id === destBranch) || null
     : deliveryType === 'locker'
-      ? destLockersForCity.find((l) => l.id === destLocker) || DEST_LOCKERS.find((l) => l.id === destLocker)
+      ? destLockersForCity.find((l) => l.id === destLocker) || null
       : null;
 
   const buildPickupLine = () => {
@@ -1732,6 +1767,12 @@ export function CalcForm({
     if (step === 9) {
       if (!termsAccepted) return t('calc.valAcceptTerms');
       if (totalPrice == null) return t('calc.valWaitQuote');
+      if (!pickupQuoteLocation) {
+        return pickupType === 'home' ? t('calc.valPickupAddress') : t('calc.valSelectPickupPointNp');
+      }
+      if (!deliveryQuoteLocation) {
+        return deliveryType === 'home' ? t('calc.valDeliveryAddress') : t('calc.valSelectDeliveryPointNp');
+      }
       const firstErr = validatePersonName(senderFirst, t('calc.fieldSenderFirst'));
       const lastErr = validatePersonName(senderLast, t('calc.fieldSenderLast'));
       if (firstErr && lastErr) return t('calc.valSenderName');
