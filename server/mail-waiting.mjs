@@ -300,9 +300,12 @@ function pill(text, tone = 'gray') {
   return `<span style="display:inline-block;margin:0 6px 6px 0;padding:6px 10px;border-radius:999px;background:${bg};color:${color};font-family:${FONT.body};font-size:12px;font-weight:600;">${escapeHtml(text)}</span>`;
 }
 
-function mapBlock({ pinLabel, distanceLabel, fromLabel }) {
+function mapBlock({ pinLabel, distanceLabel, fromLabel, nested = false }) {
+  const wrap = nested
+    ? `margin:0 0 12px;background:#E4E6DF;border-radius:12px;overflow:hidden;`
+    : `margin:0 0 14px;background:${BRAND.map};border-radius:14px;overflow:hidden;`;
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:${BRAND.map};border-radius:14px;overflow:hidden;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${wrap}">
       <tr>
         <td style="padding:22px 18px;height:150px;vertical-align:middle;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -434,9 +437,12 @@ function footerSupport(locale = 'ru') {
 }
 
 function sectionTitle(num, text) {
+  const badge = num
+    ? `<span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:${BRAND.black};color:${BRAND.white};text-align:center;line-height:22px;font-size:12px;font-weight:800;margin-right:8px;vertical-align:middle;">${escapeHtml(String(num))}</span>`
+    : '';
   return `
     <div style="margin:4px 0 12px;font-family:${FONT.body};font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${BRAND.ink};">
-      ${num ? `<span style="color:${BRAND.muted};margin-right:6px;">${escapeHtml(String(num))}</span>` : ''}${escapeHtml(text)}
+      ${badge}${escapeHtml(text)}
     </div>`;
 }
 
@@ -472,19 +478,20 @@ function timelineBar(start, end, locale = 'ru') {
 
 function hoursBars(locale = 'ru') {
   const t = (key) => mailT(locale, key);
+  // Visual scale 08:00–20:00 (12h) to match mockup bars
   const row = (label, left, width, text, closed = false) => `
     <tr>
-      <td width="54" style="padding:4px 0;font-family:${FONT.body};font-size:12px;color:${BRAND.muted};">${escapeHtml(label)}</td>
-      <td style="padding:4px 0;">
-        <div style="height:16px;background:#E8E9E3;border-radius:999px;overflow:hidden;position:relative;">
-          <div style="margin-left:${left}%;width:${width}%;height:16px;background:${closed ? '#CFD1C8' : BRAND.lime};border-radius:999px;text-align:center;font-family:${FONT.body};font-size:10px;line-height:16px;font-weight:700;color:${BRAND.black};">${escapeHtml(text)}</div>
+      <td width="64" style="padding:5px 0;font-family:${FONT.body};font-size:12px;color:${BRAND.muted};vertical-align:middle;">${escapeHtml(label)}</td>
+      <td style="padding:5px 0;">
+        <div style="height:18px;background:#E8E9E3;border-radius:999px;overflow:hidden;position:relative;">
+          <div style="margin-left:${left}%;width:${width}%;height:18px;background:${closed ? '#D5D7CF' : BRAND.lime};border-radius:999px;text-align:center;font-family:${FONT.body};font-size:10px;line-height:18px;font-weight:700;color:${closed ? BRAND.muted : BRAND.black};">${escapeHtml(text)}</div>
         </div>
       </td>
     </tr>`;
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 10px;">
-      ${row(t('monFri'), 8, 50, '08:00–20:00')}
-      ${row(t('saturday'), 16, 34, '10:00–18:00')}
+      ${row(t('monFri'), 0, 100, '08:00–20:00')}
+      ${row(t('saturday'), 16.7, 66.6, '10:00–18:00')}
       ${row(t('sunday'), 0, 100, t('dayOff'), true)}
     </table>`;
 }
@@ -619,58 +626,91 @@ function buildCourierBody(ctx) {
 
 function buildBranchBody(ctx) {
   const t = ctx.t;
-  const branchTitle = ctx.pointName
-    ? t('bringToBranchNamed', { name: ctx.pointName })
-    : t('bringToBranch');
+  const shortName = ctx.pointName || t('branchMate');
+  const branchTitle = t('bringToBranchNamed', { name: shortName });
   const addressLine = ctx.pointDetail || ctx.pickupAddress;
   const callHref = ctx.pointPhone
     ? `tel:${String(ctx.pointPhone).replace(/\s+/g, '')}`
     : ctx.manageUrl;
+  const pinLabel = shortName.length > 22 ? t('branch') : shortName;
+  const distancePill = t('branchDistance');
+  const entrance = ctx.pickupLocation?.entrance || t('branchEntrance');
+
   return `
     <h1 style="margin:0 0 8px;font-family:${FONT.display};font-size:24px;line-height:1.2;font-weight:700;color:${BRAND.ink};letter-spacing:-.02em;">
       ${escapeHtml(branchTitle)}
     </h1>
-    <p style="margin:0 0 14px;font-family:${FONT.body};font-size:14px;line-height:1.55;color:${BRAND.muted};">
+    <p style="margin:0 0 16px;font-family:${FONT.body};font-size:14px;line-height:1.55;color:${BRAND.muted};">
       ${escapeHtml(t('branchNoCode'))}
     </p>
 
-    ${sectionTitle(1, t('branchWhere'))}
-    ${mapBlock({ pinLabel: ctx.pointName || t('branch'), distanceLabel: '1.2 km', fromLabel: t('youAreHere') })}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px;border:1px solid ${BRAND.line};border-radius:14px;background:${BRAND.white};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;background:${BRAND.soft};border-radius:16px;overflow:hidden;">
       <tr>
-        <td style="padding:14px 16px;">
+        <td style="padding:14px 14px 0;">
+          ${mapBlock({ pinLabel, distanceLabel: '1.2 km', fromLabel: t('youAreHere'), nested: true })}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 16px 16px;">
           <div style="font-family:${FONT.display};font-size:17px;font-weight:700;color:${BRAND.ink};margin:0 0 4px;">
-            ${escapeHtml(ctx.pointName || t('branchMate'))}
+            ${escapeHtml(shortName)}
           </div>
-          <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.ink};margin:0 0 6px;line-height:1.45;">
+          <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.ink};margin:0 0 4px;line-height:1.45;">
             ${escapeHtml(addressLine)}
+          </div>
+          <div style="font-family:${FONT.body};font-size:12px;color:${BRAND.muted};margin:0 0 6px;line-height:1.5;">
+            ${escapeHtml(entrance)}
           </div>
           <div style="font-family:${FONT.body};font-size:13px;color:${BRAND.muted};margin:0 0 10px;line-height:1.5;">
             ${ctx.pointPhone ? escapeHtml(ctx.pointPhone) : escapeHtml(t('branchPhoneHint'))}
           </div>
-          <div>
-            ${pill(t('openUntil'), 'lime')}${pill(t('hasPackaging'), 'gray')}
+          <div style="margin:0 0 12px;">
+            ${pill(distancePill, 'gray')}${pill(t('openUntil'), 'lime')}${pill(t('hasPackaging'), 'gray')}
           </div>
+          ${dualButtons(ctx.mapsUrl, t('routeBtn'), callHref, t('callBtn'), true)}
         </td>
       </tr>
     </table>
-    ${dualButtons(ctx.mapsUrl, t('routeBtn'), callHref, t('callBtn'), true)}
 
-    ${sectionTitle(2, t('whenOpen'))}
-    ${hoursBars(ctx.locale)}
-    <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.5;color:${BRAND.muted};">
-      ${escapeHtml(t('dropByDate', { date: ctx.dateLabel }))}
-    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;border:1px solid ${BRAND.line};border-radius:14px;background:${BRAND.white};">
+      <tr>
+        <td style="padding:14px 16px;">
+          ${sectionTitle(2, t('whenOpen'))}
+          ${hoursBars(ctx.locale)}
+          <p style="margin:0;font-family:${FONT.body};font-size:13px;line-height:1.5;color:${BRAND.muted};">
+            ${escapeHtml(t('dropByDate', { date: ctx.dateLabel }))}
+          </p>
+        </td>
+      </tr>
+    </table>
 
-    ${sectionTitle(3, t('takeWithYou'))}
-    ${checklist3([
-      { icon: '🪪', title: t('takeIdTitle'), text: t('takeId') },
-      { icon: '☰', title: t('takeTrackTitle'), text: t('takeTrack') },
-      { icon: '📦', title: t('takeParcelTitle'), text: t('takeParcel') },
-    ])}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;border:1px solid ${BRAND.line};border-radius:14px;background:${BRAND.white};">
+      <tr>
+        <td style="padding:14px 16px 4px;">
+          ${sectionTitle(3, t('takeWithYou'))}
+          ${checklist3([
+    {
+      icon: '🪪',
+      text: `${t('takeIdTitle')}. ${t('takeId')}`,
+    },
+    {
+      icon: '▦',
+      text: `${t('takeTrackTitle')}. ${t('takeTrack', { track: ctx.track })}`,
+    },
+    {
+      icon: '📦',
+      text: `${t('takeParcelTitle')}. ${t('takeParcel')}`,
+    },
+  ])}
+        </td>
+      </tr>
+    </table>
 
     ${barcodeBlock({ title: t('trackAtCounter'), track: ctx.track })}
-    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta46'))}
+    <div style="margin:0 0 6px;font-family:${FONT.body};font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:${BRAND.muted};font-weight:700;">
+      ${escapeHtml(t('parcelRoute'))}
+    </div>
+    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta35'))}
     ${orderTotalCard(ctx)}
     <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, t('trackParcel'))}</div>
     ${dualButtons(ctx.pdfUrl, t('waybillPdf'), ctx.manageUrl, t('changeBranch'), false)}
@@ -794,7 +834,7 @@ function waitingShell({ track, mode, preheader, title, bodyHtml, locale = 'ru' }
                     MATE<span style="color:${BRAND.lime};">.</span>
                   </td>
                   <td align="right" style="font-family:${FONT.body};font-size:11px;color:#A8ADB4;letter-spacing:.04em;">
-                    ${escapeHtml(mailT(locale, 'trackLabel'))}: ${escapeHtml(track)}
+                    ${escapeHtml(mailT(locale, 'trackLabel'))} ${escapeHtml(track)}
                   </td>
                 </tr>
               </table>
