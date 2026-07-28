@@ -398,24 +398,20 @@ async function goToPayStep(page, { countryLabel, destCityLabel, size, pickupMode
     const picked = await pickFirstLocker(page);
     if (!picked) throw new Error(`No delivery ${deliveryMode} points`);
   } else {
-    const addrInput = page.locator('.calc-address input[type="text"]').first();
+    const addrInput = page.locator('input[name="receiver_street"]');
     await addrInput.fill('Friedrichstrasse 1');
     let pickedAddr = false;
-    for (let i = 0; i < 20; i++) {
-      await page.waitForTimeout(400);
-      if (await page.locator('.calc-address__approx').count()) {
-        await page.locator('.calc-address__approx').click();
-        pickedAddr = true;
-        break;
-      }
-      if (await page.locator('.calc-address__list button').count()) {
-        await page.locator('.calc-address__list button').first().click();
+    for (let i = 0; i < 40; i++) {
+      await page.waitForTimeout(500);
+      const suggestion = page.locator('.calc-address__list button').first();
+      if (await suggestion.count()) {
+        await suggestion.click();
         pickedAddr = true;
         break;
       }
     }
     if (!pickedAddr) throw new Error('Delivery address suggest failed');
-    const destPostal = page.locator('input[name="receiver_postal"], input[autocomplete="postal-code"]').last();
+    const destPostal = page.locator('input[name="receiver_postal"]');
     if (await destPostal.count() && !(await destPostal.inputValue())) {
       await destPostal.fill('10117');
     }
@@ -432,19 +428,23 @@ async function goToPayStep(page, { countryLabel, destCityLabel, size, pickupMode
 
   // Step 9 pay
   await page.locator('.calc-form__nav .btn-lime').filter({ hasText: /оплат|pay|fizet|считаем|calculat/i }).waitFor({ timeout: 30000 });
-  // Wait until exact quote settles (not «Считаем…» / 0)
+  // Wait until exact quote settles (not «Считаем…» / literal 0)
   for (let i = 0; i < 60; i++) {
     const payBtn = page.locator('.calc-form__nav .btn-lime').last();
     const text = (await payBtn.innerText()).replace(/\s+/g, ' ').trim();
-    const pending = /считаем|calculat|várakoz|очікув/i.test(text) || /оплат\w*\s*0\b/i.test(text);
-    if (!pending && /\d/.test(text)) {
+    const pending = /считаем|calculat|várakoz|очікув/i.test(text);
+    const zeroPay = /оплат\w*\s*0(\s*HUF|\s*€|\s*EUR)?$/i.test(text);
+    const amount = text.match(/(\d[\d\s]*\d|\d)\s*(HUF|EUR|€)/i);
+    if (!pending && !zeroPay && amount) {
       return { payText: text, hasTotal: true };
     }
     await page.waitForTimeout(500);
   }
   const payBtn = page.locator('.calc-form__nav .btn-lime').last();
   const text = await payBtn.innerText();
-  return { payText: text, hasTotal: /\d/.test(text) && !/оплат\w*\s*0\b/i.test(text) };
+  const amount = text.match(/(\d[\d\s]*\d|\d)\s*(HUF|EUR|€)/i);
+  const zeroPay = /оплат\w*\s*0(\s*HUF|\s*€|\s*EUR)?$/i.test(text.replace(/\s+/g, ' '));
+  return { payText: text, hasTotal: Boolean(amount) && !zeroPay };
 }
 
 async function runUiTests() {
@@ -587,7 +587,11 @@ async function runUiTests() {
         pickupMode: 'branch',
         deliveryMode,
       });
-      ok(`ui-full-DE-${deliveryMode}`, `reached pay: ${result.payText.replace(/\s+/g, ' ').slice(0, 80)}`);
+      if (!result.hasTotal) {
+        bad(`ui-full-DE-${deliveryMode}`, `pay without price: ${result.payText.replace(/\s+/g, ' ').slice(0, 80)}`);
+      } else {
+        ok(`ui-full-DE-${deliveryMode}`, `reached pay: ${result.payText.replace(/\s+/g, ' ').slice(0, 80)}`);
+      }
       await page.screenshot({ path: join(OUT_DIR, `pay-DE-${deliveryMode}.png`) });
       // Do NOT click pay (would create real checkout)
     } catch (e) {
