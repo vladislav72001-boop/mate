@@ -5,12 +5,16 @@ import {
 } from './mail.mjs';
 
 export async function notifyOrderCreated(order) {
-  if (!order?.customerEmail) return;
+  const hasSender = Boolean(order?.customerEmail);
+  const hasReceiver = Boolean(order?.payload?.receiver?.email);
+  if (!hasSender && !hasReceiver) return;
   await sendOrderCreatedEmail(order);
 }
 
 export async function notifyOrderUpdated(before, after) {
-  if (!after?.customerEmail) return;
+  const hasSender = Boolean(after?.customerEmail);
+  const hasReceiver = Boolean(after?.payload?.receiver?.email);
+  if (!hasSender && !hasReceiver) return;
 
   const statusChanged = before.status !== after.status;
   const ttnChanged = String(before.npTtn || '') !== String(after.npTtn || '') && Boolean(after.npTtn);

@@ -498,6 +498,85 @@ function baseTemplate({
 </html>`;
 }
 
+function receiverEmailFromOrder(order) {
+  return String(order?.payload?.receiver?.email || '').trim().toLowerCase();
+}
+
+function orderMailParties(order) {
+  const sender = String(order?.customerEmail || '').trim().toLowerCase();
+  const receiver = receiverEmailFromOrder(order);
+  const parties = [];
+  if (sender) parties.push({ email: sender, role: 'sender' });
+  if (receiver && receiver !== sender) parties.push({ email: receiver, role: 'recipient' });
+  return parties;
+}
+
+function recipientNoticeHtml(locale) {
+  const t = (key) => mailT(locale, key);
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;">
+      <tr>
+        <td style="padding:12px 14px;background:${BRAND.lime};border-radius:12px;">
+          <div style="font-family:${FONT.display};font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:${BRAND.black};">
+            ${escapeHtml(t('forRecipientBanner'))}
+          </div>
+          <div style="margin-top:4px;font-family:${FONT.body};font-size:13px;line-height:1.45;color:${BRAND.black};">
+            ${escapeHtml(t('forRecipientNote'))}
+          </div>
+        </td>
+      </tr>
+    </table>`;
+}
+
+function markHtmlForRecipient(html, locale) {
+  const notice = recipientNoticeHtml(locale);
+  if (/<body[^>]*>/i.test(html)) {
+    return html.replace(/<body([^>]*)>/i, `<body$1>${notice}`);
+  }
+  return `${notice}${html}`;
+}
+
+/** Send the same order email to sender and (if different) to receiver, labeled as recipient. */
+async function deliverOrderMail({
+  order,
+  subject,
+  html,
+  hero = null,
+  outboxName,
+  skipRecipient = false,
+  recipientHtml = null,
+  recipientSubject = null,
+}) {
+  const locale = localeFromOrder(order);
+  const parties = orderMailParties(order);
+  if (!parties.length) {
+    console.warn(`[mail] skipped send (no parties): ${subject}`);
+    return { messageId: null, preview: null, skipped: true };
+  }
+
+  let last = null;
+  for (const party of parties) {
+    if (skipRecipient && party.role === 'recipient') continue;
+    const isRecipient = party.role === 'recipient';
+    const partySubject = isRecipient
+      ? (recipientSubject || mailT(locale, 'forRecipientSubject', { subject }))
+      : subject;
+    const baseHtml = isRecipient && recipientHtml ? recipientHtml : html;
+    const partyHtml = isRecipient ? markHtmlForRecipient(baseHtml, locale) : baseHtml;
+    const partyOutbox = isRecipient && outboxName
+      ? outboxName.replace(/\.html$/i, '-recipient.html')
+      : outboxName;
+    last = await deliver({
+      to: party.email,
+      subject: partySubject,
+      html: partyHtml,
+      hero,
+      outboxName: partyOutbox,
+    });
+  }
+  return last;
+}
+
 async function deliver({ to, subject, html, outboxName, hero = null }) {
   if (!to) {
     console.warn(`[mail] skipped send (no recipient): ${subject}`);
@@ -787,6 +866,11 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
   const payLabel = meta.checkoutUrl ? t('payOrder') : t('goPay');
   const hero = HERO.order;
   const pending = statusLabel(locale, 'pending_payment');
+  const summary = orderSummaryBlock(
+    order,
+    detailRow(t('status'), escapeHtml(pending), { strong: true, last: true }),
+    locale,
+  );
   const html = baseTemplate({
     title: t('orderCreatedTitle'),
     preheader: t('orderCreatedPre', { orderNumber: order.orderNumber }),
@@ -798,19 +882,32 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
       <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
         ${escapeHtml(t('orderCreatedBody'))}
       </p>
-      ${orderSummaryBlock(
-        order,
-        detailRow(t('status'), escapeHtml(pending), { strong: true, last: true }),
-        locale,
-      )}
+      ${summary}
       ${ctaButton(payUrl, payLabel)}
     `,
   });
+  const recipientHtml = baseTemplate({
+    title: t('orderCreatedTitleRecipient'),
+    preheader: t('orderCreatedPreRecipient', { orderNumber: order.orderNumber }),
+    eyebrow: t('newShipment'),
+    badge: statusBadge(pending, 'lime'),
+    hero,
+    locale,
+    bodyHtml: `
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+        ${escapeHtml(t('orderCreatedBodyRecipient'))}
+      </p>
+      ${summary}
+      ${ctaButton(appUrl(), t('trackShipment'))}
+    `,
+  });
 
-  return deliver({
-    to: order.customerEmail,
+  return deliverOrderMail({
+    order,
     subject: t('orderCreatedSubject', { orderNumber: order.orderNumber }),
     html,
+    recipientHtml,
+    recipientSubject: t('orderCreatedSubjectRecipient', { orderNumber: order.orderNumber }),
     hero,
     outboxName: `order-created-${order.id}.html`,
   });
@@ -821,12 +918,14 @@ export async function sendOrderStatusEmail(order, previousStatus) {
 
   if (status === 'waiting_from_you') {
     const built = buildWaitingFromYouEmail(order);
-    return deliver({
-      to: order.customerEmail,
+    // Drop-off instructions are for the sender only.
+    return deliverOrderMail({
+      order,
       subject: built.subject,
       html: built.html,
       hero: null,
       outboxName: `order-status-${order.id}-${status}-${built.mode}-${Date.now()}.html`,
+      skipRecipient: true,
     });
   }
 
@@ -893,8 +992,8 @@ export async function sendOrderStatusEmail(order, previousStatus) {
     `,
   });
 
-  return deliver({
-    to: order.customerEmail,
+  return deliverOrderMail({
+    order,
     subject,
     html,
     hero,
@@ -926,8 +1025,8 @@ export async function sendOrderTrackingEmail(order) {
     `,
   });
 
-  return deliver({
-    to: order.customerEmail,
+  return deliverOrderMail({
+    order,
     subject: t('trackingSubject', { orderNumber: order.orderNumber, ttn: order.npTtn }),
     html,
     hero,
