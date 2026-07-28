@@ -621,8 +621,19 @@ void probeSmtp()
 // Production: serve Vite build from the same origin as /api
 const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 if (existsSync(distDir)) {
-  app.use(express.static(distDir, { index: false, maxAge: '1h' }));
+  app.use(express.static(distDir, {
+    index: false,
+    maxAge: '1h',
+    setHeaders(res, filePath) {
+      // Uniquely named OG share images can be cached hard; HTML must stay fresh for bots.
+      if (/\bog-mate-hungary\.png$/i.test(filePath) || /\bog-share\.png$/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      }
+    },
+  }));
   app.get(/^(?!\/api).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     res.sendFile(path.join(distDir, 'index.html'));
   });
 }
