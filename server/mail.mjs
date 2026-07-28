@@ -20,13 +20,13 @@ const emailAssetDirs = [
 ];
 
 const BRAND = {
-  lime: '#E1FF01',
+  lime: '#D2E84D',
   black: '#0B0B0B',
   ink: '#111111',
-  muted: '#5C6570',
-  soft: '#F3F4F0',
-  line: '#E6E7E2',
-  page: '#E8E9E4',
+  muted: '#6B7280',
+  soft: '#F4F5F1',
+  line: '#E5E7EB',
+  page: '#EDEEE9',
   white: '#FFFFFF',
 };
 
@@ -36,6 +36,7 @@ const FONT = {
   body: "'Plus Jakarta Sans',Segoe UI,Helvetica Neue,Arial,sans-serif",
 };
 
+/** Kept for asset checks / legacy CID; templates no longer embed hero photos. */
 const HERO = {
   order: 'hero-boxes.png',
   welcome: 'hero-van.png',
@@ -274,76 +275,42 @@ async function readAssetBuffer(filename) {
   return buf;
 }
 
-function buildAttachments(heroFile) {
+function buildAttachments() {
   if (!useCidImages()) return [];
-  const files = [
-    { filename: 'logo-mark.png', cid: 'mate-logo' },
-    heroFile ? { filename: heroFile, cid: 'mate-hero' } : null,
-  ].filter(Boolean);
-
-  return files
-    .map((file) => {
-      const full = resolveAssetPath(file.filename);
-      if (!full) return null;
-      return {
-        filename: file.filename,
-        path: full,
-        cid: file.cid,
-        contentDisposition: 'inline',
-      };
-    })
-    .filter(Boolean);
-}
-
-function logoImg(useCid) {
-  const src = useCid ? 'cid:mate-logo' : assetUrl('logo-mark.png');
-  return `<img src="${src}" width="48" height="48" alt="MATE" style="display:block;width:48px;height:48px;border:0;border-radius:50%;" />`;
-}
-
-function heroImg(heroFile, useCid) {
-  if (!heroFile) return '';
-  const src = useCid ? 'cid:mate-hero' : assetUrl(heroFile);
-  return `
-    <tr>
-      <td style="padding:0;line-height:0;font-size:0;background:#F0F1EC;">
-        <img src="${src}" width="600" alt="MATE logistics" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
-      </td>
-    </tr>`;
-}
-
-function statusBadge(label, tone = 'lime') {
-  const styles = {
-    lime: `background:${BRAND.lime};color:${BRAND.black};`,
-    dark: `background:${BRAND.black};color:${BRAND.white};`,
-    muted: `background:${BRAND.line};color:${BRAND.ink};`,
-    danger: 'background:#FEE2E2;color:#991B1B;',
-  };
-  const style = styles[tone] || styles.lime;
-  return `<span style="display:inline-block;padding:7px 14px;border-radius:999px;font-family:${FONT.body};font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;${style}">${escapeHtml(label)}</span>`;
+  const full = resolveAssetPath('logo-mark.png');
+  if (!full) return [];
+  return [{
+    filename: 'logo-mark.png',
+    path: full,
+    cid: 'mate-logo',
+    contentDisposition: 'inline',
+  }];
 }
 
 function ctaButton(href, label) {
   return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 8px;">
       <tr>
-        <td style="border-radius:12px;background:${BRAND.lime};box-shadow:0 8px 24px rgba(225,255,1,.35);">
-          <a href="${escapeHtml(href)}" style="display:inline-block;padding:15px 28px;font-family:${FONT.display};font-size:15px;font-weight:700;letter-spacing:.01em;line-height:1;color:${BRAND.black};text-decoration:none;border-radius:12px;">
-            ${escapeHtml(label)}&nbsp;&nbsp;→
+        <td>
+          <a href="${escapeHtml(href)}" style="display:block;padding:14px 16px;background:${BRAND.lime};color:${BRAND.black};text-decoration:none;border-radius:12px;font-family:${FONT.display};font-size:15px;font-weight:700;text-align:center;line-height:1.2;">
+            ${escapeHtml(label)}
           </a>
         </td>
       </tr>
     </table>`;
 }
 
-function detailRow(label, value, { last = false, strong = false } = {}) {
-  const border = last ? 'none' : `1px solid ${BRAND.line}`;
+function detailRow(label, value, { last = false, strong = false, dark = false } = {}) {
+  const border = last ? 'none' : `1px solid ${dark ? '#2A2A2A' : BRAND.line}`;
+  const labelColor = dark ? '#A1A1AA' : BRAND.muted;
+  const valueColor = dark ? BRAND.white : BRAND.ink;
   const valueHtml = strong
-    ? `<strong style="color:${BRAND.ink};font-weight:700;font-family:${FONT.display};">${value}</strong>`
-    : `<span style="font-family:${FONT.body};">${value}</span>`;
+    ? `<strong style="color:${valueColor};font-weight:700;font-family:${FONT.display};">${value}</strong>`
+    : `<span style="font-family:${FONT.body};color:${valueColor};">${value}</span>`;
   return `
     <tr>
-      <td style="padding:13px 0;border-bottom:${border};font-family:${FONT.body};font-size:13px;color:${BRAND.muted};width:38%;vertical-align:top;letter-spacing:.01em;">${escapeHtml(label)}</td>
-      <td style="padding:13px 0;border-bottom:${border};font-family:${FONT.body};font-size:14px;color:${BRAND.ink};text-align:right;vertical-align:top;line-height:1.45;">${valueHtml}</td>
+      <td style="padding:12px 0;border-bottom:${border};font-family:${FONT.body};font-size:13px;color:${labelColor};width:40%;vertical-align:top;">${escapeHtml(label)}</td>
+      <td style="padding:12px 0;border-bottom:${border};font-family:${FONT.body};font-size:14px;text-align:right;vertical-align:top;line-height:1.45;">${valueHtml}</td>
     </tr>`;
 }
 
@@ -369,21 +336,24 @@ function orderSummaryBlock(order, extraRows = '', locale = 'ru') {
   const receiver = order.payload?.receiver || {};
   const receiverName = [receiver.firstName, receiver.lastName].filter(Boolean).join(' ') || '—';
   const t = (key, vars) => mailT(locale, key, vars);
+  const amount = formatMoney(order.amount, order.currency, locale);
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0 10px;background:${BRAND.soft};border-radius:16px;border:1px solid ${BRAND.line};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 12px;background:${BRAND.black};border-radius:14px;overflow:hidden;">
       <tr>
-        <td style="padding:4px 0 0;background:${BRAND.lime};border-radius:16px 16px 0 0;height:4px;font-size:0;line-height:0;">&nbsp;</td>
-      </tr>
-      <tr>
-        <td style="padding:16px 20px 18px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-            ${detailRow(t('orderNumber'), escapeHtml(order.orderNumber), { strong: true })}
-            ${detailRow(t('route'), escapeHtml(orderRouteLine(order)))}
-            ${detailRow(t('recipient'), escapeHtml(receiverName))}
-            ${detailRow(t('amount'), escapeHtml(formatMoney(order.amount, order.currency, locale)), { strong: true, last: !order.npTtn && !extraRows })}
-            ${order.npTtn ? detailRow(t('ttn'), escapeHtml(order.npTtn), { strong: true, last: !extraRows }) : ''}
+        <td style="padding:4px 16px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            ${detailRow(t('orderNumber'), escapeHtml(order.orderNumber), { strong: true, dark: true })}
+            ${detailRow(t('route'), escapeHtml(orderRouteLine(order)), { dark: true })}
+            ${detailRow(t('recipient'), escapeHtml(receiverName), { dark: true })}
+            ${order.npTtn ? detailRow(t('ttn'), escapeHtml(order.npTtn), { strong: true, dark: true }) : ''}
             ${extraRows}
           </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:8px 16px 16px;">
+          <div style="font-family:${FONT.body};font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8B9098;margin-bottom:4px;">${escapeHtml(t('amount'))}</div>
+          <div style="font-family:${FONT.display};font-size:28px;font-weight:700;color:${BRAND.lime};line-height:1;">${escapeHtml(amount)}</div>
         </td>
       </tr>
     </table>`;
@@ -394,14 +364,18 @@ function baseTemplate({
   preheader = '',
   eyebrow = '',
   badge = '',
+  banner = '',
+  headerRight = '',
   bodyHtml,
   hero = null,
-  useCid = useCidImages(),
   locale = 'ru',
 }) {
+  void hero;
+  void badge;
   const year = new Date().getFullYear();
   const site = appUrl();
   const t = (key, vars) => mailT(locale, key, vars);
+  const bannerText = banner || eyebrow || '';
 
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(locale)}">
@@ -409,88 +383,53 @@ function baseTemplate({
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light" />
-  <meta name="supported-color-schemes" content="light" />
   <title>${escapeHtml(title)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
-    body, table, td, a, p, h1, h2, span, div { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body, table, td, a, p, h1, span, div { -webkit-font-smoothing: antialiased; }
   </style>
-  <!--[if mso]>
-  <style>
-    body, table, td, a, p, h1 { font-family: Arial, Helvetica, sans-serif !important; }
-  </style>
-  <![endif]-->
 </head>
-<body style="margin:0;padding:0;background:${BRAND.page};color:${BRAND.ink};font-family:${FONT.body};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
-    ${escapeHtml(preheader)}
-  </div>
+<body style="margin:0;padding:0;background:${BRAND.page};color:${BRAND.ink};font-family:${FONT.body};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${escapeHtml(preheader)}</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BRAND.page};">
     <tr>
-      <td align="center" style="padding:32px 16px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:${BRAND.white};border-radius:22px;overflow:hidden;border:1px solid ${BRAND.line};box-shadow:0 22px 48px rgba(11,11,11,.10);">
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:${BRAND.white};border-radius:18px;overflow:hidden;border:1px solid ${BRAND.line};">
           <tr>
-            <td style="background:${BRAND.black};padding:24px 28px 20px;">
+            <td style="background:${BRAND.black};padding:18px 22px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="vertical-align:middle;width:56px;">
-                    ${logoImg(useCid)}
+                  <td style="font-family:${FONT.display};font-size:22px;font-weight:700;color:${BRAND.white};letter-spacing:-.02em;">
+                    MATE<span style="color:${BRAND.lime};">.</span>
                   </td>
-                  <td style="vertical-align:middle;padding-left:14px;">
-                    <div style="font-family:${FONT.display};font-size:28px;font-weight:700;letter-spacing:-.02em;color:${BRAND.white};line-height:1;">
-                      MATE<span style="color:${BRAND.lime};">.</span>
-                    </div>
-                    <div style="font-family:${FONT.body};font-size:12px;font-weight:500;color:#A8ADB4;margin-top:5px;letter-spacing:.04em;">
-                      Express logistics across Europe
-                    </div>
+                  <td align="right" style="font-family:${FONT.body};font-size:11px;color:#A8ADB4;letter-spacing:.04em;">
+                    ${escapeHtml(headerRight || '')}
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
+          ${bannerText ? `
           <tr>
-            <td style="height:5px;line-height:5px;font-size:0;background:linear-gradient(90deg,${BRAND.lime} 0%,#9BFF3D 55%,${BRAND.black} 100%);background-color:${BRAND.lime};">&nbsp;</td>
-          </tr>
-          ${heroImg(hero, useCid)}
+            <td data-mate-banner="1" style="background:${BRAND.lime};padding:12px 22px;font-family:${FONT.body};font-size:13px;font-weight:700;color:${BRAND.black};letter-spacing:.02em;text-transform:uppercase;">
+              ${escapeHtml(bannerText)}
+            </td>
+          </tr>` : ''}
           <tr>
-            <td style="padding:34px 30px 10px;font-family:${FONT.body};">
-              ${badge ? `<div style="margin-bottom:16px;">${badge}</div>` : ''}
-              ${eyebrow ? `<div style="margin:0 0 10px;font-family:${FONT.body};font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:${BRAND.muted};">${escapeHtml(eyebrow)}</div>` : ''}
-              <h1 style="margin:0 0 6px;font-family:${FONT.display};font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-.03em;color:${BRAND.ink};">${escapeHtml(title)}</h1>
-              <div style="width:42px;height:3px;background:${BRAND.lime};border-radius:2px;margin:0 0 18px;font-size:0;line-height:0;">&nbsp;</div>
+            <td style="padding:26px 22px 10px;font-family:${FONT.body};">
+              <h1 style="margin:0 0 10px;font-family:${FONT.display};font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-.02em;color:${BRAND.ink};">${escapeHtml(title)}</h1>
               ${bodyHtml}
             </td>
           </tr>
           <tr>
-            <td style="padding:10px 30px 30px;font-family:${FONT.body};">
-              <p style="margin:0;font-size:14px;line-height:1.65;color:${BRAND.muted};font-weight:500;">
-                ${escapeHtml(t('regards'))}<br />
-                <strong style="color:${BRAND.ink};font-family:${FONT.display};font-weight:700;">${escapeHtml(t('teamMate'))}</strong>
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="background:${BRAND.black};padding:26px 30px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="font-family:${FONT.body};font-size:13px;line-height:1.55;color:#C8CCD2;font-weight:500;">
-                    Delivery, Moving &amp; Storage Made Simple<br />
-                    <a href="${escapeHtml(site)}" style="color:${BRAND.lime};text-decoration:none;font-weight:700;font-family:${FONT.display};letter-spacing:.01em;">matedelivery.com</a>
-                  </td>
-                  <td align="right" style="font-family:${FONT.body};font-size:12px;color:#8B9098;vertical-align:bottom;font-weight:500;">
-                    © ${year} MATE
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:8px 22px 22px;font-family:${FONT.body};font-size:12px;line-height:1.55;color:${BRAND.muted};">
+              ${escapeHtml(t('regards'))}<br />
+              <strong style="color:${BRAND.ink};font-family:${FONT.display};">${escapeHtml(t('teamMate'))}</strong>
+              <div style="margin-top:14px;font-size:11px;color:#9CA3AF;">© ${year} MATE · <a href="${escapeHtml(site)}" style="color:#9CA3AF;text-decoration:none;">matedelivery.com</a></div>
+              <div style="margin-top:8px;font-size:11px;color:#9CA3AF;">${escapeHtml(t('autoNotice'))}</div>
             </td>
           </tr>
         </table>
-        <p style="margin:18px 0 0;font-family:${FONT.body};font-size:11px;line-height:1.55;color:#8B9098;max-width:600px;font-weight:500;">
-          ${escapeHtml(t('autoNotice'))}
-        </p>
       </td>
     </tr>
   </table>
@@ -530,10 +469,26 @@ function recipientNoticeHtml(locale) {
 
 function markHtmlForRecipient(html, locale) {
   const notice = recipientNoticeHtml(locale);
+  if (/<\/h1>/i.test(html)) {
+    return html.replace(/<\/h1>/i, `</h1>${notice}`);
+  }
   if (/<body[^>]*>/i.test(html)) {
     return html.replace(/<body([^>]*)>/i, `<body$1>${notice}`);
   }
   return `${notice}${html}`;
+}
+
+function softInfoCard(rowsHtml) {
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 18px;background:${BRAND.soft};border-radius:14px;border:1px solid ${BRAND.line};">
+      <tr>
+        <td style="padding:4px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            ${rowsHtml}
+          </table>
+        </td>
+      </tr>
+    </table>`;
 }
 
 /** Send the same order email to sender and (if different) to receiver, labeled as recipient. */
@@ -625,7 +580,7 @@ async function deliver({ to, subject, html, outboxName, hero = null }) {
     return { messageId: null, preview: null, skipped: true };
   }
 
-  const attachments = buildAttachments(hero);
+  const attachments = buildAttachments();
   try {
     const info = await Promise.race([
       transport.sendMail({
@@ -665,27 +620,16 @@ function escapeRegExp(value) {
 export async function sendWelcomeEmail(user, meta = {}) {
   const locale = normalizeMailLocale(meta.locale || user?.locale);
   const t = (key, vars) => mailT(locale, key, vars);
-  const hero = HERO.welcome;
   const html = baseTemplate({
     title: t('welcomeTitle', { name: user.name }),
     preheader: t('welcomePre'),
-    eyebrow: t('welcomeEyebrow'),
-    badge: statusBadge('Welcome', 'lime'),
-    hero,
+    banner: t('welcomeEyebrow'),
     locale,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('welcomeBody'))}
       </p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
-        <tr>
-          <td style="padding:18px 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-              ${detailRow('Email', escapeHtml(user.email), { strong: true, last: true })}
-            </table>
-          </td>
-        </tr>
-      </table>
+      ${softInfoCard(detailRow('Email', escapeHtml(user.email), { strong: true, last: true }))}
       ${ctaButton(appUrl(), t('welcomeCta'))}
     `,
   });
@@ -694,7 +638,6 @@ export async function sendWelcomeEmail(user, meta = {}) {
     to: user.email,
     subject: t('welcomeSubject'),
     html,
-    hero,
     outboxName: `welcome-${user.id}.html`,
   });
 }
@@ -704,32 +647,20 @@ export async function sendLoginEmail(user, meta = {}) {
   const t = (key, vars) => mailT(locale, key, vars);
   const when = new Date().toLocaleString(intlLocale(locale), { timeZone: 'Europe/Berlin' });
   const ip = normalizeIp(meta.ip);
-  const hero = HERO.login;
   const html = baseTemplate({
     title: t('loginTitle'),
     preheader: t('loginPre', { when }),
-    eyebrow: t('loginEyebrow'),
-    badge: statusBadge('Login', 'dark'),
-    hero,
+    banner: t('loginEyebrow'),
     locale,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('loginBody', { name: user.name }))}
       </p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:16px;border:1px solid ${BRAND.line};">
-        <tr>
-          <td style="padding:4px 0 0;background:${BRAND.lime};border-radius:16px 16px 0 0;height:4px;font-size:0;line-height:0;">&nbsp;</td>
-        </tr>
-        <tr>
-          <td style="padding:16px 20px 18px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-              ${detailRow(t('loginTime'), escapeHtml(when), { strong: true, last: !ip })}
-              ${ip ? detailRow(t('loginIp'), escapeHtml(ip), { last: true }) : ''}
-            </table>
-          </td>
-        </tr>
-      </table>
-      <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
+      ${softInfoCard(`
+        ${detailRow(t('loginTime'), escapeHtml(when), { strong: true, last: !ip })}
+        ${ip ? detailRow(t('loginIp'), escapeHtml(ip), { last: true }) : ''}
+      `)}
+      <p style="margin:0 0 14px;font-family:${FONT.body};font-size:13px;line-height:1.6;color:${BRAND.muted};">
         ${escapeHtml(t('loginWarn'))}
       </p>
       ${ctaButton(appUrl(), t('loginCta'))}
@@ -740,7 +671,6 @@ export async function sendLoginEmail(user, meta = {}) {
     to: user.email,
     subject: t('loginSubject'),
     html,
-    hero,
     outboxName: `login-${user.id}-${Date.now()}.html`,
   });
 }
@@ -749,28 +679,17 @@ export async function sendPasswordChangedEmail(user, meta = {}) {
   const locale = normalizeMailLocale(meta.locale || user?.locale);
   const t = (key, vars) => mailT(locale, key, vars);
   const when = new Date().toLocaleString(intlLocale(locale), { timeZone: 'Europe/Berlin' });
-  const hero = HERO.security;
   const html = baseTemplate({
     title: t('passwordTitle'),
     preheader: t('passwordPre'),
-    eyebrow: t('securityEyebrow'),
-    badge: statusBadge('Security', 'dark'),
-    hero,
+    banner: t('securityEyebrow'),
     locale,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('passwordBody', { name: user.name }))}
       </p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
-        <tr>
-          <td style="padding:18px 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-              ${detailRow(t('loginTime'), escapeHtml(when), { strong: true, last: true })}
-            </table>
-          </td>
-        </tr>
-      </table>
-      <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
+      ${softInfoCard(detailRow(t('loginTime'), escapeHtml(when), { strong: true, last: true }))}
+      <p style="margin:0 0 14px;font-family:${FONT.body};font-size:13px;line-height:1.6;color:${BRAND.muted};">
         ${escapeHtml(t('passwordWarn'))}
       </p>
       ${ctaButton(appUrl(), t('passwordCta'))}
@@ -781,7 +700,6 @@ export async function sendPasswordChangedEmail(user, meta = {}) {
     to: user.email,
     subject: t('passwordSubject'),
     html,
-    hero,
     outboxName: `password-${user.id}-${Date.now()}.html`,
   });
 }
@@ -789,19 +707,16 @@ export async function sendPasswordChangedEmail(user, meta = {}) {
 export async function sendPasswordResetEmail(user, resetUrl, meta = {}) {
   const locale = normalizeMailLocale(meta.locale || user?.locale);
   const t = (key, vars) => mailT(locale, key, vars);
-  const hero = HERO.security;
   const html = baseTemplate({
     title: t('resetTitle'),
     preheader: t('resetPre'),
-    eyebrow: t('securityEyebrow'),
-    badge: statusBadge('Security', 'dark'),
-    hero,
+    banner: t('securityEyebrow'),
     locale,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('resetBody', { name: user.name }))}
       </p>
-      <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 14px;font-family:${FONT.body};font-size:13px;line-height:1.6;color:${BRAND.muted};">
         ${escapeHtml(t('resetWarn'))}
       </p>
       ${ctaButton(resetUrl, t('resetCta'))}
@@ -812,7 +727,6 @@ export async function sendPasswordResetEmail(user, resetUrl, meta = {}) {
     to: user.email,
     subject: t('resetSubject'),
     html,
-    hero,
     outboxName: `password-reset-${user.id}-${Date.now()}.html`,
   });
 }
@@ -821,30 +735,21 @@ export async function sendProfileUpdatedEmail(user, meta = {}) {
   const locale = normalizeMailLocale(meta.locale || user?.locale);
   const t = (key, vars) => mailT(locale, key, vars);
   const when = new Date().toLocaleString(intlLocale(locale), { timeZone: 'Europe/Berlin' });
-  const hero = HERO.security;
   const html = baseTemplate({
     title: t('profileTitle'),
     preheader: t('profilePre'),
-    eyebrow: t('profileEyebrow'),
-    badge: statusBadge('Updated', 'muted'),
-    hero,
+    banner: t('profileEyebrow'),
     locale,
     bodyHtml: `
-      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('profileBody', { name: user.name }))}
       </p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;background:${BRAND.soft};border-radius:14px;">
-        <tr>
-          <td style="padding:18px 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:${FONT.body};">
-              ${detailRow('Email', escapeHtml(user.email), { strong: true })}
-              ${detailRow(t('profilePhone'), escapeHtml(user.phone))}
-              ${detailRow(t('loginTime'), escapeHtml(when), { last: true })}
-            </table>
-          </td>
-        </tr>
-      </table>
-      <p style="margin:0;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
+      ${softInfoCard(`
+        ${detailRow('Email', escapeHtml(user.email), { strong: true })}
+        ${detailRow(t('profilePhone'), escapeHtml(user.phone))}
+        ${detailRow(t('loginTime'), escapeHtml(when), { last: true })}
+      `)}
+      <p style="margin:0;font-family:${FONT.body};font-size:13px;line-height:1.6;color:${BRAND.muted};">
         ${escapeHtml(t('profileWarn'))}
       </p>
     `,
@@ -854,7 +759,6 @@ export async function sendProfileUpdatedEmail(user, meta = {}) {
     to: user.email,
     subject: t('profileSubject'),
     html,
-    hero,
     outboxName: `profile-${user.id}-${Date.now()}.html`,
   });
 }
@@ -864,22 +768,20 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
   const t = (key, vars) => mailT(locale, key, vars);
   const payUrl = meta.checkoutUrl || appUrl();
   const payLabel = meta.checkoutUrl ? t('payOrder') : t('goPay');
-  const hero = HERO.order;
   const pending = statusLabel(locale, 'pending_payment');
   const summary = orderSummaryBlock(
     order,
-    detailRow(t('status'), escapeHtml(pending), { strong: true, last: true }),
+    detailRow(t('status'), escapeHtml(pending), { strong: true, last: true, dark: true }),
     locale,
   );
   const html = baseTemplate({
     title: t('orderCreatedTitle'),
     preheader: t('orderCreatedPre', { orderNumber: order.orderNumber }),
-    eyebrow: t('newShipment'),
-    badge: statusBadge(pending, 'lime'),
-    hero,
+    banner: t('newShipment'),
+    headerRight: order.orderNumber,
     locale,
     bodyHtml: `
-      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('orderCreatedBody'))}
       </p>
       ${summary}
@@ -889,12 +791,11 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
   const recipientHtml = baseTemplate({
     title: t('orderCreatedTitleRecipient'),
     preheader: t('orderCreatedPreRecipient', { orderNumber: order.orderNumber }),
-    eyebrow: t('newShipment'),
-    badge: statusBadge(pending, 'lime'),
-    hero,
+    banner: t('newShipment'),
+    headerRight: order.orderNumber,
     locale,
     bodyHtml: `
-      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('orderCreatedBodyRecipient'))}
       </p>
       ${summary}
@@ -908,7 +809,6 @@ export async function sendOrderCreatedEmail(order, meta = {}) {
     html,
     recipientHtml,
     recipientSubject: t('orderCreatedSubjectRecipient', { orderNumber: order.orderNumber }),
-    hero,
     outboxName: `order-created-${order.id}.html`,
   });
 }
@@ -933,59 +833,50 @@ export async function sendOrderStatusEmail(order, previousStatus) {
   const t = (key, vars) => mailT(locale, key, vars);
   const prevLabel = statusLabel(locale, previousStatus) || previousStatus;
   const nextLabel = statusLabel(locale, status) || status;
-  const hero = HERO.status;
 
   let title;
   let intro;
   let subject;
-  let badgeTone = 'lime';
 
   if (status === 'paid') {
     title = t('paidTitle');
     intro = t('paidIntro');
     subject = t('paidSubject', { orderNumber: order.orderNumber });
-    badgeTone = 'lime';
   } else if (status === 'submitted') {
     title = t('submittedTitle');
     intro = t('submittedIntro');
     subject = t('submittedSubject', { orderNumber: order.orderNumber });
-    badgeTone = 'dark';
   } else if (status === 'delivered') {
     title = t('deliveredTitle');
     intro = t('deliveredIntro');
     subject = t('deliveredSubject', { orderNumber: order.orderNumber });
-    badgeTone = 'lime';
   } else if (status === 'cancelled') {
     title = t('cancelledTitle');
     intro = t('cancelledIntro');
     subject = t('cancelledSubject', { orderNumber: order.orderNumber });
-    badgeTone = 'danger';
   } else if (status === 'pending_payment') {
     title = t('pendingTitle');
     intro = t('pendingIntro');
     subject = t('pendingSubject', { orderNumber: order.orderNumber });
-    badgeTone = 'lime';
   } else {
     title = t('statusChangedTitle');
     intro = t('statusChangedIntro', { prev: prevLabel, next: nextLabel });
     subject = t('statusChangedSubject', { orderNumber: order.orderNumber });
-    badgeTone = 'muted';
   }
 
   const html = baseTemplate({
     title,
     preheader: intro,
-    eyebrow: t('orderUpdate'),
-    badge: statusBadge(nextLabel, badgeTone),
-    hero,
+    banner: nextLabel,
+    headerRight: order.orderNumber,
     locale,
     bodyHtml: `
-      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(intro)}
       </p>
       ${orderSummaryBlock(
         order,
-        detailRow(t('status'), escapeHtml(nextLabel), { strong: true, last: true }),
+        detailRow(t('status'), escapeHtml(nextLabel), { strong: true, last: true, dark: true }),
         locale,
       )}
       ${ctaButton(appUrl(), t('trackShipment'))}
@@ -996,7 +887,6 @@ export async function sendOrderStatusEmail(order, previousStatus) {
     order,
     subject,
     html,
-    hero,
     outboxName: `order-status-${order.id}-${status}-${Date.now()}.html`,
   });
 }
@@ -1004,21 +894,19 @@ export async function sendOrderStatusEmail(order, previousStatus) {
 export async function sendOrderTrackingEmail(order) {
   const locale = localeFromOrder(order);
   const t = (key, vars) => mailT(locale, key, vars);
-  const hero = HERO.tracking;
   const html = baseTemplate({
     title: t('trackingTitle'),
     preheader: t('trackingPre', { ttn: order.npTtn, orderNumber: order.orderNumber }),
-    eyebrow: t('trackingEyebrow'),
-    badge: statusBadge('Tracking', 'lime'),
-    hero,
+    banner: t('trackingEyebrow'),
+    headerRight: order.npTtn || order.orderNumber,
     locale,
     bodyHtml: `
-      <p style="margin:0 0 8px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+      <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
         ${escapeHtml(t('trackingBody'))}
       </p>
       ${orderSummaryBlock(
         order,
-        detailRow(t('status'), escapeHtml(statusLabel(locale, order.status) || order.status), { strong: true, last: true }),
+        detailRow(t('status'), escapeHtml(statusLabel(locale, order.status) || order.status), { strong: true, last: true, dark: true }),
         locale,
       )}
       ${ctaButton(appUrl(), t('trackParcel'))}
@@ -1029,14 +917,13 @@ export async function sendOrderTrackingEmail(order) {
     order,
     subject: t('trackingSubject', { orderNumber: order.orderNumber, ttn: order.npTtn }),
     html,
-    hero,
     outboxName: `order-tracking-${order.id}-${Date.now()}.html`,
   });
 }
 
 /** Warm asset cache / validate brand files exist (optional startup check). */
 export async function assertMailAssets() {
-  const required = ['logo-mark.png', ...new Set(Object.values(HERO))];
+  const required = ['logo-mark.png'];
   const missing = [];
   for (const file of required) {
     if (!(await readAssetBuffer(file))) missing.push(file);
