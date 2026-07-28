@@ -360,7 +360,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       };
 
       if (kind === 'branch') {
-        // branch = Mate branches + live Nova Post branch offices (PostBranch)
+        // Prefer live Nova Post PostBranch offices — quote/checkout need numeric division IDs.
+        // Mate catalog placeholders (mate_hu_*) only as fallback when NP is empty/unavailable.
         const mate = filterCatalogPoints(MATE_BRANCHES, country, city);
         let points = [...mate];
         let source = 'mate';
@@ -376,9 +377,11 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             const npPoints = branches.items
               .filter(matchesCity)
               .map(mapDivisionToPoint)
-              .filter((p) => p.lat && p.lng);
-            points = dedupeById([...mate, ...npPoints]);
-            source = npPoints.length ? 'novapost' : 'mate';
+              .filter((p) => p.lat && p.lng && /^\d+$/.test(String(p.id)));
+            if (npPoints.length) {
+              points = dedupeById(npPoints);
+              source = 'novapost';
+            }
           }
         }
 

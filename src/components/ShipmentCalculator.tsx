@@ -186,8 +186,18 @@ function divisionQuoteLocation(countryCode: string, id: string): QuoteLocation |
   return { kind: 'division', countryCode, divisionId };
 }
 
-function firstNpDivisionId(points: ShippingPoint[]): string {
-  const hit = points.find((p) => /^\d+$/.test(String(p.id)));
+function isNpDivisionId(id: string | number | null | undefined): boolean {
+  return /^\d+$/.test(String(id || '')) && Number(id) > 0;
+}
+
+/** Prefer Nova Post numeric division IDs — catalog placeholders cannot be quoted. */
+function preferQuoteablePoints<T extends { id: string }>(points: T[]): T[] {
+  const np = points.filter((p) => isNpDivisionId(p.id));
+  return np.length ? np : points;
+}
+
+function firstNpDivisionId(points: Array<{ id: string }>): string {
+  const hit = points.find((p) => isNpDivisionId(p.id));
   return hit ? String(hit.id) : '';
 }
 
@@ -1300,20 +1310,28 @@ export function CalcForm({
   const insurancePercentLabel = quoteSettings?.insurancePercent ?? 1;
 
   const pickupLockersForCity = useMemo(() => {
-    if (livePickupLockers) return livePickupLockers as typeof PICKUP_LOCKERS;
-    return filterPointsByCity(PICKUP_LOCKERS, pickupCity, PICKUP_COUNTRY);
+    const raw = livePickupLockers
+      ? (livePickupLockers as typeof PICKUP_LOCKERS)
+      : filterPointsByCity(PICKUP_LOCKERS, pickupCity, PICKUP_COUNTRY);
+    return preferQuoteablePoints(raw);
   }, [livePickupLockers, pickupCity]);
   const pickupBranchesForCity = useMemo(() => {
-    if (livePickupBranches?.length) return livePickupBranches as typeof PICKUP_BRANCHES;
-    return filterPointsByCity(PICKUP_BRANCHES, pickupCity, PICKUP_COUNTRY);
+    const raw = livePickupBranches?.length
+      ? (livePickupBranches as typeof PICKUP_BRANCHES)
+      : filterPointsByCity(PICKUP_BRANCHES, pickupCity, PICKUP_COUNTRY);
+    return preferQuoteablePoints(raw);
   }, [livePickupBranches, pickupCity]);
   const destLockersForCity = useMemo(() => {
-    if (liveDestLockers) return liveDestLockers as typeof DEST_LOCKERS;
-    return filterPointsByCity(DEST_LOCKERS, destCity, toCountry);
+    const raw = liveDestLockers
+      ? (liveDestLockers as typeof DEST_LOCKERS)
+      : filterPointsByCity(DEST_LOCKERS, destCity, toCountry);
+    return preferQuoteablePoints(raw);
   }, [liveDestLockers, destCity, toCountry]);
   const destBranchesForCity = useMemo(() => {
-    if (liveDestBranches?.length) return liveDestBranches as typeof DEST_BRANCHES;
-    return filterPointsByCity(DEST_BRANCHES, destCity, toCountry);
+    const raw = liveDestBranches?.length
+      ? (liveDestBranches as typeof DEST_BRANCHES)
+      : filterPointsByCity(DEST_BRANCHES, destCity, toCountry);
+    return preferQuoteablePoints(raw);
   }, [liveDestBranches, destCity, toCountry]);
 
   const loadCoverage = useCallback(async () => {
@@ -1502,13 +1520,13 @@ export function CalcForm({
 
   useEffect(() => {
     if (pickupLockersForCity.length && !pickupLockersForCity.some((l) => l.id === pickupLocker)) {
-      setPickupLocker(pickupLockersForCity[0].id);
+      setPickupLocker(firstNpDivisionId(pickupLockersForCity) || pickupLockersForCity[0].id);
     }
   }, [pickupLockersForCity, pickupLocker]);
 
   useEffect(() => {
     if (pickupBranchesForCity.length && !pickupBranchesForCity.some((l) => l.id === pickupBranch)) {
-      setPickupBranch(pickupBranchesForCity[0].id);
+      setPickupBranch(firstNpDivisionId(pickupBranchesForCity) || pickupBranchesForCity[0].id);
     }
   }, [pickupBranchesForCity, pickupBranch]);
 
@@ -1533,7 +1551,7 @@ export function CalcForm({
       if (nearest) setDestLocker(nearest.id);
       return;
     }
-    setDestLocker(destLockersForCity[0].id);
+    setDestLocker(firstNpDivisionId(destLockersForCity) || destLockersForCity[0].id);
   }, [destLockersForCity, destLocker, destAddressFocus]);
 
   useEffect(() => {
@@ -1557,7 +1575,7 @@ export function CalcForm({
       if (nearest) setDestBranch(nearest.id);
       return;
     }
-    setDestBranch(destBranchesForCity[0].id);
+    setDestBranch(firstNpDivisionId(destBranchesForCity) || destBranchesForCity[0].id);
   }, [destBranchesForCity, destBranch, destAddressFocus]);
 
   const pickupLocationObj = pickupType === 'branch'
