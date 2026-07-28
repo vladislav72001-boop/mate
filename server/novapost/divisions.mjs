@@ -118,11 +118,14 @@ export async function countNovaPostCoverage(countryCode, city) {
       limit: 20,
     });
     if (result.source === 'error') return { count: 0, error: true };
-    const matched = result.items;
-    if (matched.length > 0) {
-      return { count: Math.max(result.total, matched.length), error: false };
-    }
-    return { count: 0, error: false };
+    // Same gate as /points: must be quoteable (numeric id + coordinates).
+    const quoteable = result.items.filter((it) => {
+      const id = String(it?.id || '');
+      const lat = Number(it?.latitude) || 0;
+      const lng = Number(it?.longitude) || 0;
+      return /^\d+$/.test(id) && lat && lng;
+    });
+    return { count: quoteable.length, error: false };
   }
 
   const [postomat, pudo, postBranch] = await Promise.all([

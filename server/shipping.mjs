@@ -55,12 +55,14 @@ function buildSideCoverage({ country, city, npCounts, useFallback }) {
   const fallbackLockers = filterCatalogPoints(FALLBACK_LOCKERS, country, city);
 
   let lockerCount = (npCounts?.postomat || 0) + (npCounts?.pudo || 0);
-  // Branch mode = Mate branches + live Nova Post branch offices (PostBranch).
-  let branchCount = mateBranches.length + (npCounts?.postBranch || 0);
+  // Quote/checkout need numeric Nova Post division IDs — catalog mate_*
+  // placeholders must not enable branch mode in the UI.
+  let branchCount = npCounts?.postBranch || 0;
   let source = npCounts?.source || 'none';
 
   if (useFallback || source === 'mock' || source === 'error') {
     lockerCount = Math.max(lockerCount, fallbackLockers.length);
+    // Mock/offline only: keep catalog branches so local demos still work.
     branchCount = Math.max(branchCount, mateBranches.length);
     source = source === 'novapost' ? source : 'fallback';
   }
@@ -360,13 +362,14 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       };
 
       if (kind === 'branch') {
-        // Prefer live Nova Post PostBranch offices — quote/checkout need numeric division IDs.
-        // Mate catalog placeholders (mate_hu_*) only as fallback when NP is empty/unavailable.
-        const mate = filterCatalogPoints(MATE_BRANCHES, country, city);
-        let points = [...mate];
-        let source = 'mate';
+        // Live Nova Post PostBranch only — mate_* catalog IDs cannot be quoted/checked out.
+        let points = [];
+        let source = 'novapost';
 
-        if (!isNovaPostMock()) {
+        if (isNovaPostMock()) {
+          points = filterCatalogPoints(MATE_BRANCHES, country, city);
+          source = 'mate';
+        } else {
           const branches = await fetchNovaPostDivisions({
             countryCode: country,
             city,
@@ -374,14 +377,16 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             limit: 40,
           });
           if (branches.source === 'novapost') {
-            const npPoints = branches.items
-              .filter(matchesCity)
-              .map(mapDivisionToPoint)
-              .filter((p) => p.lat && p.lng && /^\d+$/.test(String(p.id)));
-            if (npPoints.length) {
-              points = dedupeById(npPoints);
-              source = 'novapost';
-            }
+            // fetchNovaPostDivisions already city-filters; keep items that map to quoteable points.
+            points = dedupeById(
+              branches.items
+                .map(mapDivisionToPoint)
+                .filter((p) => p.lat && p.lng && /^\d+$/.test(String(p.id))),
+            );
+            source = 'novapost';
+          } else if (branches.source === 'error' || branches.source === 'mock') {
+            points = filterCatalogPoints(MATE_BRANCHES, country, city);
+            source = 'mate';
           }
         }
 
