@@ -8075,12 +8075,8 @@ body {
 .calc-custom-dims {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
   margin: 10px 0 14px;
-  padding: 14px;
-  border-radius: 16px;
-  background: #fff;
-  border: 1px solid rgba(18, 32, 35, 0.08);
 }
 
 .calc-custom-dims__grid {
