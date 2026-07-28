@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AuthUser } from '../api/auth';
-import { loginClient, registerClient, appleAuthClient, googleAuthClient, fetchAuthConfig, updateClientProfile, storeSession } from '../api/auth';
+import { loginClient, registerClient, appleAuthClient, googleAuthClient, fetchAuthConfig, updateClientProfile, storeSession, forgotPasswordClient, resetPasswordClient } from '../api/auth';
 import { signInWithApple } from '../lib/appleSignIn';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
@@ -14,13 +14,14 @@ function ArrowIcon({ size = 14 }: { size?: number }) {
   return <svg {...p} aria-hidden><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>;
 }
 
-type Mode = 'register' | 'login';
+type Mode = 'register' | 'login' | 'forgot' | 'reset';
 
 export type ClientOnboardingTarget = 'shipment' | 'address' | 'payments';
 
 type Props = {
   mode: Mode;
   step: number;
+  resetToken?: string;
   onClose: () => void;
   onSwitchMode: (mode: Mode) => void;
   onStepChange: (step: number) => void;
@@ -38,12 +39,13 @@ function FieldIcon({ id }: { id: string }) {
   }
 }
 
-export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChange, onSuccess, onNavigate }: Props) {
+export function ClientAuthModal({ mode, step, resetToken = '', onClose, onSwitchMode, onStepChange, onSuccess, onNavigate }: Props) {
   const { t } = useI18n();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [terms, setTerms] = useState(false);
   const [error, setError] = useState('');
@@ -54,7 +56,7 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
   const [pendingProvider, setPendingProvider] = useState<'google' | 'apple'>('google');
   const [appleClientId, setAppleClientId] = useState('');
   const [appleRedirectUri, setAppleRedirectUri] = useState('https://www.matedelivery.com/api/auth/apple/callback');
-
+  const [forgotSent, setForgotSent] = useState(false);
   useEffect(() => {
     let cancelled = false;
     fetchAuthConfig()
@@ -84,6 +86,16 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
     { icon: 'fulfillment', title: t('auth.nextPayTitle'), desc: t('auth.nextPayDesc'), target: 'payments' },
   ];
 
+  function goLogin() {
+    setError('');
+    setEmailNotice('');
+    setForgotSent(false);
+    setPassword('');
+    setConfirmPassword('');
+    onSwitchMode('login');
+    onStepChange(0);
+  }
+
   async function finishAuth(
     res: Awaited<ReturnType<typeof registerClient>>,
     notice: string,
@@ -99,6 +111,52 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
     e.preventDefault();
     setError('');
     setEmailNotice('');
+
+    if (mode === 'forgot') {
+      onStepChange(1);
+      try {
+        await forgotPasswordClient({ email });
+        setForgotSent(true);
+        setEmailNotice(t('auth.forgotSent'));
+        onStepChange(0);
+      } catch (err) {
+        onStepChange(0);
+        setError(localizeApiError(
+          err instanceof Error ? err.message : undefined,
+          t,
+          'auth.forgotError',
+        ));
+      }
+      return;
+    }
+
+    if (mode === 'reset') {
+      if (password !== confirmPassword) {
+        setError(t('auth.resetMismatch'));
+        return;
+      }
+      if (!resetToken) {
+        setError(t('auth.resetInvalid'));
+        return;
+      }
+      onStepChange(1);
+      try {
+        await resetPasswordClient({ token: resetToken, password });
+        setPassword('');
+        setConfirmPassword('');
+        setEmailNotice(t('auth.resetSuccess'));
+        onSwitchMode('login');
+        onStepChange(0);
+      } catch (err) {
+        onStepChange(0);
+        setError(localizeApiError(
+          err instanceof Error ? err.message : undefined,
+          t,
+          'auth.resetError',
+        ));
+      }
+      return;
+    }
 
     if (mode === 'register' && !terms) {
       setError(t('auth.termsRequired'));
@@ -307,6 +365,8 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
               <p className="client-auth__switch">
                 {mode === 'register' ? (
                   <>{t('auth.hasAccount')} <button type="button" onClick={() => onSwitchMode('login')}>{t('auth.loginLink')}</button></>
+                ) : mode === 'forgot' || mode === 'reset' ? (
+                  <button type="button" onClick={goLogin}>{t('auth.backToLogin')}</button>
                 ) : (
                   <>{t('auth.noAccount')} <button type="button" onClick={() => onSwitchMode('register')}>{t('auth.registerLink')}</button></>
                 )}
@@ -401,6 +461,88 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
                     googleLabel={t('auth.continueGoogle')}
                   />
                 </>
+              ) : mode === 'forgot' ? (
+                <>
+                  <div className="client-auth__badge">{t('auth.badgeForgot')}</div>
+                  <h1>{t('auth.forgotTitle')} <span>{t('auth.forgotTitleAccent')}</span></h1>
+                  <p className="client-auth__sub">{t('auth.forgotSub')}</p>
+
+                  {forgotSent ? (
+                    <div className="client-auth__notice">
+                      <p className="client-auth__email-note">{emailNotice || t('auth.forgotSent')}</p>
+                      <button className="btn btn-lime client-auth__submit" type="button" onClick={goLogin}>
+                        {t('auth.backToLogin')}
+                      </button>
+                    </div>
+                  ) : (
+                    <form className="client-auth__form" onSubmit={handleSubmit}>
+                      <label className="client-field">
+                        <span className="client-field__icon"><FieldIcon id="email" /></span>
+                        <input
+                          name="email"
+                          autoComplete="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="Email"
+                          type="email"
+                          required
+                        />
+                      </label>
+                      {error && <p className="client-auth__error">{error}</p>}
+                      <button className="btn btn-lime client-auth__submit" type="submit">
+                        {t('auth.submitForgot')}
+                      </button>
+                    </form>
+                  )}
+                </>
+              ) : mode === 'reset' ? (
+                <>
+                  <div className="client-auth__badge">{t('auth.badgeReset')}</div>
+                  <h1>{t('auth.resetTitle')} <span>{t('auth.resetTitleAccent')}</span></h1>
+                  <p className="client-auth__sub">{t('auth.resetSub')}</p>
+
+                  <form className="client-auth__form" onSubmit={handleSubmit}>
+                    <label className="client-field client-field--pass">
+                      <span className="client-field__icon"><FieldIcon id="lock" /></span>
+                      <input
+                        name="new-password"
+                        autoComplete="new-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder={t('auth.placeholderPassword')}
+                        type={showPass ? 'text' : 'password'}
+                        minLength={8}
+                        required
+                      />
+                      <button className="client-field__eye" type="button" onClick={() => setShowPass((v) => !v)} aria-label={t('auth.showPassword')}>
+                        {showPass ? '🙈' : '👁'}
+                      </button>
+                    </label>
+                    {password && (
+                      <div className="client-pass-strength">
+                        <div className="client-pass-strength__bar"><span style={{ width: strength.width }} /></div>
+                        <small>{strengthLabel}</small>
+                      </div>
+                    )}
+                    <label className="client-field client-field--pass">
+                      <span className="client-field__icon"><FieldIcon id="lock" /></span>
+                      <input
+                        name="confirm-password"
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder={t('auth.placeholderConfirmPassword')}
+                        type={showPass ? 'text' : 'password'}
+                        minLength={8}
+                        required
+                      />
+                    </label>
+                    {error && <p className="client-auth__error">{error}</p>}
+                    <button className="btn btn-lime client-auth__submit" type="submit">
+                      {t('auth.submitReset')}
+                    </button>
+                  </form>
+                </>
               ) : (
                 <>
                   <div className="client-auth__badge">{t('auth.badgeLogin')}</div>
@@ -435,6 +577,21 @@ export function ClientAuthModal({ mode, step, onClose, onSwitchMode, onStepChang
                         {showPass ? '🙈' : '👁'}
                       </button>
                     </label>
+                    <div className="client-auth__forgot-row">
+                      <button
+                        type="button"
+                        className="client-auth__forgot"
+                        onClick={() => {
+                          setError('');
+                          setForgotSent(false);
+                          onSwitchMode('forgot');
+                          onStepChange(0);
+                        }}
+                      >
+                        {t('auth.forgotLink')}
+                      </button>
+                    </div>
+                    {emailNotice && <p className="client-auth__email-note">{emailNotice}</p>}
                     {error && <p className="client-auth__error">{error}</p>}
                     <button className="btn btn-lime client-auth__submit" type="submit">
                       {t('auth.submitLogin')}

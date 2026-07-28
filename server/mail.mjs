@@ -707,6 +707,37 @@ export async function sendPasswordChangedEmail(user, meta = {}) {
   });
 }
 
+export async function sendPasswordResetEmail(user, resetUrl, meta = {}) {
+  const locale = normalizeMailLocale(meta.locale || user?.locale);
+  const t = (key, vars) => mailT(locale, key, vars);
+  const hero = HERO.security;
+  const html = baseTemplate({
+    title: t('resetTitle'),
+    preheader: t('resetPre'),
+    eyebrow: t('securityEyebrow'),
+    badge: statusBadge('Security', 'dark'),
+    hero,
+    locale,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-family:${FONT.body};font-size:16px;line-height:1.65;font-weight:500;color:${BRAND.muted};">
+        ${escapeHtml(t('resetBody', { name: user.name }))}
+      </p>
+      <p style="margin:0 0 18px;font-family:${FONT.body};font-size:13px;line-height:1.6;font-weight:500;color:${BRAND.muted};">
+        ${escapeHtml(t('resetWarn'))}
+      </p>
+      ${ctaButton(resetUrl, t('resetCta'))}
+    `,
+  });
+
+  return deliver({
+    to: user.email,
+    subject: t('resetSubject'),
+    html,
+    hero,
+    outboxName: `password-reset-${user.id}-${Date.now()}.html`,
+  });
+}
+
 export async function sendProfileUpdatedEmail(user, meta = {}) {
   const locale = normalizeMailLocale(meta.locale || user?.locale);
   const t = (key, vars) => mailT(locale, key, vars);

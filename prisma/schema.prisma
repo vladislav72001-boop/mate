@@ -16,19 +16,22 @@ model User {
   email                  String    @unique
   login                  String?
   phone                  String
-  passwordHash           String
-  googleId               String?   @unique
-  appleId                String?   @unique
-  authProvider           String    @default("local")
-  type                   String    @default("client")
-  welcomeDiscountUsed    Boolean   @default(false)
-  welcomeDiscountUsedAt  DateTime?
-  createdAt              DateTime  @default(now())
-  addresses              Address[]
-  orders                 Order[]
+  passwordHash             String
+  googleId                 String?   @unique
+  appleId                  String?   @unique
+  authProvider             String    @default("local")
+  type                     String    @default("client")
+  welcomeDiscountUsed      Boolean   @default(false)
+  welcomeDiscountUsedAt    DateTime?
+  passwordResetTokenHash   String?
+  passwordResetExpiresAt   DateTime?
+  createdAt                DateTime  @default(now())
+  addresses                Address[]
+  orders                   Order[]
 
   @@index([login])
   @@index([type])
+  @@index([passwordResetTokenHash])
   @@map("users")
 }
 

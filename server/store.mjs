@@ -86,6 +86,18 @@ export async function findByEmail(email) {
   return mapUser(await prisma.user.findUnique({ where: { email: normalized } }));
 }
 
+export async function findByPasswordResetTokenHash(tokenHash) {
+  const hash = String(tokenHash || '').trim();
+  if (!hash) return null;
+  const row = await prisma.user.findFirst({
+    where: {
+      passwordResetTokenHash: hash,
+      passwordResetExpiresAt: { gt: new Date() },
+    },
+  });
+  return mapUser(row);
+}
+
 export async function findByGoogleId(googleId) {
   const id = String(googleId || '').trim();
   if (!id) return null;
@@ -181,6 +193,14 @@ export async function updateUser(id, patch) {
   if (patch.welcomeDiscountUsedAt !== undefined) {
     data.welcomeDiscountUsedAt = patch.welcomeDiscountUsedAt
       ? new Date(patch.welcomeDiscountUsedAt)
+      : null;
+  }
+  if (patch.passwordResetTokenHash !== undefined) {
+    data.passwordResetTokenHash = patch.passwordResetTokenHash || null;
+  }
+  if (patch.passwordResetExpiresAt !== undefined) {
+    data.passwordResetExpiresAt = patch.passwordResetExpiresAt
+      ? new Date(patch.passwordResetExpiresAt)
       : null;
   }
 

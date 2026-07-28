@@ -108,6 +108,20 @@ export async function loginClient(payload: { email: string; password: string }) 
   });
 }
 
+export async function forgotPasswordClient(payload: { email: string }) {
+  return request<{ ok: boolean; message: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, locale: currentLocale() }),
+  });
+}
+
+export async function resetPasswordClient(payload: { token: string; password: string }) {
+  return request<{ ok: boolean; message: string }>('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, locale: currentLocale() }),
+  });
+}
+
 export async function socialClient(provider: 'apple' | 'google') {
   return request<AuthResponse>('/api/auth/social', {
     method: 'POST',

@@ -3,12 +3,29 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createUser, findByAppleId, findByEmail, findByGoogleId, findById, findByIdentifier, publicUser, updateUser } from './store.mjs';
-import { sendWelcomeEmail, sendLoginEmail, assertMailAssets, probeSmtp } from './mail.mjs';
+import {
+  createUser,
+  findByAppleId,
+  findByEmail,
+  findByGoogleId,
+  findById,
+  findByIdentifier,
+  findByPasswordResetTokenHash,
+  publicUser,
+  updateUser,
+} from './store.mjs';
+import {
+  sendWelcomeEmail,
+  sendLoginEmail,
+  sendPasswordResetEmail,
+  sendPasswordChangedEmail,
+  assertMailAssets,
+  probeSmtp,
+} from './mail.mjs';
 import { localeFromRequest } from './mail-i18n.mjs';
 import { verifyGoogleCredential, isGoogleAuthConfigured } from './google-auth.mjs';
 import { getAppleAuthPublicConfig, isAppleAuthConfigured, verifyAppleIdToken } from './apple-auth.mjs';
@@ -248,6 +265,106 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Не удалось выполнить вход' });
+  }
+});
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
+
+function hashPasswordResetToken(token) {
+  return createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+/** Always returns the same message so email existence is not leaked. */
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const okMessage = {
+    ok: true,
+    message: 'Если аккаунт с таким email существует, мы отправили ссылку для восстановления пароля',
+  };
+
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Введите корректный email' });
+    }
+
+    const user = await findByEmail(email);
+    if (!user || user.type === 'admin') {
+      return res.json(okMessage);
+    }
+
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = hashPasswordResetToken(rawToken);
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+
+    const updated = await updateUser(user.id, {
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpiresAt: expiresAt.toISOString(),
+    });
+    if (!updated) {
+      return res.status(500).json({ error: 'Не удалось создать ссылку восстановления' });
+    }
+
+    const resetUrl = `${String(process.env.APP_URL || 'http://localhost:5011').replace(/\/$/, '')}/?reset=${encodeURIComponent(rawToken)}`;
+    const pub = publicUser(updated);
+
+    try {
+      await sendPasswordResetEmail(pub, resetUrl, { locale: localeFromRequest(req) });
+    } catch (mailErr) {
+      console.error('[mail] password reset failed:', mailErr);
+      await updateUser(user.id, {
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+      });
+      return res.status(502).json({ error: 'Не удалось отправить письмо. Попробуйте позже' });
+    }
+
+    return res.json(okMessage);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Не удалось отправить письмо восстановления' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const rawToken = String(req.body.token || '').trim();
+    const password = String(req.body.password || '');
+
+    if (!rawToken) {
+      return res.status(400).json({ error: 'Ссылка восстановления недействительна или устарела' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Пароль должен быть не короче 8 символов' });
+    }
+
+    const user = await findByPasswordResetTokenHash(hashPasswordResetToken(rawToken));
+    if (!user) {
+      return res.status(400).json({ error: 'Ссылка восстановления недействительна или устарела' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const updated = await updateUser(user.id, {
+      passwordHash,
+      passwordResetTokenHash: null,
+      passwordResetExpiresAt: null,
+      authProvider: user.authProvider === 'local' ? 'local' : user.authProvider,
+    });
+    if (!updated) {
+      return res.status(500).json({ error: 'Не удалось обновить пароль' });
+    }
+
+    const pub = publicUser(updated);
+    sendPasswordChangedEmail(pub, { locale: localeFromRequest(req) }).catch((mailErr) => {
+      console.error('[mail] password changed after reset failed:', mailErr);
+    });
+
+    res.json({
+      ok: true,
+      message: 'Пароль успешно обновлён. Теперь можно войти',
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Не удалось обновить пароль' });
   }
 });
 

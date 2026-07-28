@@ -28,7 +28,7 @@ import {
 } from './api/auth';
 
 type TopPage = 'home' | 'services' | 'business' | 'about' | 'dashboard' | 'client-dashboard' | 'admin';
-type ClientAuthMode = 'register' | 'login';
+type ClientAuthMode = 'register' | 'login' | 'forgot' | 'reset';
 type ServiceFilter =
   | 'all'
   | 'parcel'
@@ -394,6 +394,7 @@ function App() {
   const [ordersRefresh, setOrdersRefresh] = useState(0);
   const [clientAuthMode, setClientAuthMode] = useState<ClientAuthMode | null>(null);
   const [clientAuthStep, setClientAuthStep] = useState(0);
+  const [clientAuthResetToken, setClientAuthResetToken] = useState('');
   const [corpRegOpen, setCorpRegOpen] = useState(false);
   const [corpRegStep, setCorpRegStep] = useState(0);
   const [regVol, setRegVol] = useState('1000–5000');
@@ -562,6 +563,16 @@ function App() {
     const track = params.get('track');
     const orderToken = params.get('order');
     const cabinet = params.get('cabinet');
+    const reset = params.get('reset');
+
+    if (reset) {
+      setClientAuthResetToken(reset);
+      setClientAuthMode('reset');
+      setClientAuthStep(0);
+      params.delete('reset');
+      const next = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${next ? `?${next}` : ''}`);
+    }
 
     const hasDeepLink = Boolean(track || orderToken || cabinet);
     if (hasDeepLink) {
@@ -632,11 +643,13 @@ function App() {
   const openClientAuth = useCallback((mode: ClientAuthMode) => {
     setClientAuthMode(mode);
     setClientAuthStep(0);
+    if (mode !== 'reset') setClientAuthResetToken('');
   }, []);
 
   const closeClientAuth = useCallback(() => {
     setClientAuthMode(null);
     setClientAuthStep(0);
+    setClientAuthResetToken('');
     if (user) {
       setDashNav({ tab: 'home' });
       setPage('client-dashboard');
@@ -646,6 +659,7 @@ function App() {
   const handleAuthNavigate = useCallback((target: ClientOnboardingTarget) => {
     setClientAuthMode(null);
     setClientAuthStep(0);
+    setClientAuthResetToken('');
     setPage('client-dashboard');
     if (target === 'shipment') {
       setDashNav({ tab: 'home', openCalc: true });
@@ -1294,8 +1308,12 @@ function App() {
         <ClientAuthModal
           mode={clientAuthMode}
           step={clientAuthStep}
+          resetToken={clientAuthResetToken}
           onClose={closeClientAuth}
-          onSwitchMode={setClientAuthMode}
+          onSwitchMode={(next) => {
+            setClientAuthMode(next);
+            if (next !== 'reset') setClientAuthResetToken('');
+          }}
           onStepChange={setClientAuthStep}
           onSuccess={handleAuthSuccess}
           onNavigate={handleAuthNavigate}

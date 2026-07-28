@@ -4918,6 +4918,35 @@ body {
   font-size: 1.2rem;
 }
 
+.client-auth__forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 2px;
+}
+
+.client-auth__forgot {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--lime);
+  text-underline-offset: 3px;
+}
+
+.client-auth__forgot:hover {
+  color: var(--navy);
+}
+
+.client-auth__notice {
+  display: grid;
+  gap: 14px;
+}
+
 .client-auth__submit {
   width: 100%;
   margin-top: 6px;

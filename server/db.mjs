@@ -33,6 +33,8 @@ export function mapUser(row) {
     createdAt: toIso(row.createdAt),
     welcomeDiscountUsed: Boolean(row.welcomeDiscountUsed),
     welcomeDiscountUsedAt: toIso(row.welcomeDiscountUsedAt),
+    passwordResetTokenHash: row.passwordResetTokenHash || null,
+    passwordResetExpiresAt: toIso(row.passwordResetExpiresAt),
   };
 }
 
