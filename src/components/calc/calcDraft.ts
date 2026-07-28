@@ -1,3 +1,12 @@
+function splitPersonName(full: string): { first: string; last: string } {
+  const parts = String(full || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { first: '', last: '' };
+  if (parts.length === 1) return { first: parts[0], last: '' };
+  return { first: parts[0], last: parts.slice(1).join(' ') };
+}
+
+export { splitPersonName };
+
 export type CalcDraftDeliveryMode = 'home' | 'branch' | 'locker';
 export type CalcDraftContentKey = 'documents' | 'clothing' | 'shoes' | 'cosmetics' | 'electronics' | 'gift' | 'other';
 export type CalcDraftValueKey = 'under100' | 'mid' | 'high' | 'over';
@@ -39,12 +48,14 @@ export type CalcDraft = {
   destBranch: string;
   fragile: boolean;
   insurance: boolean;
-  senderName: string;
+  senderFirst: string;
+  senderLast: string;
   senderEmail: string;
   senderDial: string;
   senderPhone: string;
   receiverFirst: string;
   receiverLast: string;
+  receiverEmail: string;
   receiverDial: string;
   receiverPhone: string;
   termsAccepted: boolean;
@@ -150,12 +161,22 @@ function parseDraft(raw: unknown, maxAgeMs: number): CalcDraft | null {
     destBranch: String(raw.destBranch ?? ''),
     fragile: Boolean(raw.fragile),
     insurance: Boolean(raw.insurance),
-    senderName: String(raw.senderName ?? ''),
+    senderFirst: String(
+      raw.senderFirst
+      ?? (typeof raw.senderName === 'string' ? splitPersonName(raw.senderName).first : '')
+      ?? '',
+    ),
+    senderLast: String(
+      raw.senderLast
+      ?? (typeof raw.senderName === 'string' ? splitPersonName(raw.senderName).last : '')
+      ?? '',
+    ),
     senderEmail: String(raw.senderEmail ?? ''),
     senderDial: String(raw.senderDial ?? ''),
     senderPhone: String(raw.senderPhone ?? ''),
     receiverFirst: String(raw.receiverFirst ?? ''),
     receiverLast: String(raw.receiverLast ?? ''),
+    receiverEmail: String(raw.receiverEmail ?? ''),
     receiverDial: String(raw.receiverDial ?? ''),
     receiverPhone: String(raw.receiverPhone ?? ''),
     termsAccepted: Boolean(raw.termsAccepted),

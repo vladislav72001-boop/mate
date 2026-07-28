@@ -97,6 +97,9 @@ export function validateCheckoutBody(body) {
     errors.push('Получатель: укажите имя и фамилию буквами');
   }
 
+  const receiverEmailErr = validateEmail(receiver.email, 'Email получателя');
+  if (receiverEmailErr) errors.push(receiverEmailErr);
+
   const receiverPhoneErr = validatePhone(
     receiver.phone,
     receiver.country || tariff.toCountry || 'PL',

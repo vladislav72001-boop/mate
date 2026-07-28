@@ -65,7 +65,7 @@ import {
   formatRoute,
   type SummaryRow,
 } from './calc/OrderSummary';
-import { loadCalcDraft, clearCalcDraft } from './calc/calcDraft';
+import { loadCalcDraft, clearCalcDraft, splitPersonName } from './calc/calcDraft';
 import { useCalcDraftPersistence } from './calc/useCalcDraft';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
@@ -479,12 +479,17 @@ export function CalcForm({
   const [insurance, setInsurance] = useState(saved?.insurance ?? false);
   const [quoteSettings, setQuoteSettings] = useState<QuoteSettings | null>(null);
 
-  const [senderName, setSenderName] = useState(saved?.senderName || user?.name || '');
+  const savedSenderParts = splitPersonName(saved?.senderFirst
+    ? `${saved.senderFirst} ${saved.senderLast || ''}`.trim()
+    : (saved as { senderName?: string } | null)?.senderName || user?.name || '');
+  const [senderFirst, setSenderFirst] = useState(saved?.senderFirst || savedSenderParts.first);
+  const [senderLast, setSenderLast] = useState(saved?.senderLast || savedSenderParts.last);
   const [senderEmail, setSenderEmail] = useState(saved?.senderEmail || user?.email || '');
   const [senderDial, setSenderDial] = useState(saved?.senderDial ?? (DIAL_BY_CC[PICKUP_COUNTRY] || '+36'));
   const [senderPhone, setSenderPhone] = useState(saved?.senderPhone || user?.phone?.replace(/^\+\d+\s*/, '') || '');
   const [receiverFirst, setReceiverFirst] = useState(saved?.receiverFirst ?? '');
   const [receiverLast, setReceiverLast] = useState(saved?.receiverLast ?? '');
+  const [receiverEmail, setReceiverEmail] = useState(saved?.receiverEmail ?? '');
   const [receiverDial, setReceiverDial] = useState(saved?.receiverDial ?? (DIAL_BY_CC[saved?.toCountry ?? initialTo] || '+49'));
   const [receiverPhone, setReceiverPhone] = useState(saved?.receiverPhone ?? '');
 
@@ -610,7 +615,9 @@ export function CalcForm({
   useEffect(() => {
     if (!user) return;
     if (initialRef.current?.restored && saved?.senderEmail) return;
-    setSenderName(user.name);
+    const parts = splitPersonName(user.name || '');
+    setSenderFirst(parts.first);
+    setSenderLast(parts.last);
     setSenderEmail(user.email);
     if (user.phone) setSenderPhone(user.phone.replace(/^\+\d+\s*/, ''));
   }, [user]);
@@ -662,12 +669,14 @@ export function CalcForm({
     destBranch,
     fragile,
     insurance,
-    senderName,
+    senderFirst,
+    senderLast,
     senderEmail,
     senderDial,
     senderPhone,
     receiverFirst,
     receiverLast,
+    receiverEmail,
     receiverDial,
     receiverPhone,
     termsAccepted,
@@ -705,12 +714,14 @@ export function CalcForm({
     destBranch,
     fragile,
     insurance,
-    senderName,
+    senderFirst,
+    senderLast,
     senderEmail,
     senderDial,
     senderPhone,
     receiverFirst,
     receiverLast,
+    receiverEmail,
     receiverDial,
     receiverPhone,
     termsAccepted,
@@ -1566,12 +1577,12 @@ export function CalcForm({
     },
     { key: 'value', label: t('calc.summaryValue'), value: valueOptions.find((v) => v.key === contentValue)?.label || '—', onEdit: () => goTo(8) },
     { key: 'pays', label: t('calc.summaryPays'), value: payer === 'sender' ? t('calc.payerSender') : t('calc.payerReceiver'), onEdit: () => goTo(8) },
-    { key: 'sender', label: t('calc.summarySender'), value: senderName || pickupLocationObj?.provider || '—', onEdit: () => goTo(5) },
+    { key: 'sender', label: t('calc.summarySender'), value: [senderFirst, senderLast].filter(Boolean).join(' ') || pickupLocationObj?.provider || '—', onEdit: () => goTo(5) },
     { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(6) },
     { key: 'when', label: t('calc.summaryWhen'), value: pickupDate ? `${pickupDate}, ${pickupTime}` : '—' },
   ], [
     t, toCountry, pickupCity, destCity, pickupType, deliveryType, sizeLabel, contents, contentsNote, contentValue, payer,
-    senderName, pickupLocationObj, receiverFirst, receiverLast, destLocationObj, pickupDate, pickupTime,
+    senderFirst, senderLast, pickupLocationObj, receiverFirst, receiverLast, destLocationObj, pickupDate, pickupTime,
     contentLabel, formatDeliveryTypeLocalized, valueOptions,
   ]);
 
@@ -1614,8 +1625,9 @@ export function CalcForm({
       }
     }
     if (step === 5) {
-      const nameErr = validatePersonName(senderName, t('calc.fieldSenderName'));
-      if (nameErr) return nameErr;
+      const firstErr = validatePersonName(senderFirst, t('calc.fieldSenderFirst'));
+      const lastErr = validatePersonName(senderLast, t('calc.fieldSenderLast'));
+      if (firstErr && lastErr) return t('calc.valSenderName');
       const emailErr = validateEmail(senderEmail, t('calc.fieldSenderEmail'));
       if (emailErr) return emailErr;
       const phoneErr = validatePhone(senderDial, senderPhone, countryCodeFromDial(senderDial), t('calc.fieldSenderPhone'));
@@ -1638,6 +1650,8 @@ export function CalcForm({
       const firstErr = validatePersonName(receiverFirst, t('calc.fieldReceiverFirst'));
       const lastErr = validatePersonName(receiverLast, t('calc.fieldReceiverLast'));
       if (firstErr && lastErr) return t('calc.valReceiverName');
+      const emailErr = validateEmail(receiverEmail, t('calc.fieldReceiverEmail'));
+      if (emailErr) return emailErr;
       const phoneErr = validatePhone(receiverDial, receiverPhone, countryCodeFromDial(receiverDial), t('calc.fieldReceiverPhone'));
       if (phoneErr) return phoneErr;
       if (deliveryType === 'home') {
@@ -1659,21 +1673,24 @@ export function CalcForm({
     if (step === 9) {
       if (!termsAccepted) return t('calc.valAcceptTerms');
       if (totalPrice == null) return t('calc.valWaitQuote');
-      const nameErr = validatePersonName(senderName, t('calc.fieldSenderName'));
-      if (nameErr) return nameErr;
+      const firstErr = validatePersonName(senderFirst, t('calc.fieldSenderFirst'));
+      const lastErr = validatePersonName(senderLast, t('calc.fieldSenderLast'));
+      if (firstErr && lastErr) return t('calc.valSenderName');
       const emailErr = validateEmail(senderEmail, t('calc.fieldSenderEmail'));
       if (emailErr) return emailErr;
       const sPhoneErr = validatePhone(senderDial, senderPhone, countryCodeFromDial(senderDial), t('calc.fieldSenderPhone'));
       if (sPhoneErr) return sPhoneErr;
+      const rEmailErr = validateEmail(receiverEmail, t('calc.fieldReceiverEmail'));
+      if (rEmailErr) return rEmailErr;
       const rPhoneErr = validatePhone(receiverDial, receiverPhone, countryCodeFromDial(receiverDial), t('calc.fieldReceiverPhone'));
       if (rPhoneErr) return rPhoneErr;
     }
     return null;
   }, [
     t, step, toCountry, pickupType, deliveryType, sizeKey, customSize, contents, contentsNote, contentValue, payer,
-    senderName, senderEmail, senderDial, senderPhone, pickupStreet, pickupCity, pickupPostal, pickupLocker, pickupBranch,
+    senderFirst, senderLast, senderEmail, senderDial, senderPhone, pickupStreet, pickupCity, pickupPostal, pickupLocker, pickupBranch,
     pickupNeedsAddressRefinement, pickupAddressReady,
-    receiverFirst, receiverLast, receiverDial, receiverPhone, destStreet, destCity, destPostal, destLocker, destBranch,
+    receiverFirst, receiverLast, receiverEmail, receiverDial, receiverPhone, destStreet, destCity, destPostal, destLocker, destBranch,
     destAddressReady, termsAccepted, totalPrice, coverage, pickupQuoteLocation, deliveryQuoteLocation,
   ]);
 
@@ -1733,7 +1750,7 @@ export function CalcForm({
         sender: {
           country: PICKUP_COUNTRY,
           line: pickupLabel,
-          name: senderName,
+          name: [senderFirst, senderLast].filter(Boolean).join(' ').trim(),
           email: payEmail,
           phone: composePhone(senderDial, senderPhone),
         },
@@ -1741,7 +1758,7 @@ export function CalcForm({
           firstName: receiverFirst || 'Recipient',
           lastName: receiverLast || 'Customer',
           phone: composePhone(receiverDial, receiverPhone),
-          email: payEmail,
+          email: receiverEmail.trim().toLowerCase(),
           destinationLine: destLabel,
           country: toCountry,
         },
@@ -2220,15 +2237,27 @@ export function CalcForm({
               {quoteRefreshing && (
                 <p className="calc-form__hint">{t('calc.refiningPrice')}</p>
               )}
-              <div className="field-block">
-                <label>{t('calc.senderName')}</label>
-                <input
-                  name="sender_name"
-                  autoComplete="name"
-                  value={senderName}
-                  onChange={(e) => setSenderName(e.target.value)}
-                  placeholder={t('calc.senderNamePlaceholder')}
-                />
+              <div className="calc-form__grid">
+                <div className="field-block">
+                  <label>{t('calc.senderFirst')}</label>
+                  <input
+                    name="sender_first_name"
+                    autoComplete="given-name"
+                    value={senderFirst}
+                    onChange={(e) => setSenderFirst(e.target.value)}
+                    placeholder={t('calc.senderFirstPlaceholder')}
+                  />
+                </div>
+                <div className="field-block">
+                  <label>{t('calc.senderLast')}</label>
+                  <input
+                    name="sender_last_name"
+                    autoComplete="family-name"
+                    value={senderLast}
+                    onChange={(e) => setSenderLast(e.target.value)}
+                    placeholder={t('calc.senderLastPlaceholder')}
+                  />
+                </div>
               </div>
               <div className="field-block">
                 <label>{t('calc.phone')}</label>
@@ -2407,6 +2436,18 @@ export function CalcForm({
                   defaultCountry={toCountry}
                   autoComplete="shipping tel-national"
                   name="receiver_phone"
+                />
+              </div>
+              <div className="field-block">
+                <label>{t('calc.email')}</label>
+                <input
+                  type="email"
+                  name="receiver_email"
+                  autoComplete="shipping email"
+                  value={receiverEmail}
+                  onChange={(e) => setReceiverEmail(e.target.value)}
+                  placeholder="recipient@email.com"
+                  required
                 />
               </div>
 
