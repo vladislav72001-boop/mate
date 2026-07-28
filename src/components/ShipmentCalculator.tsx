@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import type { AuthUser } from '../api/auth';
 import {
   calculateBatch,
-  calculateFinal,
   checkout,
   confirmPayment,
   computeClientExtras,
@@ -1179,31 +1178,32 @@ export function CalcForm({
 
   const lastExactQuoteKey = useRef<string | null>(null);
 
+  // Stable key for the priced route+parcel. Must match for presets and custom so
+  // step changes (6→7→8→9) never re-quote with a different endpoint.
+  const exactQuoteKey = sizeKey === 'custom'
+    ? `${routeCacheKey}:CUSTOM:${Number(customSize.kg) || 0}:${customSize.l}x${customSize.w}x${customSize.h}`
+    : routeCacheKey;
+
   useEffect(() => {
-    if (!quoteLocationsReady || step < 6 || step >= 9) return;
+    if (!quoteLocationsReady || step < 6 || step > 9) return;
+    // Same inputs already priced — ignore step-only changes (contents → value → pay).
+    if (lastExactQuoteKey.current === exactQuoteKey) return;
 
     if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
 
     if (sizeKey === 'custom') {
       const preset = sizeToPreset(sizeKey, customSize);
-      const customKey = `${routeCacheKey}:CUSTOM:${preset.weightKg}:${preset.lengthCm}x${preset.widthCm}x${preset.heightCm}`;
-      if (lastExactQuoteKey.current === customKey) return;
       quoteDebounce.current = setTimeout(() => {
         void fetchCustomQuote(preset).then(() => {
-          lastExactQuoteKey.current = customKey;
+          lastExactQuoteKey.current = exactQuoteKey;
         });
       }, 120);
-    } else if (lastExactQuoteKey.current === routeCacheKey) {
-      // Same route already quoted — don't refetch just because the step changed (6→7→8).
-      return;
     } else if (applyCachedRouteQuotes()) {
-      lastExactQuoteKey.current = routeCacheKey;
-      return;
+      lastExactQuoteKey.current = exactQuoteKey;
     } else {
-      // Always quote the full size grid with the same params so step changes can't drift.
       quoteDebounce.current = setTimeout(() => {
         void fetchQuoteKeys(STEP3_QUOTE_KEYS).then(() => {
-          lastExactQuoteKey.current = routeCacheKey;
+          lastExactQuoteKey.current = exactQuoteKey;
         });
       }, 80);
     }
@@ -1212,70 +1212,9 @@ export function CalcForm({
       if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
     };
   }, [
-    step, toCountry, declaredValue, sizeKey, quoteDeliveryMode, quotePickupMode,
-    quoteLocationsReady, routeCacheKey,
+    step, exactQuoteKey, sizeKey, quoteLocationsReady,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     applyCachedRouteQuotes, fetchQuoteKeys, fetchCustomQuote,
-  ]);
-
-  // Steps 8–9: one reconcile pass. Skip while the batch quote for this exact route
-  // is already fresh — avoids a second NP/matrix round-trip that can flicker the total.
-  useEffect(() => {
-    if ((step !== 8 && step !== 9) || !quoteLocationsReady) return;
-    // Batch already priced this route; only re-reconcile when value/payer step needs a refresh
-    // after declaredValue change (routeCacheKey differs from lastExactQuoteKey).
-    if (lastExactQuoteKey.current === routeCacheKey) return;
-
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      const preset = sizeToPreset(sizeKey, customSize);
-      setQuoteRefreshing(true);
-      setQuoteWarning(null);
-      try {
-        const data = await calculateFinal({
-          fromCountry: PICKUP_COUNTRY,
-          toCountry,
-          declaredValue,
-          deliveryMode: quoteDeliveryMode,
-          pickupMode: quotePickupMode,
-          pickupLocation: pickupQuoteLocation,
-          deliveryLocation: deliveryQuoteLocation,
-          payerType: quotePayerType,
-          parcel: { boxSize: sizeKey === 'custom' ? 'custom' : apiParcelKey, ...preset },
-        });
-        if (cancelled) return;
-        setCurrency((data.currency || DEFAULT_QUOTE_CURRENCY).toUpperCase());
-        if (sizeKey === 'custom') {
-          setCustomQuote(data.total);
-        } else {
-          setParcelQuotes((prev) => ({ ...prev, [apiParcelKey]: data.total }));
-        }
-        setWelcomeDiscountPercent(data.breakdown?.welcomeDiscountPercent ?? null);
-        setQuotesFromNp(true);
-        lastExactQuoteKey.current = routeCacheKey;
-      } catch {
-        if (cancelled) return;
-        setQuoteWarning(t('calc.quoteNpFail'));
-        if (sizeKey === 'custom') {
-          await fetchCustomQuote(preset);
-        } else {
-          await fetchQuoteKeys([apiParcelKey], [{ boxSize: apiParcelKey, ...preset }]);
-        }
-      } finally {
-        if (!cancelled) setQuoteRefreshing(false);
-      }
-    }, 150);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [
-    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quotePickupMode,
-    pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, quoteLocationsReady, routeCacheKey,
-    customSize.l, customSize.w, customSize.h, customSize.kg,
-    fetchQuoteKeys, fetchCustomQuote,
-    t,
   ]);
 
   useEffect(() => {

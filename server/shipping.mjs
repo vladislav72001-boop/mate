@@ -582,15 +582,13 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           monthlyShipments,
         });
         if (mate.amount != null) {
-          // Same max(matrix net, Nova Post net) as calculate-final (reconcile),
-          // so the price doesn't rise when the user reaches steps 7–8.
-          // Custom weight quotes stay on the matrix ladder so +/- kg never inverts.
+          // Same max(matrix net, Nova Post net) as calculate-final / checkout
+          // (including CUSTOM:… keys), so the sidebar never jumps on later steps.
           const matrixNet = Number(mate.breakdown?.beforeVat ?? mate.breakdown?.cost) || 0;
           let chosenNet = matrixNet;
           let source = 'mate-matrix';
           if (
-            !isCustomQuote
-            && npSource === 'novapost'
+            npSource === 'novapost'
             && npTotal != null
             && Number.isFinite(Number(npTotal))
           ) {
