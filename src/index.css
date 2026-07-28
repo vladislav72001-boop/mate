@@ -7935,6 +7935,14 @@ body {
   letter-spacing: 0.02em;
 }
 
+.calc-form__option-note--soon {
+  color: rgba(18, 32, 35, 0.72);
+}
+
+.calc-form__option.is-soon {
+  opacity: 0.55;
+}
+
 .calc-form__option-icon {
   font-size: 1.2rem;
   line-height: 1;

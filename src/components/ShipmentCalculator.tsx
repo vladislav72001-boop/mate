@@ -255,6 +255,9 @@ async function resolvePreliminaryQuoteLocations(
 const VALUE_KEYS: ValueKey[] = ['under100', 'mid', 'high', 'over'];
 const DELIVERY_MODE_KEYS: DeliveryMode[] = ['home', 'branch', 'locker'];
 
+/** Pickup from locker is not live yet — show the option disabled with "Soon". */
+const PICKUP_FROM_LOCKER_COMING_SOON = true;
+
 const CONTENT_ICONS: Record<ContentKey, string> = {
   documents: '📄',
   clothing: '👕',
@@ -272,13 +275,32 @@ const DELIVERY_MODE_ICONS: Record<DeliveryMode, string> = {
 };
 
 const MODE_ORDER: DeliveryMode[] = ['locker', 'branch', 'home'];
+/** Prefer branch/home for pickup while locker drop-off is coming soon. */
+const PICKUP_MODE_ORDER: DeliveryMode[] = ['branch', 'home', 'locker'];
 
-function firstAvailableMode(side: CoverageSide | null | undefined, preferred?: DeliveryMode): DeliveryMode {
-  if (preferred && side?.[preferred]?.available) return preferred;
-  for (const key of MODE_ORDER) {
+function firstAvailableMode(
+  side: CoverageSide | null | undefined,
+  preferred?: DeliveryMode,
+  order: DeliveryMode[] = MODE_ORDER,
+  excluded: ReadonlyArray<DeliveryMode> = [],
+): DeliveryMode {
+  if (preferred && !excluded.includes(preferred) && side?.[preferred]?.available) {
+    return preferred;
+  }
+  for (const key of order) {
+    if (excluded.includes(key)) continue;
     if (side?.[key]?.available) return key;
   }
-  return 'home';
+  return order.find((k) => !excluded.includes(k)) ?? 'home';
+}
+
+function pickupExcludedModes(): DeliveryMode[] {
+  return PICKUP_FROM_LOCKER_COMING_SOON ? ['locker'] : [];
+}
+
+function normalizePickupMode(mode: DeliveryMode | undefined | null): DeliveryMode {
+  if (!mode || (PICKUP_FROM_LOCKER_COMING_SOON && mode === 'locker')) return 'branch';
+  return mode;
 }
 
 const VALUE_TO_EUR: Record<ValueKey, number> = {
@@ -327,16 +349,20 @@ function clampModeToSize(
   mode: DeliveryMode,
   sizeKey: SizeKey,
   side?: CoverageSide | null,
+  excluded: ReadonlyArray<DeliveryMode> = [],
 ): DeliveryMode {
   const allowed = modesForSize(sizeKey);
   const isOk = (key: DeliveryMode) => (
-    allowed.includes(key) && (!side || side[key]?.available !== false)
+    !excluded.includes(key)
+    && allowed.includes(key)
+    && (!side || side[key]?.available !== false)
   );
   if (isOk(mode)) return mode;
   for (const key of MODE_ORDER) {
     if (isOk(key)) return key;
   }
-  return allowed.includes('home') ? 'home' : (allowed[0] ?? 'home');
+  const fallback = allowed.find((k) => !excluded.includes(k));
+  return fallback ?? (allowed.includes('home') ? 'home' : (allowed[0] ?? 'home'));
 }
 
 /** Map UI size to API boxSize. Custom uses dims+weight — never default to S when custom is missing. */
@@ -424,6 +450,7 @@ function OptionGrid<T extends string>({
   onChange,
   columns = 3,
   disabledKeys,
+  comingSoonKeys,
   hints,
 }: {
   options: Array<{ key: T; label: string; icon?: string }>;
@@ -431,27 +458,33 @@ function OptionGrid<T extends string>({
   onChange: (v: T) => void;
   columns?: 2 | 3;
   disabledKeys?: Partial<Record<T, boolean>>;
+  comingSoonKeys?: Partial<Record<T, boolean>>;
   hints?: Partial<Record<T, string | undefined>>;
 }) {
   const { t } = useI18n();
   return (
     <div className={`calc-form__options calc-form__options--${columns}`}>
       {options.map((opt) => {
-        const disabled = Boolean(disabledKeys?.[opt.key]);
+        const comingSoon = Boolean(comingSoonKeys?.[opt.key]);
+        const disabled = Boolean(disabledKeys?.[opt.key]) || comingSoon;
         const hint = hints?.[opt.key];
         return (
           <button
             key={opt.key}
             type="button"
-            className={`calc-form__option${value === opt.key ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
+            className={`calc-form__option${value === opt.key ? ' active' : ''}${disabled ? ' is-disabled' : ''}${comingSoon ? ' is-soon' : ''}`}
             onClick={() => { if (!disabled) onChange(opt.key); }}
             disabled={disabled}
-            title={disabled ? (hint || t('calc.unavailableInCity')) : undefined}
+            title={disabled ? (hint || (comingSoon ? t('calc.comingSoon') : t('calc.unavailableInCity'))) : undefined}
             aria-disabled={disabled}
           >
             {opt.icon && <span className="calc-form__option-icon">{opt.icon}</span>}
             <span>{opt.label}</span>
-            {disabled && <small className="calc-form__option-note">{t('calc.unavailable')}</small>}
+            {comingSoon ? (
+              <small className="calc-form__option-note calc-form__option-note--soon">{t('calc.comingSoon')}</small>
+            ) : disabled ? (
+              <small className="calc-form__option-note">{t('calc.unavailable')}</small>
+            ) : null}
           </button>
         );
       })}
@@ -483,7 +516,9 @@ export function CalcForm({
   const [quoteWarning, setQuoteWarning] = useState<string | null>(null);
 
   const [toCountry, setToCountry] = useState(saved?.toCountry ?? initialTo);
-  const [pickupType, setPickupType] = useState<DeliveryMode>(saved?.pickupType ?? 'locker');
+  const [pickupType, setPickupType] = useState<DeliveryMode>(
+    normalizePickupMode(saved?.pickupType ?? 'branch'),
+  );
   const [deliveryType, setDeliveryType] = useState<DeliveryMode>(saved?.deliveryType ?? 'locker');
   const [coverage, setCoverage] = useState<{ pickup: CoverageSide; delivery: CoverageSide } | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
@@ -1094,7 +1129,7 @@ export function CalcForm({
 
   // Keep pickup/delivery modes within what the selected size physically allows.
   useEffect(() => {
-    setPickupType((prev) => clampModeToSize(prev, sizeKey, coverage?.pickup));
+    setPickupType((prev) => clampModeToSize(prev, sizeKey, coverage?.pickup, pickupExcludedModes()));
     setDeliveryType((prev) => clampModeToSize(prev, sizeKey, coverage?.delivery));
   }, [sizeKey, coverage]);
 
@@ -1293,7 +1328,12 @@ export function CalcForm({
         toCity: destCity.trim(),
       });
       setCoverage({ pickup: data.pickup, delivery: data.delivery });
-      setPickupType((prev) => clampModeToSize(firstAvailableMode(data.pickup, prev), sizeKey, data.pickup));
+      setPickupType((prev) => clampModeToSize(
+        firstAvailableMode(data.pickup, prev, PICKUP_MODE_ORDER, pickupExcludedModes()),
+        sizeKey,
+        data.pickup,
+        pickupExcludedModes(),
+      ));
       setDeliveryType((prev) => clampModeToSize(firstAvailableMode(data.delivery, prev), sizeKey, data.delivery));
       return data;
     } catch (e) {
@@ -1613,6 +1653,9 @@ export function CalcForm({
     }
     if (step === 4) {
       if (!pickupType || !deliveryType) return t('calc.valSelectModes');
+      if (PICKUP_FROM_LOCKER_COMING_SOON && pickupType === 'locker') {
+        return t('calc.valPickupLockerSoon');
+      }
       const sizeModes = modesForSize(sizeKey);
       if (!sizeModes.includes(pickupType) || !sizeModes.includes(deliveryType)) {
         return t('calc.valSizeMode');
@@ -2069,12 +2112,19 @@ export function CalcForm({
                 value={pickupType}
                 onChange={setPickupType}
                 disabledKeys={{
-                  locker: !sizeAllowedModes.includes('locker') || (coverage ? !coverage.pickup.locker.available : false),
+                  locker: PICKUP_FROM_LOCKER_COMING_SOON
+                    || !sizeAllowedModes.includes('locker')
+                    || (coverage ? !coverage.pickup.locker.available : false),
                   branch: !sizeAllowedModes.includes('branch') || (coverage ? !coverage.pickup.branch.available : false),
                   home: !sizeAllowedModes.includes('home'),
                 }}
+                comingSoonKeys={{
+                  locker: PICKUP_FROM_LOCKER_COMING_SOON,
+                }}
                 hints={{
-                  locker: modeHint(coverage?.pickup, 'locker'),
+                  locker: PICKUP_FROM_LOCKER_COMING_SOON
+                    ? t('calc.pickupLockerSoonHint')
+                    : modeHint(coverage?.pickup, 'locker'),
                   branch: modeHint(coverage?.pickup, 'branch'),
                   home: modeHint(coverage?.pickup, 'home'),
                 }}
