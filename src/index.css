@@ -7924,7 +7924,7 @@ body {
   align-items: center;
   justify-content: flex-start;
   gap: 4px;
-  min-height: 112px;
+  min-height: 132px;
   padding: 14px 10px 12px;
   border: 1.5px solid rgba(18, 32, 35, 0.1);
   border-radius: 16px;
@@ -8012,6 +8012,35 @@ body {
   line-height: 1.2;
 }
 
+.calc-form__size-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.calc-form__size--wide .calc-form__size-modes {
+  justify-content: flex-start;
+}
+
+.calc-form__size-mode {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: #eef1ea;
+  color: #5a5f58;
+  line-height: 1.2;
+}
+
+.calc-form__size.active .calc-form__size-mode {
+  background: rgba(18, 32, 35, 0.08);
+}
+
 .calc-form__size em {
   font-style: normal;
   font-weight: var(--fw-bold);
@@ -8046,8 +8075,54 @@ body {
 .calc-custom-dims {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
   margin: 10px 0 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid rgba(18, 32, 35, 0.08);
+}
+
+.calc-custom-dims__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.calc-custom-dims__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(18, 32, 35, 0.62);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.calc-custom-dims__field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1.5px solid rgba(18, 32, 35, 0.12);
+  border-radius: 12px;
+  background: #f7f8f5;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.calc-custom-dims__field input:focus {
+  outline: none;
+  border-color: var(--navy);
+  background: #fff;
+}
+
+.calc-custom-dims__note {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(18, 32, 35, 0.55);
 }
 
 .calc-weight-slider {

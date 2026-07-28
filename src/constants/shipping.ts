@@ -5,20 +5,38 @@ import {
   getCountryCallingCode,
 } from 'libphonenumber-js';
 
-export type ParcelKey = 'S' | 'M' | 'L' | 'XL';
+export type ParcelKey = 'XS' | 'S' | 'M' | 'L' | 'XL';
 
 export const PICKUP_COUNTRY = 'HU';
 
+/** Unified size grid (strictest limits across DPD / GLS / Packeta / FoxPost). */
 export const PARCEL_PRESETS: Record<ParcelKey, {
   lengthCm: number;
   widthCm: number;
   heightCm: number;
   weightKg: number;
 }> = {
-  S: { lengthCm: 9, widthCm: 38, heightCm: 64, weightKg: 5 },
-  M: { lengthCm: 19, widthCm: 38, heightCm: 64, weightKg: 10 },
-  L: { lengthCm: 39, widthCm: 38, heightCm: 64, weightKg: 20 },
-  XL: { lengthCm: 150, widthCm: 50, heightCm: 25, weightKg: 30 },
+  XS: { lengthCm: 5, widthCm: 35, heightCm: 50, weightKg: 2 },
+  S: { lengthCm: 12, widthCm: 36, heightCm: 57, weightKg: 5 },
+  M: { lengthCm: 20, widthCm: 36, heightCm: 60, weightKg: 10 },
+  L: { lengthCm: 38, widthCm: 36, heightCm: 60, weightKg: 20 },
+  XL: { lengthCm: 60, widthCm: 40, heightCm: 60, weightKg: 31 },
+};
+
+/** Delivery modes allowed for each tariff (locker = postamat). */
+export const SIZE_ALLOWED_MODES: Record<ParcelKey | 'custom', ReadonlyArray<'locker' | 'branch' | 'home'>> = {
+  XS: ['locker', 'branch', 'home'],
+  S: ['locker', 'branch', 'home'],
+  M: ['locker', 'branch', 'home'],
+  L: ['branch', 'home'],
+  XL: ['home'],
+  custom: ['home'],
+};
+
+export const NONSTANDARD_LIMITS = {
+  maxLengthCm: 175,
+  maxWeightKg: 31,
+  minSideCm: [5, 15, 15] as const,
 };
 
 export const COUNTRIES = [

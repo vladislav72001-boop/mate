@@ -1,8 +1,11 @@
 const PARCEL_LIMITS_BY_TIER = {
-  S: { maxLongestCm: 64, maxGirthCm: 200, maxWeightKg: 5 },
-  M: { maxLongestCm: 64, maxGirthCm: 220, maxWeightKg: 10 },
-  L: { maxLongestCm: 64, maxGirthCm: 240, maxWeightKg: 20 },
-  XL: { maxLongestCm: 150, maxGirthCm: 300, maxWeightKg: 30 },
+  XS: { maxLongestCm: 50, maxGirthCm: 180, maxWeightKg: 2 },
+  S: { maxLongestCm: 60, maxGirthCm: 200, maxWeightKg: 5 },
+  M: { maxLongestCm: 60, maxGirthCm: 220, maxWeightKg: 10 },
+  L: { maxLongestCm: 60, maxGirthCm: 240, maxWeightKg: 20 },
+  XL: { maxLongestCm: 60, maxGirthCm: 300, maxWeightKg: 31 },
+  // Non-standard / long items — courier only, priced by entered dims
+  CUSTOM: { maxLongestCm: 175, maxGirthCm: 300, maxWeightKg: 31 },
 };
 
 export function sortedSidesCm(lengthCm, widthCm, heightCm) {
@@ -30,7 +33,7 @@ export function validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits) 
 }
 
 export function inferParcelTier(lengthCm, widthCm, heightCm, weightKg) {
-  for (const tier of ['S', 'M', 'L', 'XL']) {
+  for (const tier of ['XS', 'S', 'M', 'L', 'XL']) {
     const limits = PARCEL_LIMITS_BY_TIER[tier];
     if (
       validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits) === null &&
@@ -39,15 +42,21 @@ export function inferParcelTier(lengthCm, widthCm, heightCm, weightKg) {
       return tier;
     }
   }
+  if (
+    validateParcelDimensionsCm(lengthCm, widthCm, heightCm, PARCEL_LIMITS_BY_TIER.CUSTOM) === null
+    && weightKg <= PARCEL_LIMITS_BY_TIER.CUSTOM.maxWeightKg
+  ) {
+    return 'custom';
+  }
   return 'custom';
 }
 
 export function resolveParcelLimits(lengthCm, widthCm, heightCm, weightKg, boxSize) {
-  const tier = String(boxSize || '').toUpperCase();
+  const tier = String(boxSize || '').toUpperCase().replace(/^CUSTOM:.*/, 'CUSTOM');
   const inferred = inferParcelTier(lengthCm, widthCm, heightCm, weightKg);
   const inferredLimits = inferred !== 'custom'
     ? PARCEL_LIMITS_BY_TIER[inferred]
-    : PARCEL_LIMITS_BY_TIER.XL;
+    : PARCEL_LIMITS_BY_TIER.CUSTOM;
 
   // Prefer explicit tier only when the parcel actually fits it (avoids S + 20 kg false rejects).
   if (tier in PARCEL_LIMITS_BY_TIER) {

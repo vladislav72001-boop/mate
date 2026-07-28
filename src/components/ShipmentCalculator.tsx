@@ -24,9 +24,11 @@ import {
 import {
   DIAL_BY_CC,
   DEFAULT_QUOTE_CURRENCY,
+  NONSTANDARD_LIMITS,
   PARCEL_PRESETS,
   PICKUP_COUNTRY,
   PICKUP_TIMES,
+  SIZE_ALLOWED_MODES,
   formatQuoteMoney,
   composePhone,
   validateEmail,
@@ -86,9 +88,9 @@ type ContentKey = 'documents' | 'clothing' | 'shoes' | 'cosmetics' | 'electronic
 type ValueKey = 'under100' | 'mid' | 'high' | 'over';
 type SizeKey = 'envelope' | ParcelKey | 'XXL' | 'custom';
 
-const PARCEL_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL'];
+const PARCEL_KEYS: ParcelKey[] = ['XS', 'S', 'M', 'L', 'XL'];
 /** Live quotes for all selectable parcel sizes. */
-const STEP3_QUOTE_KEYS: ParcelKey[] = ['S', 'M', 'L', 'XL'];
+const STEP3_QUOTE_KEYS: ParcelKey[] = ['XS', 'S', 'M', 'L', 'XL'];
 const STEP_SUMMARY_KEYS: Record<number, string[]> = {
   1: ['from'],
   2: ['from', 'cities'],
@@ -105,86 +107,21 @@ const TOTAL_STEPS = 9;
 
 const ENVELOPE_PRESET = { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.5 };
 
-/** Preset sizes + custom dims. XXL removed — max tier is XL (30 kg). */
-const SIZE_OPTION_KEYS: Array<'S' | 'M' | 'L' | 'XL' | 'custom'> = ['S', 'M', 'L', 'XL', 'custom'];
-const MAX_CUSTOM_WEIGHT_KG = 31;
-const CUSTOM_WEIGHT_MIN_KG = 0.1;
-
-const CUSTOM_WEIGHT_TIERS = [
-  {
-    key: 'XS',
-    maxKg: 2,
-    dims: { lengthCm: 50, widthCm: 35, heightCm: 5 },
-    title: { ru: 'XS · до 2 кг', en: 'XS · up to 2 kg', hu: 'XS · 2 kg-ig', uk: 'XS · до 2 кг' },
-    desc: {
-      ru: 'Украшения, косметика, документы, добавки',
-      en: 'Jewelry, cosmetics, documents, supplements',
-      hu: 'Ekszerek, kozmetikumok, dokumentumok, étrend-kiegészítők',
-      uk: 'Прикраси, косметика, документи, добавки',
-    },
-    dimsLabel: {
-      ru: 'до 5 × 35 × 50 см · доступны все способы доставки',
-      en: 'up to 5 × 35 × 50 cm · all delivery methods available',
-      hu: 'max. 5 × 35 × 50 cm · minden kézbesítési mód elérhető',
-      uk: 'до 5 × 35 × 50 см · доступні всі способи доставки',
-    },
-  },
-  {
-    key: 'S',
-    maxKg: 5,
-    dims: { ...PARCEL_PRESETS.S },
-    title: { ru: 'S · 5 кг', en: 'S · 5 kg', hu: 'S · 5 kg', uk: 'S · 5 кг' },
-    desc: {
-      ru: 'Повседневные вещи, обувь, аксессуары, небольшие коробки',
-      en: 'Everyday items, shoes, accessories, small boxes',
-      hu: 'Mindennapi holmik, cipők, kiegészítők, kisebb dobozok',
-      uk: 'Повсякденні речі, взуття, аксесуари, невеликі коробки',
-    },
-  },
-  {
-    key: 'M',
-    maxKg: 10,
-    dims: { ...PARCEL_PRESETS.M },
-    title: { ru: 'M · 10 кг', en: 'M · 10 kg', hu: 'M · 10 kg', uk: 'M · 10 кг' },
-    desc: {
-      ru: 'Одежда, бытовые товары, наборы косметики, техника',
-      en: 'Clothes, household goods, cosmetic sets, electronics',
-      hu: 'Ruhák, háztartási cikkek, kozmetikai csomagok, elektronika',
-      uk: 'Одяг, побутові товари, набори косметики, техніка',
-    },
-  },
-  {
-    key: 'L',
-    maxKg: 20,
-    dims: { ...PARCEL_PRESETS.L },
-    title: { ru: 'L · 20 кг', en: 'L · 20 kg', hu: 'L · 20 kg', uk: 'L · 20 кг' },
-    desc: {
-      ru: 'Крупные заказы, несколько коробок вещей, объёмные отправления',
-      en: 'Larger orders, multiple boxes, bulky shipments',
-      hu: 'Nagyobb rendelések, több doboz holmi, terjedelmes küldemények',
-      uk: 'Великі замовлення, кілька коробок речей, об’ємні відправлення',
-    },
-  },
-  {
-    key: 'XL',
-    maxKg: 31,
-    dims: { lengthCm: 150, widthCm: 50, heightCm: 25, weightKg: 31 },
-    title: { ru: 'XL · до 31 кг', en: 'XL · up to 31 kg', hu: 'XL · 31 kg-ig', uk: 'XL · до 31 кг' },
-    desc: {
-      ru: 'Крупногабаритные посылки и тяжёлые отправления',
-      en: 'Oversized parcels and heavy shipments',
-      hu: 'Túlméretes csomagok és nehéz küldemények',
-      uk: 'Великогабаритні посилки та важкі відправлення',
-    },
-  },
-] as const;
+/** Preset sizes + non-standard (priced by entered dims). */
+const SIZE_OPTION_KEYS: Array<ParcelKey | 'custom'> = ['XS', 'S', 'M', 'L', 'XL', 'custom'];
+const MAX_CUSTOM_WEIGHT_KG = NONSTANDARD_LIMITS.maxWeightKg;
+const MAX_CUSTOM_LENGTH_CM = NONSTANDARD_LIMITS.maxLengthCm;
+const DEFAULT_CUSTOM_SIZE = { l: '120', w: '40', h: '40', kg: '10' };
 
 const SIZE_ICONS: Record<ParcelKey, string> = {
+  XS: '✉️',
   S: '📦',
   M: '📦',
-  L: '📦',
-  XL: '🗄️',
+  L: '🗃',
+  XL: '📥',
 };
+
+const MODE_CHIP_ORDER: DeliveryMode[] = ['locker', 'branch', 'home'];
 
 const CONTENT_KEYS: ContentKey[] = ['documents', 'clothing', 'shoes', 'cosmetics', 'electronics', 'gift', 'other'];
 
@@ -320,12 +257,13 @@ function tomorrowIso() {
   return d.toISOString().slice(0, 10);
 }
 
-/** Nova Post tier limits — keep in sync with server/novapost/parcel.mjs */
+/** Tier limits — keep in sync with server/novapost/parcel.mjs */
 const PARCEL_LIMITS: Record<ParcelKey, { maxLongestCm: number; maxGirthCm: number; maxWeightKg: number }> = {
-  S: { maxLongestCm: 64, maxGirthCm: 200, maxWeightKg: 5 },
-  M: { maxLongestCm: 64, maxGirthCm: 220, maxWeightKg: 10 },
-  L: { maxLongestCm: 64, maxGirthCm: 240, maxWeightKg: 20 },
-  XL: { maxLongestCm: 150, maxGirthCm: 300, maxWeightKg: 30 },
+  XS: { maxLongestCm: 50, maxGirthCm: 180, maxWeightKg: 2 },
+  S: { maxLongestCm: 60, maxGirthCm: 200, maxWeightKg: 5 },
+  M: { maxLongestCm: 60, maxGirthCm: 220, maxWeightKg: 10 },
+  L: { maxLongestCm: 60, maxGirthCm: 240, maxWeightKg: 20 },
+  XL: { maxLongestCm: 60, maxGirthCm: 300, maxWeightKg: 31 },
 };
 
 function sortedSidesCm(l: number, w: number, h: number) {
@@ -341,12 +279,35 @@ function fitsParcelTier(lengthCm: number, widthCm: number, heightCm: number, wei
     && girth <= limits.maxGirthCm;
 }
 
+function modesForSize(sizeKey: SizeKey): ReadonlyArray<DeliveryMode> {
+  if (sizeKey === 'envelope') return SIZE_ALLOWED_MODES.S;
+  if (sizeKey === 'XXL') return SIZE_ALLOWED_MODES.XL;
+  if (sizeKey === 'custom') return SIZE_ALLOWED_MODES.custom;
+  return SIZE_ALLOWED_MODES[sizeKey] ?? SIZE_ALLOWED_MODES.M;
+}
+
+function clampModeToSize(
+  mode: DeliveryMode,
+  sizeKey: SizeKey,
+  side?: CoverageSide | null,
+): DeliveryMode {
+  const allowed = modesForSize(sizeKey);
+  const isOk = (key: DeliveryMode) => (
+    allowed.includes(key) && (!side || side[key]?.available !== false)
+  );
+  if (isOk(mode)) return mode;
+  for (const key of MODE_ORDER) {
+    if (isOk(key)) return key;
+  }
+  return allowed.includes('home') ? 'home' : (allowed[0] ?? 'home');
+}
+
 /** Map UI size to API boxSize. Custom uses dims+weight — never default to S when custom is missing. */
 function sizeToApiKey(
   sizeKey: SizeKey,
   custom?: { l: string; w: string; h: string; kg: string },
 ): ParcelKey {
-  if (sizeKey === 'envelope') return 'S';
+  if (sizeKey === 'envelope') return 'XS';
   if (sizeKey === 'XXL') return 'XL';
   if (sizeKey === 'custom') {
     const lengthCm = Math.max(1, Number(custom?.l) || 30);
@@ -361,25 +322,10 @@ function sizeToApiKey(
   return sizeKey;
 }
 
-function customTierByWeight(weightKg: number) {
-  return CUSTOM_WEIGHT_TIERS.find((tier) => weightKg <= tier.maxKg) ?? CUSTOM_WEIGHT_TIERS[CUSTOM_WEIGHT_TIERS.length - 1];
-}
-
-function buildCustomSizeFromWeight(weightKg: number) {
-  const safeWeight = Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(CUSTOM_WEIGHT_MIN_KG, weightKg || CUSTOM_WEIGHT_MIN_KG));
-  const tier = customTierByWeight(safeWeight);
-  return {
-    l: String(tier.dims.lengthCm),
-    w: String(tier.dims.widthCm),
-    h: String(tier.dims.heightCm),
-    kg: String(Math.round(safeWeight * 10) / 10),
-  };
-}
-
 function normalizeSizeKey(sizeKey: SizeKey): SizeKey {
-  if (sizeKey === 'envelope') return 'S';
+  if (sizeKey === 'envelope') return 'XS';
   if (sizeKey === 'XXL') return 'XL';
-  if (SIZE_OPTION_KEYS.includes(sizeKey)) return sizeKey;
+  if (SIZE_OPTION_KEYS.includes(sizeKey as ParcelKey | 'custom')) return sizeKey;
   return 'M';
 }
 
@@ -499,7 +445,7 @@ export function CalcForm({
   const [sizeKey, setSizeKey] = useState<SizeKey>(() => (
     normalizeSizeKey((saved?.sizeKey as SizeKey) ?? 'M')
   ));
-  const [customSize, setCustomSize] = useState(saved?.customSize ?? { l: '30', w: '20', h: '15', kg: '2' });
+  const [customSize, setCustomSize] = useState(saved?.customSize ?? DEFAULT_CUSTOM_SIZE);
   const [contents, setContents] = useState<ContentKey>(saved?.contents ?? 'gift');
   const [contentsNote, setContentsNote] = useState(saved?.contentsNote ?? '');
   const [contentValue, setContentValue] = useState<ValueKey>(saved?.contentValue ?? 'under100');
@@ -1083,22 +1029,11 @@ export function CalcForm({
     applyCachedPreliminaryQuotes, fetchQuoteKeys,
   ]);
 
-  // Keep custom L/W/H in sync with weight tier (dims are auto, not user-edited).
+  // Keep pickup/delivery modes within what the selected size physically allows.
   useEffect(() => {
-    if (sizeKey !== 'custom') return;
-    const weightKg = Math.min(
-      MAX_CUSTOM_WEIGHT_KG,
-      Math.max(CUSTOM_WEIGHT_MIN_KG, Number(customSize.kg) || CUSTOM_WEIGHT_MIN_KG),
-    );
-    const synced = buildCustomSizeFromWeight(weightKg);
-    if (
-      customSize.l === synced.l
-      && customSize.w === synced.w
-      && customSize.h === synced.h
-      && customSize.kg === synced.kg
-    ) return;
-    setCustomSize(synced);
-  }, [sizeKey, customSize.l, customSize.w, customSize.h, customSize.kg]);
+    setPickupType((prev) => clampModeToSize(prev, sizeKey, coverage?.pickup));
+    setDeliveryType((prev) => clampModeToSize(prev, sizeKey, coverage?.delivery));
+  }, [sizeKey, coverage]);
 
   useEffect(() => {
     if (sizeKey !== 'custom') {
@@ -1107,11 +1042,16 @@ export function CalcForm({
     }
     if (step < 3 || step > 9) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
-    if (!customSize.kg) {
+    if (!customSize.l || !customSize.w || !customSize.h || !customSize.kg) {
       setCustomQuote(null);
       return;
     }
     if (Number(customSize.kg) > MAX_CUSTOM_WEIGHT_KG) {
+      setCustomQuote(null);
+      return;
+    }
+    const longest = Math.max(Number(customSize.l) || 0, Number(customSize.w) || 0, Number(customSize.h) || 0);
+    if (longest > MAX_CUSTOM_LENGTH_CM) {
       setCustomQuote(null);
       return;
     }
@@ -1161,42 +1101,54 @@ export function CalcForm({
     fetchCustomQuote,
   ]);
 
+  const lastExactQuoteKey = useRef<string | null>(null);
+
   useEffect(() => {
     if (!quoteLocationsReady || step < 6 || step >= 9) return;
 
     if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
+
     if (sizeKey === 'custom') {
-      // Never reuse preset-size route cache for custom weight/dims.
       const preset = sizeToPreset(sizeKey, customSize);
+      const customKey = `${routeCacheKey}:CUSTOM:${preset.weightKg}:${preset.lengthCm}x${preset.widthCm}x${preset.heightCm}`;
+      if (lastExactQuoteKey.current === customKey) return;
       quoteDebounce.current = setTimeout(() => {
-        void fetchCustomQuote(preset);
+        void fetchCustomQuote(preset).then(() => {
+          lastExactQuoteKey.current = customKey;
+        });
       }, 120);
-    } else if (applyCachedRouteQuotes()) {
+    } else if (lastExactQuoteKey.current === routeCacheKey) {
+      // Same route already quoted — don't refetch just because the step changed (6→7→8).
       return;
-    } else if (step <= 6) {
-      quoteDebounce.current = setTimeout(() => { void fetchQuoteKeys(STEP3_QUOTE_KEYS); }, 80);
+    } else if (applyCachedRouteQuotes()) {
+      lastExactQuoteKey.current = routeCacheKey;
+      return;
     } else {
-      const preset = sizeToPreset(sizeKey, customSize);
+      // Always quote the full size grid with the same params so step changes can't drift.
       quoteDebounce.current = setTimeout(() => {
-        void fetchQuoteKeys([apiParcelKey], [{ boxSize: apiParcelKey, ...preset }]);
-      }, 120);
+        void fetchQuoteKeys(STEP3_QUOTE_KEYS).then(() => {
+          lastExactQuoteKey.current = routeCacheKey;
+        });
+      }, 80);
     }
 
     return () => {
       if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
     };
   }, [
-    step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quotePickupMode,
-    quoteLocationsReady,
+    step, toCountry, declaredValue, sizeKey, quoteDeliveryMode, quotePickupMode,
+    quoteLocationsReady, routeCacheKey,
     customSize.l, customSize.w, customSize.h, customSize.kg,
-    fragile, insurance,
     applyCachedRouteQuotes, fetchQuoteKeys, fetchCustomQuote,
-    pickupType, deliveryType,
   ]);
 
-  // Steps 8–9: reconcile exact endpoint quote after payer/value selection.
+  // Steps 8–9: one reconcile pass. Skip while the batch quote for this exact route
+  // is already fresh — avoids a second NP/matrix round-trip that can flicker the total.
   useEffect(() => {
     if ((step !== 8 && step !== 9) || !quoteLocationsReady) return;
+    // Batch already priced this route; only re-reconcile when value/payer step needs a refresh
+    // after declaredValue change (routeCacheKey differs from lastExactQuoteKey).
+    if (lastExactQuoteKey.current === routeCacheKey) return;
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -1213,7 +1165,7 @@ export function CalcForm({
           pickupLocation: pickupQuoteLocation,
           deliveryLocation: deliveryQuoteLocation,
           payerType: quotePayerType,
-          parcel: { boxSize: apiParcelKey, ...preset },
+          parcel: { boxSize: sizeKey === 'custom' ? 'custom' : apiParcelKey, ...preset },
         });
         if (cancelled) return;
         setCurrency((data.currency || DEFAULT_QUOTE_CURRENCY).toUpperCase());
@@ -1224,6 +1176,7 @@ export function CalcForm({
         }
         setWelcomeDiscountPercent(data.breakdown?.welcomeDiscountPercent ?? null);
         setQuotesFromNp(true);
+        lastExactQuoteKey.current = routeCacheKey;
       } catch {
         if (cancelled) return;
         setQuoteWarning(t('calc.quoteNpFail'));
@@ -1243,7 +1196,7 @@ export function CalcForm({
     };
   }, [
     step, toCountry, declaredValue, apiParcelKey, sizeKey, quoteDeliveryMode, quotePickupMode,
-    pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, quoteLocationsReady,
+    pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, quoteLocationsReady, routeCacheKey,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     fetchQuoteKeys, fetchCustomQuote,
     t,
@@ -1255,6 +1208,7 @@ export function CalcForm({
       setQuotesFromNp(false);
       setParcelQuotes({});
       setCustomQuote(null);
+      lastExactQuoteKey.current = null;
     }
     prevRouteKey.current = preliminaryRouteKey;
   }, [preliminaryRouteKey]);
@@ -1324,8 +1278,8 @@ export function CalcForm({
         toCity: destCity.trim(),
       });
       setCoverage({ pickup: data.pickup, delivery: data.delivery });
-      setPickupType((prev) => firstAvailableMode(data.pickup, prev));
-      setDeliveryType((prev) => firstAvailableMode(data.delivery, prev));
+      setPickupType((prev) => clampModeToSize(firstAvailableMode(data.pickup, prev), sizeKey, data.pickup));
+      setDeliveryType((prev) => clampModeToSize(firstAvailableMode(data.delivery, prev), sizeKey, data.delivery));
       return data;
     } catch (e) {
       setCoverageError(e instanceof Error ? e.message : t('calc.coverageCheckFail'));
@@ -1334,7 +1288,7 @@ export function CalcForm({
     } finally {
       setCoverageLoading(false);
     }
-  }, [pickupCity, destCity, toCountry]);
+  }, [pickupCity, destCity, toCountry, sizeKey, t]);
 
   // Reset live points when cities change
   useEffect(() => {
@@ -1634,16 +1588,26 @@ export function CalcForm({
       if (!destCity.trim()) return t('calc.valDestCity');
     }
     if (step === 3) {
-      if (!SIZE_OPTION_KEYS.includes(sizeKey)) return t('calc.valSelectSize');
+      if (!SIZE_OPTION_KEYS.includes(sizeKey as ParcelKey | 'custom')) return t('calc.valSelectSize');
       if (sizeKey === 'custom') {
-        if (!customSize.kg) {
+        if (!customSize.l || !customSize.w || !customSize.h || !customSize.kg) {
           return t('calc.valCustomSize');
         }
-        if (Number(customSize.kg) > MAX_CUSTOM_WEIGHT_KG) return t('calc.valMaxWeight');
+        const l = Number(customSize.l);
+        const w = Number(customSize.w);
+        const h = Number(customSize.h);
+        const kg = Number(customSize.kg);
+        if (![l, w, h, kg].every((n) => Number.isFinite(n) && n > 0)) return t('calc.valCustomSize');
+        if (kg > MAX_CUSTOM_WEIGHT_KG) return t('calc.valMaxWeight');
+        if (Math.max(l, w, h) > MAX_CUSTOM_LENGTH_CM) return t('calc.valMaxLength');
       }
     }
     if (step === 4) {
       if (!pickupType || !deliveryType) return t('calc.valSelectModes');
+      const sizeModes = modesForSize(sizeKey);
+      if (!sizeModes.includes(pickupType) || !sizeModes.includes(deliveryType)) {
+        return t('calc.valSizeMode');
+      }
       if (coverage) {
         if (!coverage.pickup[pickupType]?.available) return t('calc.valPickupMode');
         if (!coverage.delivery[deliveryType]?.available) return t('calc.valDeliveryMode');
@@ -1782,12 +1746,12 @@ export function CalcForm({
           country: toCountry,
         },
         parcel: {
-          boxSize,
+          boxSize: sizeKey === 'custom' ? 'custom' : boxSize,
           ...preset,
           declaredValue: declaredForNp,
           description: contents === 'other' && contentsNote.trim()
-            ? `Parcel ${boxSize} — ${t('calc.otherFmt', { note: contentsNote.trim() })}`
-            : `Parcel ${boxSize} — ${contentLabel(contents, contentsNote)}`,
+            ? `Parcel ${sizeKey === 'custom' ? 'custom' : boxSize} — ${t('calc.otherFmt', { note: contentsNote.trim() })}`
+            : `Parcel ${sizeKey === 'custom' ? 'custom' : boxSize} — ${contentLabel(contents, contentsNote)}`,
           fragile,
           insurance,
           insuredValueEur: declaredValue,
@@ -1896,21 +1860,29 @@ export function CalcForm({
     9: { title: t('calc.step9Title'), sub: t('calc.step9Sub') },
   }), [t]);
 
+  const sizeAllowedModes = useMemo(() => modesForSize(sizeKey), [sizeKey]);
+
   const deliveryModes = useMemo(() => DELIVERY_MODE_KEYS.map((key) => ({
     key,
     label: t(`calc.mode${key === 'home' ? 'Home' : key === 'branch' ? 'Branch' : 'Locker'}`),
     icon: DELIVERY_MODE_ICONS[key],
   })), [t]);
 
+  const modeChipLabel = useCallback((key: DeliveryMode) => (
+    t(`calc.mode${key === 'home' ? 'HomeShort' : key === 'branch' ? 'BranchShort' : 'LockerShort'}`)
+  ), [t]);
+
   const sizeOptions = useMemo(() => (
     SIZE_OPTION_KEYS.map((key) => {
+      const allowed = key === 'custom' ? SIZE_ALLOWED_MODES.custom : SIZE_ALLOWED_MODES[key];
       if (key === 'custom') {
         return {
           key,
           label: t('calc.sizeCustom'),
           icon: '📐',
-          dims: t('calc.sizeCustomDesc'),
+          dims: t('calc.sizeNonstandardDims', { kg: MAX_CUSTOM_WEIGHT_KG, cm: MAX_CUSTOM_LENGTH_CM }),
           weight: null as string | null,
+          modes: allowed,
         };
       }
       const p = PARCEL_PRESETS[key];
@@ -1920,52 +1892,18 @@ export function CalcForm({
         icon: SIZE_ICONS[key],
         dims: t('calc.sizeDimsFmt', { l: p.lengthCm, w: p.widthCm, h: p.heightCm }),
         weight: t('calc.sizeWeightFmt', { kg: p.weightKg }),
+        modes: allowed,
       };
     })
   ), [t]);
 
-  const customWeightValue = Math.min(MAX_CUSTOM_WEIGHT_KG, Math.max(CUSTOM_WEIGHT_MIN_KG, Number(customSize.kg) || CUSTOM_WEIGHT_MIN_KG));
-  const activeCustomTier = customTierByWeight(customWeightValue);
-  const activeCustomTierIndex = CUSTOM_WEIGHT_TIERS.findIndex((tier) => tier.key === activeCustomTier.key);
-  const nextCustomTier = activeCustomTierIndex >= 0 ? CUSTOM_WEIGHT_TIERS[activeCustomTierIndex + 1] : undefined;
-  const customHeroTitle = locale === 'en'
-    ? 'How much does it weigh?'
-    : locale === 'hu'
-      ? 'Mennyit nyom?'
-      : locale === 'uk'
-        ? 'Скільки важить?'
-        : 'Сколько весит?';
-  const customHeroSubtitle = locale === 'en'
-    ? 'Move the slider and we will pick the tariff'
-    : locale === 'hu'
-      ? 'Mozgassa a csúszkát, és kiválasztjuk a tarifát'
-      : locale === 'uk'
-        ? 'Рухайте повзунок, і ми підберемо тариф'
-        : 'Двигайте ползунок — тариф подберётся сам';
-  const customCurrentPrice = customQuote ?? (
-    activeCustomTier.key === 'XS'
-      ? estimateParcelPrice({
-        lengthCm: activeCustomTier.dims.lengthCm,
-        widthCm: activeCustomTier.dims.widthCm,
-        heightCm: activeCustomTier.dims.heightCm,
-        weightKg: Math.min(activeCustomTier.maxKg, customWeightValue),
-      }, currency)
-      : parcelQuotes[activeCustomTier.key as ParcelKey] ?? null
-  );
-  const nextTierQuote = nextCustomTier
-    ? (nextCustomTier.key === 'XS'
-      ? customCurrentPrice
-      : parcelQuotes[nextCustomTier.key as ParcelKey] ?? null)
-    : null;
-  const nextTierHint = nextCustomTier
-    ? (locale === 'en'
-      ? `You are in the best-priced tariff. The next one starts from ${(activeCustomTier.maxKg + 0.1).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg and costs ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'more'}.`
-      : locale === 'hu'
-        ? `Most a legkedvezőbb díjszabásban van. A következő ${(activeCustomTier.maxKg + 0.1).toLocaleString('hu-HU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg-tól indul és ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'többe kerül'}.`
-        : locale === 'uk'
-          ? `Зараз у вас найдешевший тариф. Наступний почнеться з ${(activeCustomTier.maxKg + 0.1).toLocaleString('uk-UA', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} кг і коштуватиме ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'дорожче'}.`
-          : `Вы в самом дешёвом тарифе. Следующий начнётся с ${(activeCustomTier.maxKg + 0.1).toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} кг и будет стоить ${nextTierQuote != null ? formatMoney(nextTierQuote) : 'дороже'}.`)
-    : null;
+  const modeHint = useCallback((side: CoverageSide | null | undefined, key: DeliveryMode) => {
+    if (!sizeAllowedModes.includes(key)) return t('calc.sizeModeUnavailable');
+    if (!side || side[key]?.available) return undefined;
+    if (key === 'locker') return t('calc.noLockers');
+    if (key === 'branch') return t('calc.noBranch');
+    return t('calc.unavailable');
+  }, [t, sizeAllowedModes]);
 
   const contentOptions = useMemo(() => CONTENT_KEYS.map((key) => ({
     key,
@@ -1973,18 +1911,11 @@ export function CalcForm({
     icon: CONTENT_ICONS[key],
   })), [t]);
 
-  const modeHint = useCallback((side: CoverageSide | null | undefined, key: DeliveryMode) => {
-    if (!side || side[key]?.available) return undefined;
-    if (key === 'locker') return t('calc.noLockers');
-    if (key === 'branch') return t('calc.noBranch');
-    return t('calc.unavailable');
-  }, [t]);
-
   const addressPlaceholder = useCallback((country: string, city: string) => (
     city.trim()
       ? t('calc.addressPlaceholderInCity', { city: cityLabelForValue(country, city, locale) })
       : t('calc.addressPlaceholder')
-  ), [t]);
+  ), [t, locale]);
 
   const stepContent = (
     <>
@@ -2077,13 +2008,14 @@ export function CalcForm({
                 value={pickupType}
                 onChange={setPickupType}
                 disabledKeys={{
-                  locker: coverage ? !coverage.pickup.locker.available : false,
-                  branch: coverage ? !coverage.pickup.branch.available : false,
-                  home: false,
+                  locker: !sizeAllowedModes.includes('locker') || (coverage ? !coverage.pickup.locker.available : false),
+                  branch: !sizeAllowedModes.includes('branch') || (coverage ? !coverage.pickup.branch.available : false),
+                  home: !sizeAllowedModes.includes('home'),
                 }}
                 hints={{
                   locker: modeHint(coverage?.pickup, 'locker'),
                   branch: modeHint(coverage?.pickup, 'branch'),
+                  home: modeHint(coverage?.pickup, 'home'),
                 }}
               />
               <p className="calc-form__group-label">{t('calc.deliverWhere')}</p>
@@ -2092,13 +2024,14 @@ export function CalcForm({
                 value={deliveryType}
                 onChange={setDeliveryType}
                 disabledKeys={{
-                  locker: coverage ? !coverage.delivery.locker.available : false,
-                  branch: coverage ? !coverage.delivery.branch.available : false,
-                  home: false,
+                  locker: !sizeAllowedModes.includes('locker') || (coverage ? !coverage.delivery.locker.available : false),
+                  branch: !sizeAllowedModes.includes('branch') || (coverage ? !coverage.delivery.branch.available : false),
+                  home: !sizeAllowedModes.includes('home'),
                 }}
                 hints={{
                   locker: modeHint(coverage?.delivery, 'locker'),
                   branch: modeHint(coverage?.delivery, 'branch'),
+                  home: modeHint(coverage?.delivery, 'home'),
                 }}
               />
             </>
@@ -2108,8 +2041,8 @@ export function CalcForm({
             <>
               <StepHeader
                 step={3}
-                title={sizeKey === 'custom' ? customHeroTitle : stepMeta[3].title}
-                subtitle={sizeKey === 'custom' ? customHeroSubtitle : stepMeta[3].sub}
+                title={stepMeta[3].title}
+                subtitle={sizeKey === 'custom' ? t('calc.sizeCustomSub') : stepMeta[3].sub}
               />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
@@ -2128,112 +2061,64 @@ export function CalcForm({
                         <b>{s.label}</b>
                         <span className="calc-form__size-dims">{s.dims}</span>
                         {s.weight && <span className="calc-form__size-weight">{s.weight}</span>}
+                        <span className="calc-form__size-modes">
+                          {MODE_CHIP_ORDER.filter((m) => s.modes.includes(m)).map((m) => (
+                            <span key={m} className="calc-form__size-mode">{modeChipLabel(m)}</span>
+                          ))}
+                        </span>
                       </span>
-                      {price != null && (
+                      {price != null ? (
                         <em className={quoteRefreshing && !quotesFromNp ? 'calc-form__price-est' : ''}>
                           {formatMoney(price)}
                         </em>
-                      )}
+                      ) : s.key === 'custom' ? (
+                        <em className="calc-form__price-est">{t('calc.sizeCustomPrice')}</em>
+                      ) : null}
                     </button>
                   );
                 })}
               </div>
               {sizeKey === 'custom' && (
                 <div className="calc-custom-dims">
-                  <div className="calc-weight-slider">
-                    <div className="calc-weight-slider__head">
-                      <label className="calc-weight-slider__label">{t('calc.weightKg')}</label>
-                      <b className="calc-weight-slider__value">
-                        {(Number.isFinite(Number(customSize.kg))
-                          ? (Math.round(Number(customSize.kg) * 10) / 10)
-                          : CUSTOM_WEIGHT_MIN_KG
-                        ).toLocaleString(locale === 'en' ? 'en-US' : 'ru-RU', {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 1,
-                        })}{' '}
-                        <span>kg</span>
-                      </b>
-                    </div>
-                    <div className="calc-weight-slider__rail">
-                      <div className="calc-weight-slider__marks" aria-hidden>
-                        {[
-                          { w: 2, key: 'xs' },
-                          { w: 5, key: 's' },
-                          { w: 10, key: 'm' },
-                          { w: 20, key: 'l' },
-                        ].map((m) => (
-                          <span
-                            key={m.key}
-                            style={{
-                              left: `${((m.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100}%`,
-                            }}
-                          />
-                        ))}
-                      </div>
+                  <div className="calc-custom-dims__grid">
+                    <label className="calc-custom-dims__field">
+                      <span>{t('calc.lengthCm')}</span>
                       <input
-                        type="range"
-                        className="calc-weight-slider__range"
-                        min={CUSTOM_WEIGHT_MIN_KG}
-                        max={MAX_CUSTOM_WEIGHT_KG}
-                        step={0.1}
-                        value={customWeightValue}
-                        aria-label={t('calc.weightKg')}
-                        onChange={(e) => {
-                          const n = Math.round(Number(e.target.value) * 10) / 10;
-                          setCustomSize(buildCustomSizeFromWeight(n));
-                        }}
-                        style={{
-                          ['--weight-pct' as string]: `${Math.min(100, Math.max(0, ((customWeightValue - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100))}%`,
-                        }}
+                        inputMode="decimal"
+                        value={customSize.l}
+                        onChange={(e) => setCustomSize((prev) => ({ ...prev, l: e.target.value.replace(/[^\d.]/g, '') }))}
+                        placeholder="120"
                       />
-                    </div>
-                    <div className="calc-weight-slider__ticks" aria-hidden>
-                      <span className="calc-weight-slider__tick calc-weight-slider__tick--start">
-                        <b>XS</b>
-                      </span>
-                      {[
-                        { w: 2, key: '2', label: '2' },
-                        { w: 5, key: 's', label: 'S · 5' },
-                        { w: 10, key: 'm', label: 'M · 10' },
-                        { w: 20, key: 'l', label: 'L · 20' },
-                      ].map((tick) => (
-                        <span
-                          key={tick.key}
-                          className="calc-weight-slider__tick"
-                          style={{ left: `${((tick.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100}%` }}
-                        >
-                          <b>{tick.label}</b>
-                        </span>
-                      ))}
-                      <span className="calc-weight-slider__tick calc-weight-slider__tick--end">
-                        <b>{MAX_CUSTOM_WEIGHT_KG} кг</b>
-                      </span>
-                    </div>
-                    <p className="calc-weight-slider__hint">{t('calc.weightHint')}</p>
+                    </label>
+                    <label className="calc-custom-dims__field">
+                      <span>{t('calc.widthCm')}</span>
+                      <input
+                        inputMode="decimal"
+                        value={customSize.w}
+                        onChange={(e) => setCustomSize((prev) => ({ ...prev, w: e.target.value.replace(/[^\d.]/g, '') }))}
+                        placeholder="40"
+                      />
+                    </label>
+                    <label className="calc-custom-dims__field">
+                      <span>{t('calc.heightCm')}</span>
+                      <input
+                        inputMode="decimal"
+                        value={customSize.h}
+                        onChange={(e) => setCustomSize((prev) => ({ ...prev, h: e.target.value.replace(/[^\d.]/g, '') }))}
+                        placeholder="40"
+                      />
+                    </label>
+                    <label className="calc-custom-dims__field">
+                      <span>{t('calc.weightKg')}</span>
+                      <input
+                        inputMode="decimal"
+                        value={customSize.kg}
+                        onChange={(e) => setCustomSize((prev) => ({ ...prev, kg: e.target.value.replace(/[^\d.]/g, '') }))}
+                        placeholder="10"
+                      />
+                    </label>
                   </div>
-                  <div className="calc-weight-tier-card">
-                    <div className="calc-weight-tier-card__icon" aria-hidden>✉</div>
-                    <div className="calc-weight-tier-card__body">
-                      <div className="calc-weight-tier-card__row">
-                        <b>{activeCustomTier.title[locale]}</b>
-                        <strong>{customCurrentPrice != null ? formatMoney(customCurrentPrice) : '—'}</strong>
-                      </div>
-                      <p>{activeCustomTier.desc[locale]}</p>
-                      <small>
-                        {activeCustomTier.dimsLabel?.[locale]
-                          ?? t('calc.sizeDimsFmt', {
-                            l: activeCustomTier.dims.lengthCm,
-                            w: activeCustomTier.dims.widthCm,
-                            h: activeCustomTier.dims.heightCm,
-                          })}
-                      </small>
-                    </div>
-                  </div>
-                  {nextTierHint && (
-                    <div className="calc-weight-tier-note">
-                      <p>{nextTierHint}</p>
-                    </div>
-                  )}
+                  <p className="calc-custom-dims__note">{t('calc.sizeNonstandardNote')}</p>
                 </div>
               )}
               <label className="calc-form__check">

@@ -38,6 +38,7 @@ import {
   applyVat,
   roundAmount,
   convertToSettingsCurrency,
+  chargeableWeightKg,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
 import { countNovaPostCoverage, fetchNovaPostDivisions, mapDivisionToPoint } from './novapost/divisions.mjs';
@@ -137,7 +138,12 @@ export async function resolveCheckoutAmount(body, userId = null) {
   const settings = await getSettings();
   const toCountry = tariff.toCountry || body.receiver?.country || 'DE';
   const fromCountry = tariff.fromCountry || body.sender?.country || 'HU';
-  const weightKg = Number(parcel.weightKg) || 2;
+  const weightKg = chargeableWeightKg(
+    Number(parcel.weightKg) || 2,
+    parcel.lengthCm,
+    parcel.widthCm,
+    parcel.heightCm,
+  );
   const deliveryMode = resolvePricingMode(
     tariff.pickupType || tariff.pickupMode || body.pickupMode,
     tariff.deliveryType || tariff.deliveryMode || body.deliveryType,
@@ -538,7 +544,12 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           ? raw.currency.code
           : result.currency?.code || 'EUR';
         const npSource = typeof raw === 'object' ? raw.priceSource : result.priceSource;
-        const weightKg = Number(size.weightKg) || 2;
+        const weightKg = chargeableWeightKg(
+          size.weightKg,
+          size.lengthCm,
+          size.widthCm,
+          size.heightCm,
+        );
 
         const canUseNp = preferNovaPost
           && !isCustomQuote

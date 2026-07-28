@@ -5,6 +5,7 @@ import {
   applyVat,
   roundAmount,
   convertToSettingsCurrency,
+  chargeableWeightKg,
 } from './pricing-config.mjs';
 
 /**
@@ -29,10 +30,11 @@ export async function reconcileParcelPrice({
 }) {
   const settings = await getSettings();
   const currency = String(settings.currency || 'HUF').toUpperCase();
+  const billableKg = chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm);
 
   const mate = await calculateMatePrice({
     toCountry,
-    weightKg,
+    weightKg: billableKg,
     deliveryMode,
     monthlyShipments,
   });

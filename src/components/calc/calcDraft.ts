@@ -1,7 +1,7 @@
 export type CalcDraftDeliveryMode = 'home' | 'branch' | 'locker';
 export type CalcDraftContentKey = 'documents' | 'clothing' | 'shoes' | 'cosmetics' | 'electronics' | 'gift' | 'other';
 export type CalcDraftValueKey = 'under100' | 'mid' | 'high' | 'over';
-export type CalcDraftSizeKey = 'envelope' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'custom';
+export type CalcDraftSizeKey = 'envelope' | 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'custom';
 
 export type CalcDraft = {
   v: 3;
