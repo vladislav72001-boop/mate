@@ -219,8 +219,10 @@ async function selectCountry(page, labelRu) {
   const list = page.locator('.calc-option-list').last();
   await list.waitFor({ state: 'visible' });
   const item = list.locator('.calc-option-list__item').filter({ hasText: labelRu }).first();
-  await item.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
-  await item.click({ force: true });
+  await item.evaluate((el) => {
+    el.scrollIntoView({ block: 'center' });
+    el.click();
+  });
 }
 
 async function resetCalc(page) {
@@ -266,21 +268,31 @@ async function selectModeInGroup(page, groupLabelRe, modeLabelRe) {
   return { ok: true, disabled: false };
 }
 
+async function pickFirstLocker(page) {
+  // Wait out loading — empty list is shown while points fetch
+  for (let i = 0; i < 60; i++) {
+    const loading = page.locator('.calc-form__hint').filter({ hasText: /загруз|loading|betölt|завантаж/i });
+    if (await loading.count()) {
+      await page.waitForTimeout(500);
+      continue;
+    }
+    const items = page.locator('.calc-locker__item');
+    if (await items.count()) {
+      await items.first().click();
+      return (await page.locator('.calc-locker__item.active').count()) > 0;
+    }
+    const empty = page.locator('.calc-locker').filter({ hasText: /нет точек|no points|nincs|немає/i });
+    if (await empty.count() && i > 20) return false;
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
 async function fillPerson(page, prefix, data) {
   await page.locator(`input[name="${prefix}_first_name"]`).fill(data.first);
   await page.locator(`input[name="${prefix}_last_name"]`).fill(data.last);
   await page.locator(`input[name="${prefix}_phone"]`).fill(data.phone);
   await page.locator(`input[name="${prefix}_email"]`).fill(data.email);
-}
-
-async function pickFirstLocker(page) {
-  const empty = page.locator('.calc-locker').filter({ hasText: /нет точек|no points|nincs|немає/i });
-  if (await empty.count()) return false;
-  const item = page.locator('.calc-locker__item').first();
-  await item.waitFor({ timeout: 45000 });
-  await item.click();
-  const active = page.locator('.calc-locker__item.active');
-  return (await active.count()) > 0;
 }
 
 async function pickAddressApprox(page, name, street) {
@@ -338,8 +350,8 @@ async function goToPayStep(page, { countryLabel, destCityLabel, size, pickupMode
     await waitHint.first().waitFor({ state: 'hidden', timeout: 60000 }).catch(() => {});
   }
 
-  const pickupRe = /забрать|откуда|pickup|feladás|звідки/i;
-  const deliverRe = /доставить|куда|deliver|kézbesítés|куди/i;
+  const pickupRe = /забрать|pickup from|honnan|забрати/i;
+  const deliverRe = /доставить|deliver to|hova száll|доставити/i;
   const modeMap = {
     home: /домашн|home address|otthoni|домашня/i,
     branch: /филиал|branch|fiok|fiók|філіал/i,
@@ -386,32 +398,27 @@ async function goToPayStep(page, { countryLabel, destCityLabel, size, pickupMode
     const picked = await pickFirstLocker(page);
     if (!picked) throw new Error(`No delivery ${deliveryMode} points`);
   } else {
-    const name = await page.locator('input[name="receiver_address"]').count()
-      ? 'receiver_address'
-      : 'receiver_address_home';
-    // home uses receiver_address typically
-    const homeName = (await page.locator('input[name="receiver_address"]').count())
-      ? 'receiver_address'
-      : (await page.locator('input[name^="receiver_"]').all()).map(async () => {}).length;
-    const addrName = (await page.locator('input[name="receiver_address"]').count())
-      ? 'receiver_address'
-      : null;
-    // find address input on home
     const addrInput = page.locator('.calc-address input[type="text"]').first();
     await addrInput.fill('Friedrichstrasse 1');
-    await page.waitForTimeout(1000);
-    if (await page.locator('.calc-address__approx').count()) {
-      await page.locator('.calc-address__approx').click();
-    } else if (await page.locator('.calc-address__list button').count()) {
-      await page.locator('.calc-address__list button').first().click();
-    } else {
-      throw new Error('Delivery address suggest failed');
+    let pickedAddr = false;
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(400);
+      if (await page.locator('.calc-address__approx').count()) {
+        await page.locator('.calc-address__approx').click();
+        pickedAddr = true;
+        break;
+      }
+      if (await page.locator('.calc-address__list button').count()) {
+        await page.locator('.calc-address__list button').first().click();
+        pickedAddr = true;
+        break;
+      }
     }
-    const destPostal = page.locator('input[name="receiver_postal"], input[name="dest_postal"], input[autocomplete="postal-code"]').last();
+    if (!pickedAddr) throw new Error('Delivery address suggest failed');
+    const destPostal = page.locator('input[name="receiver_postal"], input[autocomplete="postal-code"]').last();
     if (await destPostal.count() && !(await destPostal.inputValue())) {
       await destPostal.fill('10117');
     }
-    void name; void homeName; void addrName;
   }
   await clickNext(page);
   err = await readNavError(page);
@@ -424,11 +431,20 @@ async function goToPayStep(page, { countryLabel, destCityLabel, size, pickupMode
   await clickNext(page);
 
   // Step 9 pay
-  await page.locator('.calc-form__nav .btn-lime').filter({ hasText: /оплат|pay|fizet/i }).waitFor({ timeout: 30000 });
-  const payBtn = page.locator('.calc-form__nav .btn-lime').filter({ hasText: /оплат|pay|fizet/i });
+  await page.locator('.calc-form__nav .btn-lime').filter({ hasText: /оплат|pay|fizet|считаем|calculat/i }).waitFor({ timeout: 30000 });
+  // Wait until exact quote settles (not «Считаем…» / 0)
+  for (let i = 0; i < 60; i++) {
+    const payBtn = page.locator('.calc-form__nav .btn-lime').last();
+    const text = (await payBtn.innerText()).replace(/\s+/g, ' ').trim();
+    const pending = /считаем|calculat|várakoz|очікув/i.test(text) || /оплат\w*\s*0\b/i.test(text);
+    if (!pending && /\d/.test(text)) {
+      return { payText: text, hasTotal: true };
+    }
+    await page.waitForTimeout(500);
+  }
+  const payBtn = page.locator('.calc-form__nav .btn-lime').last();
   const text = await payBtn.innerText();
-  const totalVisible = page.locator('text=/€|Ft|грн/').first();
-  return { payText: text, hasTotal: await totalVisible.count() > 0 };
+  return { payText: text, hasTotal: /\d/.test(text) && !/оплат\w*\s*0\b/i.test(text) };
 }
 
 async function runUiTests() {
@@ -525,7 +541,7 @@ async function runUiTests() {
         await waitHint.first().waitFor({ state: 'hidden', timeout: 60000 }).catch(() => {});
       }
 
-      const deliverLabel = page.locator('p.calc-form__group-label').filter({ hasText: /доставить|куда|deliver|kézbesítés|куди/i });
+      const deliverLabel = page.locator('p.calc-form__group-label').filter({ hasText: /доставить|deliver to|hova száll|доставити/i });
       const deliverOpts = deliverLabel.locator('xpath=following-sibling::div[contains(@class,"calc-form__options")][1]');
       const modes = {
         locker: deliverOpts.locator('.calc-form__option').filter({ hasText: /постамат|locker|automata|поштомат/i }).first(),
@@ -542,7 +558,7 @@ async function runUiTests() {
       ok(`ui-modes-${dest.code}`, JSON.stringify(state));
 
       // Pickup locker should be soon/disabled
-      const pickupLabel = page.locator('p.calc-form__group-label').filter({ hasText: /забрать|откуда|pickup|feladás|звідки/i });
+      const pickupLabel = page.locator('p.calc-form__group-label').filter({ hasText: /забрать|pickup from|honnan|забрати/i });
       const pickupOpts = pickupLabel.locator('xpath=following-sibling::div[contains(@class,"calc-form__options")][1]');
       const pickupLocker = pickupOpts.locator('.calc-form__option').filter({ hasText: /постамат|locker|automata|поштомат/i }).first();
       if (await pickupLocker.count()) {
@@ -593,7 +609,7 @@ async function runUiTests() {
     await selectSize(page, 'XL');
     await clickNext(page);
     await page.waitForTimeout(2000);
-    const deliverLabel = page.locator('p.calc-form__group-label').filter({ hasText: /доставить|куда|deliver|kézbesítés|куди/i });
+    const deliverLabel = page.locator('p.calc-form__group-label').filter({ hasText: /доставить|deliver to|hova száll|доставити/i });
     const deliverOpts = deliverLabel.locator('xpath=following-sibling::div[contains(@class,"calc-form__options")][1]');
     for (const [name, re] of [['locker', /постамат|locker/i], ['branch', /филиал|branch/i]]) {
       const btn = deliverOpts.locator('.calc-form__option').filter({ hasText: re }).first();

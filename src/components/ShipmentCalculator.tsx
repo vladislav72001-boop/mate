@@ -1266,12 +1266,34 @@ export function CalcForm({
     applyCachedRouteQuotes, fetchQuoteKeys, fetchCustomQuote,
   ]);
 
+  // If exact quote failed once (network / NP), retry while user is on steps 6–9.
+  useEffect(() => {
+    if (!quoteLocationsReady || step < 6 || step > 9) return;
+    if (lastExactQuoteKey.current === exactQuoteKey) return;
+    if (quoteRefreshing || quoteInFlight.current) return;
+    if (sizeKey === 'custom') return;
+    if (parcelQuotes[apiParcelKey] != null && quotesFromNp) {
+      lastExactQuoteKey.current = exactQuoteKey;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (lastExactQuoteKey.current === exactQuoteKey || quoteInFlight.current) return;
+      void fetchQuoteKeys(STEP3_QUOTE_KEYS).then((ok) => {
+        if (ok) lastExactQuoteKey.current = exactQuoteKey;
+      });
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [
+    step, exactQuoteKey, quoteLocationsReady, quoteRefreshing, sizeKey,
+    parcelQuotes, apiParcelKey, quotesFromNp, fetchQuoteKeys,
+  ]);
+
   useEffect(() => {
     if (prevRouteKey.current && prevRouteKey.current !== preliminaryRouteKey) {
       routeQuoteCache.current.delete(`prelim:${prevRouteKey.current}`);
       setQuotesFromNp(false);
-      setParcelQuotes({});
-      setCustomQuote(null);
+      // Keep last quotes on screen while the next batch loads — clearing here
+      // caused «Оплатить 0 HUF» / «Считаем…» if the user moved fast through steps 4→9.
       lastExactQuoteKey.current = null;
     }
     prevRouteKey.current = preliminaryRouteKey;
@@ -1935,10 +1957,14 @@ export function CalcForm({
         <button
           type="button"
           className="btn btn-lime"
-          disabled={submitting}
+          disabled={submitting || totalPrice == null || quoteRefreshing}
           onClick={handlePay}
         >
-          {submitting ? t('calc.paying') : t('calc.pay', { amount: formatMoney(totalPrice ?? 0) })}
+          {submitting
+            ? t('calc.paying')
+            : (totalPrice == null || quoteRefreshing)
+              ? t('calc.summaryCalculating')
+              : t('calc.pay', { amount: formatMoney(totalPrice) })}
         </button>
       )}
     </div>
