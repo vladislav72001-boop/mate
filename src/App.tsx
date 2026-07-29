@@ -1179,11 +1179,17 @@ function App() {
             </section>
 
             <section className="about-columns">
-              <article className="about-panel card" aria-label={t('about.companyTitle')}>
+              <article className="about-panel" aria-label={t('about.companyTitle')}>
                 <h4>{t('about.companyTitle')}</h4>
                 <ul className="about-panel__rows">
-                  <li><span>{t('about.companyNameLabel')}</span><b>{t('about.legalCompany')}</b></li>
-                  <li><span>{t('about.legalTaxLabel')}</span><b>{t('about.legalTaxValue')}</b></li>
+                  <li>
+                    <span>{t('about.companyNameLabel')}</span>
+                    <b>{t('about.legalCompany')}</b>
+                  </li>
+                  <li>
+                    <span>{t('about.legalTaxLabel')}</span>
+                    <b>{t('about.legalTaxValue')}</b>
+                  </li>
                   <li>
                     <span>{t('about.legalAddressLabel')}</span>
                     <b>
@@ -1192,21 +1198,34 @@ function App() {
                       {t('about.legalAddressLine2')}
                     </b>
                   </li>
-                  <li><span>{t('about.foundedLabel')}</span><b>{t('about.foundedValue')}</b></li>
+                  <li>
+                    <span>{t('about.foundedLabel')}</span>
+                    <b>{t('about.foundedValue')}</b>
+                  </li>
                 </ul>
               </article>
-              <article className="about-panel card" aria-label={t('about.reachTitle')}>
+              <article className="about-panel about-panel--reach" aria-label={t('about.reachTitle')}>
                 <h4>{t('about.reachTitle')}</h4>
                 <ul className="about-panel__rows">
                   <li>
                     <span>{t('about.phoneWhatsappLabel')}</span>
-                    <a className="about-panel__link" href="https://wa.me/36705549233" target="_blank" rel="noopener noreferrer">
+                    <a
+                      className="about-panel__link"
+                      href="https://wa.me/36705549233"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       +36 705 549 233
                     </a>
                   </li>
                   <li>
                     <span>{t('about.telegramLabel')}</span>
-                    <a className="about-panel__link" href="https://t.me/matedelivery" target="_blank" rel="noopener noreferrer">
+                    <a
+                      className="about-panel__link"
+                      href="https://t.me/matedelivery"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       @matedelivery
                     </a>
                   </li>
