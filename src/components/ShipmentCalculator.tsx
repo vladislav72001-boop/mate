@@ -82,9 +82,9 @@ type ContentKey = 'documents' | 'clothing' | 'shoes' | 'cosmetics' | 'electronic
 type ValueKey = 'under100' | 'mid' | 'high' | 'over';
 type SizeKey = 'envelope' | ParcelKey | 'XXL' | 'custom';
 
-const PARCEL_KEYS: ParcelKey[] = ['XS', 'S', 'M', 'L', 'XL'];
+const PARCEL_KEYS: ParcelKey[] = ['XS', 'S', 'M', 'L'];
 /** Live quotes for all selectable parcel sizes. */
-const STEP3_QUOTE_KEYS: ParcelKey[] = ['XS', 'S', 'M', 'L', 'XL'];
+const STEP3_QUOTE_KEYS: ParcelKey[] = ['XS', 'S', 'M', 'L'];
 const STEP_SUMMARY_KEYS: Record<number, string[]> = {
   1: ['from'],
   2: ['from', 'cities'],
@@ -102,7 +102,7 @@ const TOTAL_STEPS = 9;
 const ENVELOPE_PRESET = { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.5 };
 
 /** Preset sizes + non-standard (weight slider → tariff). */
-const SIZE_OPTION_KEYS: Array<ParcelKey | 'custom'> = ['XS', 'S', 'M', 'L', 'XL', 'custom'];
+const SIZE_OPTION_KEYS: Array<ParcelKey | 'custom'> = ['XS', 'S', 'M', 'L', 'custom'];
 const MAX_CUSTOM_WEIGHT_KG = NONSTANDARD_LIMITS.maxWeightKg;
 const CUSTOM_WEIGHT_MIN_KG = 0.1;
 
@@ -2064,7 +2064,7 @@ export function CalcForm({
       const p = PARCEL_PRESETS[key];
       return {
         key,
-        label: key,
+        label: key === 'XS' ? t('calc.sizeEnvelope') : key,
         icon: SIZE_ICONS[key],
         dims: t('calc.sizeDimsFmt', { l: p.lengthCm, w: p.widthCm, h: p.heightCm }),
         weight: t('calc.sizeWeightFmt', { kg: p.weightKg }),
@@ -2072,6 +2072,11 @@ export function CalcForm({
       };
     })
   ), [t]);
+
+  const customWeightValue = Math.min(
+    MAX_CUSTOM_WEIGHT_KG,
+    Math.max(CUSTOM_WEIGHT_MIN_KG, Number(customSize.kg) || CUSTOM_WEIGHT_MIN_KG),
+  );
 
   const modeHint = useCallback((side: CoverageSide | null | undefined, key: DeliveryMode) => {
     if (!sizeAllowedModes.includes(key)) return t('calc.sizeModeUnavailable');
@@ -2267,6 +2272,50 @@ export function CalcForm({
                 })}
               </div>
               <div className="calc-custom-dims">
+                <div className="calc-weight-slider">
+                  <div className="calc-weight-slider__head">
+                    <label className="calc-weight-slider__label">{t('calc.weightKg')}</label>
+                    <b className="calc-weight-slider__value">
+                      {(Number.isFinite(customWeightValue) ? (Math.round(customWeightValue * 10) / 10) : CUSTOM_WEIGHT_MIN_KG).toLocaleString(locale === 'en' ? 'en-US' : 'ru-RU', {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      })}{' '}
+                      <span>kg</span>
+                    </b>
+                  </div>
+                  <div className="calc-weight-slider__rail">
+                    <div className="calc-weight-slider__marks" aria-hidden>
+                      {[
+                        { w: 0.2, key: 'envelope' },
+                        { w: 2, key: 'xs' },
+                        { w: 10, key: 'm' },
+                        { w: 30, key: 'l' },
+                      ].map((m) => (
+                        <span
+                          key={m.key}
+                          style={{
+                            left: `${((m.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100}%`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <input
+                      type="range"
+                      className="calc-weight-slider__range"
+                      min={CUSTOM_WEIGHT_MIN_KG}
+                      max={MAX_CUSTOM_WEIGHT_KG}
+                      step={0.1}
+                      value={customWeightValue}
+                      aria-label={t('calc.weightKg')}
+                      onChange={(e) => {
+                        const n = Math.round(Number(e.target.value) * 10) / 10;
+                        setSizeKey('custom');
+                        setCustomSize((prev) => ({ ...prev, kg: String(n) }));
+                      }}
+                    />
+                  </div>
+                  <p className="calc-weight-slider__hint">{t('calc.weightHint')}</p>
+                </div>
                 <div className="calc-form__grid">
                   <div className="field-block">
                     <label>{t('calc.lengthCm')}</label>
@@ -2281,6 +2330,7 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, l: e.target.value }));
                       }}
                     />
+                    <small>{t('calc.sizeCustomSub')}</small>
                   </div>
                   <div className="field-block">
                     <label>{t('calc.widthCm')}</label>
@@ -2295,6 +2345,7 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, w: e.target.value }));
                       }}
                     />
+                    <small>{t('calc.sizeCustomSub')}</small>
                   </div>
                   <div className="field-block">
                     <label>{t('calc.heightCm')}</label>
@@ -2309,6 +2360,7 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, h: e.target.value }));
                       }}
                     />
+                    <small>{t('calc.sizeCustomSub')}</small>
                   </div>
                   <div className="field-block">
                     <label>{t('calc.weightKg')}</label>
@@ -2324,6 +2376,7 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, kg: e.target.value }));
                       }}
                     />
+                    <small>{t('calc.weightHint')}</small>
                   </div>
                 </div>
                 <p className="calc-form__hint">

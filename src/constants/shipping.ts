@@ -16,11 +16,16 @@ export const PARCEL_PRESETS: Record<ParcelKey, {
   heightCm: number;
   weightKg: number;
 }> = {
-  XS: { lengthCm: 5, widthCm: 35, heightCm: 50, weightKg: 2 },
-  S: { lengthCm: 12, widthCm: 36, heightCm: 57, weightKg: 5 },
-  M: { lengthCm: 20, widthCm: 36, heightCm: 60, weightKg: 10 },
-  L: { lengthCm: 38, widthCm: 36, heightCm: 60, weightKg: 20 },
-  XL: { lengthCm: 60, widthCm: 40, heightCm: 60, weightKg: 31 },
+  // ✉️ Конверт: в UI вес фиксируем, габариты для расчёта не должны раздувать объёмный вес.
+  XS: { lengthCm: 1, widthCm: 1, heightCm: 1, weightKg: 0.2 },
+  // S / Kicsi
+  S: { lengthCm: 35, widthCm: 20, heightCm: 10, weightKg: 2 },
+  // M / Közepes
+  M: { lengthCm: 40, widthCm: 30, heightCm: 30, weightKg: 10 },
+  // L / Nagy
+  L: { lengthCm: 70, widthCm: 42, heightCm: 40, weightKg: 30 },
+  // XL оставляем как копию L, т.к. в интерфейсе XL теперь не показываем
+  XL: { lengthCm: 70, widthCm: 42, heightCm: 40, weightKg: 30 },
 };
 
 /** Delivery modes allowed for each tariff (locker = postamat). */
