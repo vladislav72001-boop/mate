@@ -202,9 +202,10 @@ export async function createInternationalShipment(body, clientOrder) {
 
   // Non-cash payment under Mate↔Nova Post contract (per NP support).
   // Without payerContractNumber NP treats the shipment as unpaid/cash.
+  // Use CRM/API contract id (e.g. GNPHU-00026481), NOT the paper date number (21/04/2026-1).
   const payerContractNumber = (
     process.env.NOVAPOST_PAYER_CONTRACT_NUMBER
-    || '21/04/2026-1'
+    || 'GNPHU-00026481'
   ).trim();
 
   const payload = {
