@@ -15,6 +15,7 @@ import { ScrollToTop } from './components/ScrollToTop';
 import { OrderSuccessScreen } from './components/calc/OrderSuccessScreen';
 import { AdminApp } from './components/admin/AdminApp';
 import { MateLogo } from './components/MateLogo';
+import { AboutEuropeMap } from './components/AboutEuropeMap';
 import { PartnerLogo, PARTNER_IDS } from './components/PartnerLogo';
 import { LanguageSelect } from './components/LanguageSelect';
 import { useI18n } from './i18n/context';
@@ -1135,6 +1136,24 @@ function App() {
       ) : page === 'about' ? (
         <main className="page-enter about-page">
           <div className="container about-page__body">
+            <section className="about-top">
+              <div className="about-hero card">
+                <div className="about-hero__glow" aria-hidden />
+                <div className="about-hero__inner">
+                  <div className="about-hero__copy">
+                    <div className="about-badge">{t('about.badge')}</div>
+                    <h1>
+                      {t('about.titleLine1')}<br />
+                      <span>{t('about.titleLine2')}</span>
+                    </h1>
+                  </div>
+                  <div className="about-hero__map" aria-hidden>
+                    <AboutEuropeMap />
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <section className="about-story" aria-label={t('about.storyTitle')}>
               <h2>
                 {t('about.storyTitleLine1')}
