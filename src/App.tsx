@@ -1134,129 +1134,142 @@ function App() {
           </section>
         </main>
       ) : page === 'about' ? (
-        <main className="container page-enter about-page">
-          <section className="about-top">
-            <div className="about-hero card">
-              <div className="about-hero__glow" aria-hidden />
-              <div className="about-hero__inner">
-                <div className="about-hero__copy">
-                  <div className="about-badge">{t('about.badge')}</div>
-                  <h1>
-                    {t('about.titleLine1')}<br />
-                    <span>{t('about.titleLine2')}</span>
-                  </h1>
-                </div>
-                <div className="about-hero__map" aria-hidden>
-                  <AboutEuropeMap />
+        <main className="page-enter about-page">
+          <div className="container about-page__body">
+            <section className="about-top">
+              <div className="about-hero card">
+                <div className="about-hero__glow" aria-hidden />
+                <div className="about-hero__inner">
+                  <div className="about-hero__copy">
+                    <div className="about-badge">{t('about.badge')}</div>
+                    <h1>
+                      {t('about.titleLine1')}<br />
+                      <span>{t('about.titleLine2')}</span>
+                    </h1>
+                  </div>
+                  <div className="about-hero__map" aria-hidden>
+                    <AboutEuropeMap />
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <section className="about-story card" aria-label={t('about.storyTitle')}>
-            <div className="about-story__inner">
-              <h2>{t('about.storyTitle')}</h2>
-              <p>{t('about.storyP1')}</p>
-              <p>{t('about.storyP2')}</p>
-            </div>
-          </section>
-
-          <section className="about-reasons" aria-label={t('about.reasonsAria')}>
-            {([
-              { id: 'price', titleKey: 'reasonPriceTitle', textKey: 'reasonPriceText' },
-              { id: 'track', titleKey: 'reasonDateTitle', textKey: 'reasonDateText' },
-              { id: 'platform', titleKey: 'reasonSupportTitle', textKey: 'reasonSupportText' },
-            ] as const).map((item) => (
-              <article key={item.id} className="about-reason card">
-                <div className={`feature-icon feature-icon--${item.id === 'platform' ? 'ai' : item.id}`}>
-                  <FeatureIcon id={item.id} />
-                </div>
-                <h3>{t(`about.${item.titleKey}`)}</h3>
-                <p>{t(`about.${item.textKey}`)}</p>
-              </article>
-            ))}
-          </section>
-
-          <section className="about-columns">
-            <article className="about-panel card" aria-label={t('about.companyTitle')}>
-              <h4>{t('about.companyTitle')}</h4>
-              <ul className="about-panel__rows">
-                <li><span>{t('about.companyNameLabel')}</span><b>{t('about.legalCompany')}</b></li>
-                <li><span>{t('about.legalTaxLabel')}</span><b>{t('about.legalTaxValue')}</b></li>
-                <li><span>{t('about.legalAddressLabel')}</span><b>{t('about.legalAddress')}</b></li>
-                <li><span>{t('about.foundedLabel')}</span><b>{t('about.foundedValue')}</b></li>
-              </ul>
-            </article>
-            <article className="about-panel card" aria-label={t('about.reachTitle')}>
-              <h4>{t('about.reachTitle')}</h4>
-              <ul className="about-panel__rows">
-                <li>
-                  <span>{t('about.phoneWhatsappLabel')}</span>
-                  <a className="about-panel__link" href="https://wa.me/36705549233" target="_blank" rel="noopener noreferrer">
-                    +36 705 549 233
-                  </a>
-                </li>
-                <li>
-                  <span>{t('about.telegramLabel')}</span>
-                  <a className="about-panel__link" href="https://t.me/matedelivery" target="_blank" rel="noopener noreferrer">
-                    @matedelivery
-                  </a>
-                </li>
-                <li>
-                  <span>{t('about.emailLabel')}</span>
-                  <a className="about-panel__link" href="mailto:info@matedelivery.com">
-                    info@matedelivery.com
-                  </a>
-                </li>
-                <li>
-                  <span>{t('about.languagesLabel')}</span>
-                  <b>{t('about.languagesValue')}</b>
-                </li>
-              </ul>
-            </article>
-          </section>
-
-          <section className="about-cta card" aria-label={t('about.ctaTitle')}>
-            <div className="about-cta__copy">
-              <h3>{t('about.ctaTitle')}</h3>
-              <p>{t('about.ctaLead')}</p>
-            </div>
-            <div className="about-cta__actions">
-              <a className="btn btn-lime" href="mailto:info@matedelivery.com?subject=Mate%20Delivery">
-                {t('about.writeUs')}
-              </a>
-              <a
-                className="btn btn-outline"
-                href="mailto:info@matedelivery.com?subject=FAQ%20%2F%20Questions"
-              >
-                {t('about.ctaSecondary')}
-              </a>
-            </div>
-          </section>
-
-          <footer className="about-legal" aria-label={t('about.legalTitle')}>
-            <div className="about-legal__brand">
-              <div>
-                <div className="about-legal__title">{t('about.legalTitle')}</div>
-                <strong className="about-legal__company-name">{t('about.legalCompany')}</strong>
+            <section className="about-story" aria-label={t('about.storyTitle')}>
+              <div className="about-story__inner">
+                <h2>{t('about.storyTitle')}</h2>
+                <p>{t('about.storyP1')}</p>
+                <p>{t('about.storyP2')}</p>
               </div>
-            </div>
-            <ul className="about-legal__list">
+            </section>
+
+            <section className="about-reasons" aria-label={t('about.reasonsAria')}>
               {([
-                { id: 'pin', label: t('about.legalAddressLabel'), value: t('about.legalAddress') },
-                { id: 'tax', label: t('about.legalTaxLabel'), value: t('about.legalTaxValue') },
-                { id: 'reg', label: t('about.legalRegLabel'), value: t('about.legalRegValue') },
-                { id: 'vat', label: t('about.legalVatLabel'), value: t('about.legalVatValue') },
-              ] as const).map((row) => (
-                <li key={row.id} className="about-legal__row">
-                  <span className="about-legal__icon"><ContactIcon id={row.id} size={15} /></span>
-                  <span className="about-legal__text">
-                    <small>{row.label}</small>
-                    <b>{row.value}</b>
-                  </span>
-                </li>
+                { id: 'price', titleKey: 'reasonPriceTitle', textKey: 'reasonPriceText' },
+                { id: 'track', titleKey: 'reasonDateTitle', textKey: 'reasonDateText' },
+                { id: 'platform', titleKey: 'reasonSupportTitle', textKey: 'reasonSupportText' },
+              ] as const).map((item) => (
+                <article key={item.id} className="about-reason card">
+                  <div className={`feature-icon feature-icon--${item.id === 'platform' ? 'ai' : item.id}`}>
+                    <FeatureIcon id={item.id} />
+                  </div>
+                  <h3>{t(`about.${item.titleKey}`)}</h3>
+                  <p>{t(`about.${item.textKey}`)}</p>
+                </article>
               ))}
-            </ul>
+            </section>
+
+            <section className="about-columns">
+              <article className="about-panel card" aria-label={t('about.companyTitle')}>
+                <h4>{t('about.companyTitle')}</h4>
+                <ul className="about-panel__rows">
+                  <li><span>{t('about.companyNameLabel')}</span><b>{t('about.legalCompany')}</b></li>
+                  <li><span>{t('about.legalTaxLabel')}</span><b>{t('about.legalTaxValue')}</b></li>
+                  <li><span>{t('about.legalAddressLabel')}</span><b>{t('about.legalAddress')}</b></li>
+                  <li><span>{t('about.foundedLabel')}</span><b>{t('about.foundedValue')}</b></li>
+                </ul>
+              </article>
+              <article className="about-panel card" aria-label={t('about.reachTitle')}>
+                <h4>{t('about.reachTitle')}</h4>
+                <ul className="about-panel__rows">
+                  <li>
+                    <span>{t('about.phoneWhatsappLabel')}</span>
+                    <a className="about-panel__link" href="https://wa.me/36705549233" target="_blank" rel="noopener noreferrer">
+                      +36 705 549 233
+                    </a>
+                  </li>
+                  <li>
+                    <span>{t('about.telegramLabel')}</span>
+                    <a className="about-panel__link" href="https://t.me/matedelivery" target="_blank" rel="noopener noreferrer">
+                      @matedelivery
+                    </a>
+                  </li>
+                  <li>
+                    <span>{t('about.emailLabel')}</span>
+                    <a className="about-panel__link" href="mailto:info@matedelivery.com">
+                      info@matedelivery.com
+                    </a>
+                  </li>
+                  <li>
+                    <span>{t('about.languagesLabel')}</span>
+                    <b>{t('about.languagesValue')}</b>
+                  </li>
+                </ul>
+              </article>
+            </section>
+
+            <section className="about-cta card" aria-label={t('about.ctaTitle')}>
+              <div className="about-cta__copy">
+                <h3>{t('about.ctaTitle')}</h3>
+                <p>{t('about.ctaLead')}</p>
+              </div>
+              <div className="about-cta__actions">
+                <a className="btn btn-lime" href="mailto:info@matedelivery.com?subject=Mate%20Delivery">
+                  {t('about.writeUs')}
+                </a>
+                <a
+                  className="btn btn-outline"
+                  href="mailto:info@matedelivery.com?subject=FAQ%20%2F%20Questions"
+                >
+                  {t('about.ctaSecondary')}
+                </a>
+              </div>
+            </section>
+          </div>
+
+          <footer className="about-site-footer" aria-label={t('about.footerAria')}>
+            <div className="container about-site-footer__inner">
+              <div className="about-site-footer__cols">
+                <div>
+                  <b>{t('about.footerBrand')}</b>
+                  <p>{t('about.footerBrandText')}</p>
+                </div>
+                <div>
+                  <b>{t('about.footerServices')}</b>
+                  <button type="button" onClick={openCalcFresh}>{t('about.footerParcels')}</button>
+                  <button type="button" onClick={openCalcFresh}>{t('about.footerPickup')}</button>
+                  <button type="button" onClick={() => setPage('business')}>{t('about.footerBusiness')}</button>
+                </div>
+                <div>
+                  <b>{t('about.footerHelp')}</b>
+                  <a href="mailto:info@matedelivery.com?subject=FAQ%20%2F%20Questions">{t('about.ctaSecondary')}</a>
+                  <button type="button" onClick={() => setPage('home')}>{t('about.footerTrack')}</button>
+                  <a href="mailto:info@matedelivery.com">{t('about.writeUs')}</a>
+                </div>
+                <div>
+                  <b>{t('about.footerContacts')}</b>
+                  <a href="tel:+36705549233">+36 705 549 233</a>
+                  <a href="mailto:info@matedelivery.com">info@matedelivery.com</a>
+                  <p>
+                    <a href="https://t.me/matedelivery" target="_blank" rel="noopener noreferrer">Telegram</a>
+                    {' · '}
+                    <a href="https://wa.me/36705549233" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+                  </p>
+                </div>
+              </div>
+              <div className="about-site-footer__legal">
+                {t('about.legalCompany')} · {t('about.legalTaxLabel')} {t('about.legalTaxValue')} · {t('about.legalAddress')}
+              </div>
+            </div>
           </footer>
         </main>
       ) : null)}
