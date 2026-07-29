@@ -3531,29 +3531,64 @@ body {
 }
 
 .about-story {
-  max-width: 660px;
-  padding: 8px 0 0;
-  margin: 0;
+  margin: 8px 0 0;
+}
+
+.about-story__card {
+  position: relative;
+  padding: 28px 32px 30px;
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(225, 255, 1, 0.14) 0%, rgba(225, 255, 1, 0) 42%),
+    #fff;
+  border: 1px solid rgba(18, 32, 35, 0.08);
+  box-shadow:
+    0 1px 2px rgba(18, 32, 35, 0.04),
+    0 10px 28px rgba(18, 32, 35, 0.06);
+  overflow: hidden;
+}
+
+.about-story__card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: var(--lime);
+}
+
+.about-story__mark {
+  width: 40px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--lime);
+  margin-bottom: 18px;
+  box-shadow: 0 4px 14px rgba(225, 255, 1, 0.45);
 }
 
 .about-story h2 {
-  margin: 0 0 14px;
-  font-size: clamp(2rem, 3.2vw, 2.5rem);
-  line-height: 1.15;
+  margin: 0;
+  max-width: 16ch;
+  font-size: clamp(1.85rem, 3vw, 2.35rem);
+  line-height: 1.12;
   letter-spacing: -0.03em;
   font-weight: var(--fw-semibold);
   color: var(--navy);
 }
 
-.about-story p {
-  margin: 0;
-  font-size: 1.15rem;
-  line-height: 1.65;
-  color: #4A4E52;
+.about-story__text {
+  margin-top: 18px;
+  max-width: 58ch;
+  display: grid;
+  gap: 14px;
 }
 
-.about-story p + p {
-  margin-top: 14px;
+.about-story p {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.65;
+  color: #4A4E52;
 }
 
 .about-reasons {
@@ -3564,10 +3599,13 @@ body {
 }
 
 .about-reason {
-  padding: 17px;
-  border-radius: 16px;
-  border: 1px solid #E4E7E1;
-  box-shadow: none;
+  padding: 18px 18px 20px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(18, 32, 35, 0.08);
+  box-shadow:
+    0 1px 2px rgba(18, 32, 35, 0.04),
+    0 10px 28px rgba(18, 32, 35, 0.06);
 }
 
 .about-reason__ic {
@@ -3658,7 +3696,7 @@ body {
 .about-panel__rows b,
 .about-panel__link {
   text-align: right;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--navy);
   line-height: 1.4;
   text-decoration: none;
@@ -4308,16 +4346,17 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .about-page .about-story {
-    padding: 20px 16px;
+  .about-page .about-story__card {
+    padding: 22px 20px 24px;
   }
 
   .about-page .about-story h2 {
-    font-size: 2.6rem;
+    max-width: none;
+    font-size: 1.75rem;
   }
 
   .about-page .about-story p {
-    font-size: 1.4rem;
+    font-size: 1.02rem;
   }
 
   .about-page .about-cta {

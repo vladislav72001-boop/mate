@@ -1155,13 +1155,18 @@ function App() {
             </section>
 
             <section className="about-story" aria-label={t('about.storyTitle')}>
-              <h2>
-                {t('about.storyTitleLine1')}
-                <br />
-                {t('about.storyTitleLine2')}
-              </h2>
-              <p>{t('about.storyP1')}</p>
-              <p>{t('about.storyP2')}</p>
+              <article className="about-story__card">
+                <div className="about-story__mark" aria-hidden />
+                <h2>
+                  {t('about.storyTitleLine1')}
+                  <br />
+                  {t('about.storyTitleLine2')}
+                </h2>
+                <div className="about-story__text">
+                  <p>{t('about.storyP1')}</p>
+                  <p>{t('about.storyP2')}</p>
+                </div>
+              </article>
             </section>
 
             <section className="about-reasons" aria-label={t('about.reasonsAria')}>
@@ -1170,7 +1175,7 @@ function App() {
                 { icon: '📅', titleKey: 'reasonDateTitle', textKey: 'reasonDateText' },
                 { icon: '🤝', titleKey: 'reasonSupportTitle', textKey: 'reasonSupportText' },
               ] as const).map((item) => (
-                <article key={item.titleKey} className="about-reason card">
+                <article key={item.titleKey} className="about-reason">
                   <div className="about-reason__ic" aria-hidden>{item.icon}</div>
                   <b>{t(`about.${item.titleKey}`)}</b>
                   <span>{t(`about.${item.textKey}`)}</span>
