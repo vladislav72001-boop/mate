@@ -15,7 +15,6 @@ import { ScrollToTop } from './components/ScrollToTop';
 import { OrderSuccessScreen } from './components/calc/OrderSuccessScreen';
 import { AdminApp } from './components/admin/AdminApp';
 import { MateLogo } from './components/MateLogo';
-import { AboutEuropeMap } from './components/AboutEuropeMap';
 import { PartnerLogo, PARTNER_IDS } from './components/PartnerLogo';
 import { LanguageSelect } from './components/LanguageSelect';
 import { useI18n } from './i18n/context';
@@ -1136,44 +1135,26 @@ function App() {
       ) : page === 'about' ? (
         <main className="page-enter about-page">
           <div className="container about-page__body">
-            <section className="about-top">
-              <div className="about-hero card">
-                <div className="about-hero__glow" aria-hidden />
-                <div className="about-hero__inner">
-                  <div className="about-hero__copy">
-                    <div className="about-badge">{t('about.badge')}</div>
-                    <h1>
-                      {t('about.titleLine1')}<br />
-                      <span>{t('about.titleLine2')}</span>
-                    </h1>
-                  </div>
-                  <div className="about-hero__map" aria-hidden>
-                    <AboutEuropeMap />
-                  </div>
-                </div>
-              </div>
-            </section>
-
             <section className="about-story" aria-label={t('about.storyTitle')}>
-              <div className="about-story__inner">
-                <h2>{t('about.storyTitle')}</h2>
-                <p>{t('about.storyP1')}</p>
-                <p>{t('about.storyP2')}</p>
-              </div>
+              <h2>
+                {t('about.storyTitleLine1')}
+                <br />
+                {t('about.storyTitleLine2')}
+              </h2>
+              <p>{t('about.storyP1')}</p>
+              <p>{t('about.storyP2')}</p>
             </section>
 
             <section className="about-reasons" aria-label={t('about.reasonsAria')}>
               {([
-                { id: 'price', titleKey: 'reasonPriceTitle', textKey: 'reasonPriceText' },
-                { id: 'track', titleKey: 'reasonDateTitle', textKey: 'reasonDateText' },
-                { id: 'platform', titleKey: 'reasonSupportTitle', textKey: 'reasonSupportText' },
+                { icon: '💶', titleKey: 'reasonPriceTitle', textKey: 'reasonPriceText' },
+                { icon: '📅', titleKey: 'reasonDateTitle', textKey: 'reasonDateText' },
+                { icon: '🤝', titleKey: 'reasonSupportTitle', textKey: 'reasonSupportText' },
               ] as const).map((item) => (
-                <article key={item.id} className="about-reason card">
-                  <div className={`feature-icon feature-icon--${item.id === 'platform' ? 'ai' : item.id}`}>
-                    <FeatureIcon id={item.id} />
-                  </div>
-                  <h3>{t(`about.${item.titleKey}`)}</h3>
-                  <p>{t(`about.${item.textKey}`)}</p>
+                <article key={item.titleKey} className="about-reason card">
+                  <div className="about-reason__ic" aria-hidden>{item.icon}</div>
+                  <b>{t(`about.${item.titleKey}`)}</b>
+                  <span>{t(`about.${item.textKey}`)}</span>
                 </article>
               ))}
             </section>
@@ -1184,7 +1165,14 @@ function App() {
                 <ul className="about-panel__rows">
                   <li><span>{t('about.companyNameLabel')}</span><b>{t('about.legalCompany')}</b></li>
                   <li><span>{t('about.legalTaxLabel')}</span><b>{t('about.legalTaxValue')}</b></li>
-                  <li><span>{t('about.legalAddressLabel')}</span><b>{t('about.legalAddress')}</b></li>
+                  <li>
+                    <span>{t('about.legalAddressLabel')}</span>
+                    <b>
+                      {t('about.legalAddressLine1')}
+                      <br />
+                      {t('about.legalAddressLine2')}
+                    </b>
+                  </li>
                   <li><span>{t('about.foundedLabel')}</span><b>{t('about.foundedValue')}</b></li>
                 </ul>
               </article>
@@ -1223,11 +1211,11 @@ function App() {
                 <p>{t('about.ctaLead')}</p>
               </div>
               <div className="about-cta__actions">
-                <a className="btn btn-lime" href="mailto:info@matedelivery.com?subject=Mate%20Delivery">
+                <a className="about-pill" href="mailto:info@matedelivery.com?subject=Mate%20Delivery">
                   {t('about.writeUs')}
                 </a>
                 <a
-                  className="btn btn-outline"
+                  className="about-pill about-pill--ghost"
                   href="mailto:info@matedelivery.com?subject=FAQ%20%2F%20Questions"
                 >
                   {t('about.ctaSecondary')}
