@@ -145,6 +145,7 @@ export async function resolveCheckoutAmount(body, userId = null) {
     parcel.lengthCm,
     parcel.widthCm,
     parcel.heightCm,
+    parcel.boxSize,
   );
   const deliveryMode = resolvePricingMode(
     tariff.pickupType || tariff.pickupMode || body.pickupMode,
@@ -557,6 +558,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           size.lengthCm,
           size.widthCm,
           size.heightCm,
+          size.boxSize,
         );
 
         const canUseNp = preferNovaPost

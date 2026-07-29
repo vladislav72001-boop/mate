@@ -542,14 +542,20 @@ export function weightKeyForKg(weightKg) {
   return WEIGHT_ROWS[WEIGHT_ROWS.length - 1].key;
 }
 
-/** DPD-style billable weight: max(actual, L×W×H / 5000). */
-export function chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm) {
+function isDocumentBox(boxSize) {
+  const key = String(boxSize || '').toUpperCase();
+  return key === 'XS' || key === 'ENVELOPE' || key === 'DOCUMENTS';
+}
+
+/** Nova Post billable weight: documents use actual weight; parcels use max(actual, L×W×H / 4000). */
+export function chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm, boxSize) {
   const actual = Math.max(0.1, Number(weightKg) || 0.1);
+  if (isDocumentBox(boxSize)) return actual;
   const l = Math.max(0, Number(lengthCm) || 0);
   const w = Math.max(0, Number(widthCm) || 0);
   const h = Math.max(0, Number(heightCm) || 0);
   if (!(l && w && h)) return actual;
-  const volumetric = (l * w * h) / 5000;
+  const volumetric = (l * w * h) / 4000;
   return Math.max(actual, volumetric);
 }
 

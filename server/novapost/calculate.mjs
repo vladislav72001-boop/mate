@@ -44,8 +44,11 @@ export function calculateMock(input) {
   const widthCm = Math.max(1, Number(input.widthCm) || 20);
   const heightCm = Math.max(1, Number(input.heightCm) || 15);
   const limits = resolveParcelLimits(lengthCm, widthCm, heightCm, weightKg, input.boxSize);
-  const volumetricKg = (lengthCm * widthCm * heightCm) / 5000;
-  const chargeableKg = Math.max(weightKg, Math.min(volumetricKg, limits.maxWeightKg));
+  const isDocuments = String(input.boxSize || '').toUpperCase() === 'XS';
+  const volumetricKg = (lengthCm * widthCm * heightCm) / 4000;
+  const chargeableKg = isDocuments
+    ? weightKg
+    : Math.max(weightKg, Math.min(volumetricKg, limits.maxWeightKg));
   const base = 12;
   const perKg = 2.1;
   const delivery = Math.round((base + chargeableKg * perKg) * 100) / 100;
@@ -106,11 +109,12 @@ async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDiv
   const insuranceCost = Math.max(1, Math.round(Number(input.declaredValue ?? 100)));
   const dims = normalizeParcelDimensionsMm(lengthCm, widthCm, heightCm);
 
+  const isDocuments = String(input.boxSize || '').toUpperCase() === 'XS';
   const payload = {
     payerType: input.payerType === 'Recipient' ? 'Recipient' : 'Sender',
     parcels: [{
       rowNumber: 1,
-      cargoCategory: 'parcel',
+      cargoCategory: isDocuments ? 'documents' : 'parcel',
       parcelDescription: 'Calculation request',
       insuranceCost,
       length: dims.length,

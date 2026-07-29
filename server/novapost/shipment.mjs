@@ -181,6 +181,7 @@ export async function createInternationalShipment(body, clientOrder) {
     throw new Error(`Nova Post не принимает посылки тяжелее ${maxNpKg} кг.`);
   }
   const insuranceCost = Math.max(1, Number(parcel.declaredValue ?? 100));
+  const isDocuments = String(parcel.boxSize || '').toUpperCase() === 'XS';
 
   const jwt = await getNovaPostJwt();
   const senderCountry = normalizeCountryCode(body.sender?.country || 'HU');
@@ -216,7 +217,7 @@ export async function createInternationalShipment(body, clientOrder) {
     payerContractNumber,
     parcels: [{
       rowNumber: 1,
-      cargoCategory: 'parcel',
+      cargoCategory: isDocuments ? 'documents' : 'parcel',
       parcelDescription: String(parcel.description || 'B2C shipment').slice(0, 120),
       insuranceCost,
       length: lengthMm,

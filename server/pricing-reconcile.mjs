@@ -30,7 +30,7 @@ export async function reconcileParcelPrice({
 }) {
   const settings = await getSettings();
   const currency = String(settings.currency || 'HUF').toUpperCase();
-  const billableKg = chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm);
+  const billableKg = chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm, boxSize);
 
   const mate = await calculateMatePrice({
     toCountry,

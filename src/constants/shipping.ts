@@ -130,10 +130,11 @@ export function estimateParcelPrice(preset: {
   widthCm: number;
   heightCm: number;
   weightKg: number;
-}, currency = DEFAULT_QUOTE_CURRENCY) {
+}, currency = DEFAULT_QUOTE_CURRENCY, boxSize?: ParcelKey | 'custom') {
   const weightKg = Math.max(0.1, preset.weightKg);
-  const volumetricKg = (preset.lengthCm * preset.widthCm * preset.heightCm) / 5000;
-  const chargeableKg = Math.max(weightKg, volumetricKg);
+  const isDocuments = boxSize === 'XS';
+  const volumetricKg = (preset.lengthCm * preset.widthCm * preset.heightCm) / 4000;
+  const chargeableKg = isDocuments ? weightKg : Math.max(weightKg, volumetricKg);
   const baseEur = 12 + chargeableKg * 2.1;
   const inCurrency = eurToQuoteCurrency(Math.round(baseEur * 100) / 100, currency);
   return currency === 'HUF' ? Math.round(inCurrency) : Math.round(inCurrency * 100) / 100;

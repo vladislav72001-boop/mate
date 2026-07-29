@@ -962,7 +962,7 @@ export function CalcForm({
       const next = { ...prev };
       for (const key of keys) {
         if (next[key] == null) {
-          next[key] = estimateParcelPrice(PARCEL_PRESETS[key]);
+          next[key] = estimateParcelPrice(PARCEL_PRESETS[key], DEFAULT_QUOTE_CURRENCY, key);
         }
       }
       return next;
@@ -2066,7 +2066,7 @@ export function CalcForm({
         key,
         label: key === 'XS' ? t('calc.sizeEnvelope') : key,
         icon: SIZE_ICONS[key],
-        dims: t('calc.sizeDimsFmt', { l: p.lengthCm, w: p.widthCm, h: p.heightCm }),
+        dims: key === 'XS' ? '' : t('calc.sizeDimsFmt', { l: p.lengthCm, w: p.widthCm, h: p.heightCm }),
         weight: t('calc.sizeWeightFmt', { kg: p.weightKg }),
         modes: allowed,
       };
@@ -2253,7 +2253,7 @@ export function CalcForm({
                       <span className="calc-form__size-icon" aria-hidden>{s.icon}</span>
                       <span className="calc-form__size-body">
                         <b>{s.label}</b>
-                        <span className="calc-form__size-dims">{s.dims}</span>
+                        {s.dims ? <span className="calc-form__size-dims">{s.dims}</span> : null}
                         {s.weight && <span className="calc-form__size-weight">{s.weight}</span>}
                         <span className="calc-form__size-modes">
                           {MODE_CHIP_ORDER.filter((m) => s.modes.includes(m)).map((m) => (
