@@ -68,6 +68,21 @@ function validateParcelInput(input) {
   const limits = resolveParcelLimits(lengthCm, widthCm, heightCm, weightKg, input.boxSize);
   const dimError = validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits);
   if (dimError) throw new Error(dimError);
+
+  // Courier-only “label fits” minimum: 5 × 15 × 15 cm (order-independent).
+  // Nova Post will reject smaller faces for custom items, so we fail early on our side too.
+  const isCustom = String(input.boxSize || '').toUpperCase().startsWith('CUSTOM');
+  if (isCustom) {
+    const sidesAsc = [lengthCm, widthCm, heightCm]
+      .map((cm) => Math.max(0, Number(cm) || 0))
+      .sort((a, b) => a - b);
+    const minSmall = 5;
+    const minMid = 15;
+    if (sidesAsc[0] < minSmall || sidesAsc[1] < minMid) {
+      throw new Error('Minimum face size is 5 × 15 × 15 cm (label must fit).');
+    }
+  }
+
   if (weightKg > limits.maxWeightKg) {
     throw new Error(`Weight ${weightKg} kg exceeds limit ${limits.maxWeightKg} kg`);
   }

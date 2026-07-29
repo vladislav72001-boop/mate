@@ -1745,6 +1745,17 @@ export function CalcForm({
           return t('calc.valCustomSize');
         }
         if (Number(customSize.kg) > MAX_CUSTOM_WEIGHT_KG) return t('calc.valMaxWeight');
+
+        // Courier-only “label fits” minimum: 5 × 15 × 15 cm (order-independent).
+        // We validate sorted ascending to match minSideCm: [5, 15, 15].
+        const l = Number(customSize.l);
+        const w = Number(customSize.w);
+        const h = Number(customSize.h);
+        const lwh = [l, w, h].map((cm) => (Number.isFinite(cm) ? cm : 0)).sort((a, b) => a - b);
+        const minSmall = NONSTANDARD_LIMITS.minSideCm[0];
+        const minMid = NONSTANDARD_LIMITS.minSideCm[1];
+        // If the smallest side < 5 or the middle side < 15 — courier label may not fit.
+        if (lwh[0] < minSmall || lwh[1] < minMid) return t('calc.sizeNonstandardNote');
       }
     }
     if (step === 4) {
@@ -2331,7 +2342,7 @@ export function CalcForm({
                     <label>{t('calc.lengthCm')}</label>
                     <input
                       type="number"
-                      min={1}
+                      min={NONSTANDARD_LIMITS.minSideCm[0]}
                       max={NONSTANDARD_LIMITS.maxLengthCm}
                       inputMode="decimal"
                       value={customSize.l}
@@ -2346,7 +2357,7 @@ export function CalcForm({
                     <label>{t('calc.widthCm')}</label>
                     <input
                       type="number"
-                      min={1}
+                      min={NONSTANDARD_LIMITS.minSideCm[0]}
                       max={NONSTANDARD_LIMITS.maxLengthCm}
                       inputMode="decimal"
                       value={customSize.w}
@@ -2361,7 +2372,7 @@ export function CalcForm({
                     <label>{t('calc.heightCm')}</label>
                     <input
                       type="number"
-                      min={1}
+                      min={NONSTANDARD_LIMITS.minSideCm[0]}
                       max={NONSTANDARD_LIMITS.maxLengthCm}
                       inputMode="decimal"
                       value={customSize.h}
