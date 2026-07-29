@@ -1159,15 +1159,6 @@ function App() {
                     {t('about.titleLine1')}<br />
                     <span>{t('about.titleLine2')}</span>
                   </h1>
-                  <p>
-                    {t('about.pageLead')}
-                  </p>
-                  <button className="about-video" type="button">
-                    <span className="about-play" aria-hidden>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="8 5 19 12 8 19 8 5"/></svg>
-                    </span>
-                    {t('about.watchVideo')}
-                  </button>
                 </div>
                 <div className="about-hero__map" aria-hidden>
                   <svg className="about-map-svg" viewBox="0 0 600 360" fill="none">
@@ -1175,22 +1166,27 @@ function App() {
                       <pattern id="about-map-dots" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
                         <circle cx="7" cy="7" r="1.7" fill="#122023" fillOpacity="0.16"/>
                       </pattern>
-                      <radialGradient id="about-map-glow" cx="0.5" cy="0.5" r="0.5">
-                        <stop offset="0%" stopColor="#E1FF01" stopOpacity="0.28"/>
+                      <radialGradient id="about-map-glow" cx="0.5" cy="0.5" r="0.62">
+                        <stop offset="0%" stopColor="#E1FF01" stopOpacity="0.24"/>
                         <stop offset="100%" stopColor="#E1FF01" stopOpacity="0"/>
                       </radialGradient>
                     </defs>
                     <rect width="600" height="360" fill="url(#about-map-dots)"/>
-                    <circle cx="300" cy="180" r="120" fill="url(#about-map-glow)"/>
-                    {([[95,80],[190,38],[325,45],[462,72],[495,198],[378,292],[185,282],[48,208]] as [number,number][]).map(([x,y],i)=>(
-                      <line key={`l${i}`} x1="232" y1="158" x2={x} y2={y} stroke="#E1FF01" strokeWidth="1.4" strokeOpacity="0.72"/>
-                    ))}
-                    {([[95,80],[190,38],[325,45],[462,72],[495,198],[378,292],[185,282],[48,208]] as [number,number][]).map(([x,y],i)=>(
-                      <circle key={`c${i}`} cx={x} cy={y} r="4.2" fill="#E1FF01" fillOpacity="0.92"/>
-                    ))}
-                    <circle cx="232" cy="158" r="8" fill="#E1FF01"/>
-                    <circle cx="232" cy="158" r="16" stroke="#E1FF01" strokeWidth="1.5" strokeOpacity="0.4"/>
-                    <circle cx="232" cy="158" r="26" stroke="#E1FF01" strokeWidth="0.8" strokeOpacity="0.2"/>
+                    <circle cx="300" cy="180" r="168" fill="url(#about-map-glow)"/>
+                    <g fill="#E1FF01" fillOpacity="0.26" stroke="#E1FF01" strokeOpacity="0.82" strokeWidth="1.6" strokeLinejoin="round">
+                      <path d="M212 98l20-9 17 4 15-11 25 6 21-5 29 9 14 14 17 3 15 15-10 11-23 2-10 10-21-2-18 10-20-4-13-16-22-7-20-16 4-14z"/>
+                      <path d="M338 177l17 5 11 14-8 16-18 2-10-12 8-25z"/>
+                      <path d="M311 206l14 6 5 14-11 12-16-4-4-12 12-16z"/>
+                      <path d="M384 228l16 6 7 13-10 14-15-5-5-13 7-15z"/>
+                      <path d="M246 160l13 5 4 11-10 10-13-4-3-10 9-12z"/>
+                      <path d="M270 128l10 4 4 8-8 8-10-4-4-8 8-8z"/>
+                      <path d="M226 198l10 4 4 9-7 8-10-3-3-9 6-9z"/>
+                    </g>
+                    <g fill="#E1FF01">
+                      {([[292,145],[265,158],[323,168],[346,152],[305,194],[281,214],[356,236]] as [number, number][]).map(([x, y], i) => (
+                        <circle key={`city-${i}`} cx={x} cy={y} r="3.4" fillOpacity="0.94" />
+                      ))}
+                    </g>
                   </svg>
                 </div>
               </div>
