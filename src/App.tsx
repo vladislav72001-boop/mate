@@ -139,21 +139,6 @@ const bizSteps = [
   { n: '6', icon: 'tracking',    title: 'Доставка клиенту',    desc: 'Клиент получает заказ в срок' },
 ];
 
-const aboutStatDefs = [
-  { icon: 'warehouse', num: '16', labelKey: 'statsWarehouses' },
-  { icon: 'cargo', num: '6+', labelKey: 'statsCarriers' },
-  { icon: 'all', num: '16', labelKey: 'statsCountries' },
-  { icon: 'users', num: '50+', labelKey: 'statsCompanies' },
-] as const;
-
-const aboutContacts = [
-  { id: 'email',    label: 'Email',          value: 'Info@matedelivery.com', href: 'mailto:Info@matedelivery.com' },
-  { id: 'phone',    label: 'Телефон',        value: '+36 705 549 233',       href: 'tel:+36705549233' },
-  { id: 'whatsapp', label: 'WhatsApp',       value: '+36 705 549 233',       href: 'https://wa.me/36705549233' },
-  { id: 'telegram', label: 'Telegram',       value: '@matedelivery',         href: 'https://t.me/matedelivery' },
-  { id: 'support',  label: 'Поддержка 24/7', value: 'Мы всегда на связи и готовы помочь.', href: 'mailto:Info@matedelivery.com?subject=Поддержка%20MATE' },
-];
-
 const dashOrders = [
   { id: '#10254', carrier: 'DPD',    status: 'В пути',     stColor: '#1da1f2', route: 'Таллин → Берлин',   price: '․24.50' },
   { id: '#10253', carrier: 'DHL',    status: 'Доставлено', stColor: '#22c55e', route: 'Рига → Мюнхен',     price: '․18.75' },
@@ -1191,90 +1176,68 @@ function App() {
                 </div>
               </div>
             </div>
-
-            <aside className="about-contact card">
-              <div className="about-contact__badge">{t('about.contactBadge')}</div>
-              <h2>{t('about.contactTitle')}</h2>
-              <p>{t('about.contactLead')}</p>
-              <ul className="about-contact__list">
-                {aboutContacts.map((c) => (
-                  <li key={c.id}>
-                    <a
-                      className="about-contact__item"
-                      href={c.href}
-                      target={c.href.startsWith('http') ? '_blank' : undefined}
-                      rel={c.href.startsWith('http') ? 'noopener noreferrer' : undefined}
-                    >
-                      <span className="about-contact__icon"><ContactIcon id={c.id} size={17} /></span>
-                      <span className="about-contact__text">
-                        <small>{c.id === 'email' ? t('about.emailLabel') : c.id === 'phone' ? t('about.phoneLabel') : c.id === 'whatsapp' ? t('about.whatsappLabel') : c.id === 'support' ? t('about.supportLabel') : c.label}</small>
-                        <b>{c.id === 'support' ? t('about.supportValue') : c.value}</b>
-                      </span>
-                      <span className="about-contact__arr"><ArrowIcon size={14} /></span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-              <a className="btn btn-lime about-contact__cta" href="mailto:Info@matedelivery.com">
-                {t('about.writeUs')}
-                <ArrowIcon size={14} />
-              </a>
-            </aside>
           </section>
 
-          <section className="about-stats" aria-label={t('about.statsAria')}>
-            {aboutStatDefs.map((s, i) => (
-              <article
-                key={s.icon}
-                className="about-stat card"
-                style={{ '--delay': `${80 + i * 60}ms` } as React.CSSProperties}
-              >
-                <div className="about-stat__icon"><ServiceSvgIcon id={s.icon} size={22} /></div>
-                <div className="about-stat__text">
-                  <b>{s.num}</b>
-                  <span>{t(`about.${s.labelKey}`)}</span>
+          <section className="about-story card" aria-label={t('about.storyTitle')}>
+            <h2>{t('about.storyTitle')}</h2>
+            <p>{t('about.storyP1')}</p>
+            <p>{t('about.storyP2')}</p>
+          </section>
+
+          <section className="about-reasons" aria-label={t('about.reasonsAria')}>
+            {([
+              { id: 'price', titleKey: 'reasonPriceTitle', textKey: 'reasonPriceText' },
+              { id: 'track', titleKey: 'reasonDateTitle', textKey: 'reasonDateText' },
+              { id: 'platform', titleKey: 'reasonSupportTitle', textKey: 'reasonSupportText' },
+            ] as const).map((item) => (
+              <article key={item.id} className="about-reason card">
+                <div className={`feature-icon feature-icon--${item.id === 'platform' ? 'ai' : item.id}`}>
+                  <FeatureIcon id={item.id} />
                 </div>
+                <h3>{t(`about.${item.titleKey}`)}</h3>
+                <p>{t(`about.${item.textKey}`)}</p>
               </article>
             ))}
           </section>
 
-          <PartnersSection about />
+          <section className="about-columns">
+            <article className="about-panel card" aria-label={t('about.companyTitle')}>
+              <h3>{t('about.companyTitle')}</h3>
+              <ul className="about-panel__rows">
+                <li><span>{t('about.companyNameLabel')}</span><b>{t('about.legalCompany')}</b></li>
+                <li><span>{t('about.legalTaxLabel')}</span><b>{t('about.legalTaxValue')}</b></li>
+                <li><span>{t('about.legalAddressLabel')}</span><b>{t('about.legalAddress')}</b></li>
+                <li><span>{t('about.foundedLabel')}</span><b>{t('about.foundedValue')}</b></li>
+              </ul>
+            </article>
+            <article className="about-panel card" aria-label={t('about.reachTitle')}>
+              <h3>{t('about.reachTitle')}</h3>
+              <ul className="about-panel__rows">
+                <li><span>{t('about.phoneWhatsappLabel')}</span><b>+36 705 549 233</b></li>
+                <li><span>{t('about.telegramLabel')}</span><b>@matedelivery</b></li>
+                <li><span>{t('about.emailLabel')}</span><b>info@matedelivery.com</b></li>
+                <li><span>{t('about.languagesLabel')}</span><b>{t('about.languagesValue')}</b></li>
+              </ul>
+            </article>
+          </section>
 
-          <section className="about-features" aria-label={t('about.featuresTitle')}>
-            <header className="about-features__head">
-              <span className="about-features__eyebrow">{t('about.featuresEyebrow')}</span>
-              <h2>{t('about.featuresTitle')}</h2>
-              <p>{t('about.featuresLead')}</p>
-            </header>
-            <div className="about-features__grid">
-              <article className="about-feature-card" style={{ '--delay': '40ms' } as React.CSSProperties}>
-                <div className="feature-icon feature-icon--ai"><FeatureIcon id="ai" /></div>
-                <h3>{t('home.featureAiTitle')}</h3>
-                <p>{t('home.featureAiText')}</p>
-              </article>
-              <article className="about-feature-card" style={{ '--delay': '100ms' } as React.CSSProperties}>
-                <div className="feature-icon feature-icon--price"><FeatureIcon id="price" /></div>
-                <h3>{t('home.featurePriceTitle')}</h3>
-                <p>{t('home.featurePriceText')}</p>
-              </article>
-              <article className="about-feature-card" style={{ '--delay': '160ms' } as React.CSSProperties}>
-                <div className="feature-icon feature-icon--track"><FeatureIcon id="track" /></div>
-                <h3>{t('home.featureTrackTitle')}</h3>
-                <p>{t('home.featureTrackText')}</p>
-              </article>
-              <article className="about-feature-card" style={{ '--delay': '220ms' } as React.CSSProperties}>
-                <div className="feature-icon feature-icon--platform"><FeatureIcon id="platform" /></div>
-                <h3>{t('home.featurePlatformTitle')}</h3>
-                <p>{t('home.featurePlatformText')}</p>
-              </article>
+          <section className="about-cta card" aria-label={t('about.ctaTitle')}>
+            <div className="about-cta__copy">
+              <h3>{t('about.ctaTitle')}</h3>
+              <p>{t('about.ctaLead')}</p>
+            </div>
+            <div className="about-cta__actions">
+              <a className="btn btn-lime" href="mailto:info@matedelivery.com">
+                {t('about.writeUs')}
+              </a>
+              <button className="btn btn-outline" type="button" onClick={() => setPage('services')}>
+                {t('about.ctaSecondary')}
+              </button>
             </div>
           </section>
 
           <footer className="about-legal" aria-label={t('about.legalTitle')}>
             <div className="about-legal__brand">
-              <span className="about-legal__badge" aria-hidden>
-                <ContactIcon id="company" size={16} />
-              </span>
               <div>
                 <div className="about-legal__title">{t('about.legalTitle')}</div>
                 <strong className="about-legal__company-name">{t('about.legalCompany')}</strong>
