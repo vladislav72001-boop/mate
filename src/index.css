@@ -3446,31 +3446,97 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 280px;
-  animation: aboutMapFloat 6s ease-in-out infinite;
-}
-
-@keyframes aboutMapFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  min-height: 300px;
+  position: relative;
 }
 
 .about-map-svg {
   width: 100%;
-  max-width: 440px;
+  max-width: 520px;
   height: auto;
-  filter: drop-shadow(0 16px 36px rgba(18, 32, 35, 0.1));
+  filter: drop-shadow(0 18px 40px rgba(18, 32, 35, 0.12));
+}
+
+.about-map-land {
+  transform-origin: 340px 240px;
+  animation: aboutLandBreathe 7s ease-in-out infinite;
+}
+
+.about-map-route {
+  stroke-dasharray: 6 8;
+  stroke-opacity: 0.72;
+  animation: aboutRouteFlow 2.8s linear infinite;
+}
+
+.about-map-pulse {
+  fill: rgba(225, 255, 1, 0.18);
+  stroke: rgba(225, 255, 1, 0.55);
+  stroke-width: 1;
+  transform-origin: center;
+  animation: aboutCityPulse 2.4s ease-out infinite;
+}
+
+.about-map-pulse--lg {
+  fill: rgba(225, 255, 1, 0.12);
+  stroke: rgba(225, 255, 1, 0.4);
+  animation-duration: 2.8s;
+}
+
+.about-map-pulse--sm {
+  fill: rgba(225, 255, 1, 0.1);
+  stroke: rgba(225, 255, 1, 0.35);
+}
+
+.about-map-label {
+  fill: #122023;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.about-map-label--hub {
+  fill: #122023;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.about-map-caption {
+  fill: rgba(18, 32, 35, 0.45);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@keyframes aboutLandBreathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.015); opacity: 0.96; }
+}
+
+@keyframes aboutRouteFlow {
+  from { stroke-dashoffset: 28; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes aboutCityPulse {
+  0% { opacity: 0.85; transform: scale(0.55); }
+  70% { opacity: 0; transform: scale(1.35); }
+  100% { opacity: 0; transform: scale(1.45); }
 }
 
 .about-story {
-  padding: 28px;
-  margin-top: 8px;
+  padding: 30px 28px;
+  margin-top: 14px;
+}
+
+.about-story__inner {
+  max-width: 720px;
 }
 
 .about-story h2 {
-  margin: 0 0 12px;
-  font-size: clamp(2.4rem, 3.8vw, 3.3rem);
-  line-height: 1.13;
+  margin: 0 0 14px;
+  font-size: clamp(2.5rem, 3.8vw, 3.4rem);
+  line-height: 1.12;
   letter-spacing: -0.03em;
   color: var(--navy);
 }
@@ -3478,12 +3544,12 @@ body {
 .about-story p {
   margin: 0;
   font-size: 1.55rem;
-  line-height: 1.58;
-  color: rgba(18, 32, 35, 0.74);
+  line-height: 1.62;
+  color: rgba(18, 32, 35, 0.72);
 }
 
 .about-story p + p {
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .about-reasons {
@@ -3494,7 +3560,14 @@ body {
 }
 
 .about-reason {
-  padding: 20px 18px;
+  padding: 22px 18px 20px;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.about-reason:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 34px rgba(18, 32, 35, 0.08);
+  border-color: rgba(18, 32, 35, 0.14);
 }
 
 .about-reason .feature-icon {
@@ -3529,12 +3602,15 @@ body {
   padding: 20px 18px;
 }
 
-.about-panel h3 {
+.about-panel h3,
+.about-panel h4 {
   margin: 0 0 14px;
-  font-size: 2rem;
+  font-size: 1.15rem;
   line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--navy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: var(--fw-semibold);
 }
 
 .about-panel__rows {
@@ -3546,8 +3622,9 @@ body {
 .about-panel__rows li {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 0;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 0;
   border-bottom: 1px solid rgba(18, 32, 35, 0.08);
 }
 
@@ -3559,14 +3636,24 @@ body {
 .about-panel__rows span {
   font-size: 1.2rem;
   color: var(--muted);
+  flex-shrink: 0;
 }
 
-.about-panel__rows b {
+.about-panel__rows b,
+.about-panel__link {
   text-align: right;
   font-size: 1.28rem;
   line-height: 1.35;
   color: var(--navy);
   font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.about-panel__link:hover {
+  color: #5a6b00;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .about-cta {
@@ -3596,12 +3683,23 @@ body {
 .about-cta__actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .about-cta__actions .btn {
   margin-top: 0;
   width: auto;
-  min-width: 186px;
+  min-width: 168px;
+  text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-map-land,
+  .about-map-route,
+  .about-map-pulse,
+  .about-hero__glow {
+    animation: none !important;
+  }
 }
 
 .about-contact {

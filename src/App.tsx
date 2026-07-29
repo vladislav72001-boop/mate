@@ -15,6 +15,7 @@ import { ScrollToTop } from './components/ScrollToTop';
 import { OrderSuccessScreen } from './components/calc/OrderSuccessScreen';
 import { AdminApp } from './components/admin/AdminApp';
 import { MateLogo } from './components/MateLogo';
+import { AboutEuropeMap } from './components/AboutEuropeMap';
 import { PartnerLogo, PARTNER_IDS } from './components/PartnerLogo';
 import { LanguageSelect } from './components/LanguageSelect';
 import { useI18n } from './i18n/context';
@@ -1146,42 +1147,18 @@ function App() {
                   </h1>
                 </div>
                 <div className="about-hero__map" aria-hidden>
-                  <svg className="about-map-svg" viewBox="0 0 600 360" fill="none">
-                    <defs>
-                      <pattern id="about-map-dots" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
-                        <circle cx="7" cy="7" r="1.7" fill="#122023" fillOpacity="0.16"/>
-                      </pattern>
-                      <radialGradient id="about-map-glow" cx="0.5" cy="0.5" r="0.62">
-                        <stop offset="0%" stopColor="#E1FF01" stopOpacity="0.24"/>
-                        <stop offset="100%" stopColor="#E1FF01" stopOpacity="0"/>
-                      </radialGradient>
-                    </defs>
-                    <rect width="600" height="360" fill="url(#about-map-dots)"/>
-                    <circle cx="300" cy="180" r="168" fill="url(#about-map-glow)"/>
-                    <g fill="#E1FF01" fillOpacity="0.26" stroke="#E1FF01" strokeOpacity="0.82" strokeWidth="1.6" strokeLinejoin="round">
-                      <path d="M212 98l20-9 17 4 15-11 25 6 21-5 29 9 14 14 17 3 15 15-10 11-23 2-10 10-21-2-18 10-20-4-13-16-22-7-20-16 4-14z"/>
-                      <path d="M338 177l17 5 11 14-8 16-18 2-10-12 8-25z"/>
-                      <path d="M311 206l14 6 5 14-11 12-16-4-4-12 12-16z"/>
-                      <path d="M384 228l16 6 7 13-10 14-15-5-5-13 7-15z"/>
-                      <path d="M246 160l13 5 4 11-10 10-13-4-3-10 9-12z"/>
-                      <path d="M270 128l10 4 4 8-8 8-10-4-4-8 8-8z"/>
-                      <path d="M226 198l10 4 4 9-7 8-10-3-3-9 6-9z"/>
-                    </g>
-                    <g fill="#E1FF01">
-                      {([[292,145],[265,158],[323,168],[346,152],[305,194],[281,214],[356,236]] as [number, number][]).map(([x, y], i) => (
-                        <circle key={`city-${i}`} cx={x} cy={y} r="3.4" fillOpacity="0.94" />
-                      ))}
-                    </g>
-                  </svg>
+                  <AboutEuropeMap />
                 </div>
               </div>
             </div>
           </section>
 
           <section className="about-story card" aria-label={t('about.storyTitle')}>
-            <h2>{t('about.storyTitle')}</h2>
-            <p>{t('about.storyP1')}</p>
-            <p>{t('about.storyP2')}</p>
+            <div className="about-story__inner">
+              <h2>{t('about.storyTitle')}</h2>
+              <p>{t('about.storyP1')}</p>
+              <p>{t('about.storyP2')}</p>
+            </div>
           </section>
 
           <section className="about-reasons" aria-label={t('about.reasonsAria')}>
@@ -1202,7 +1179,7 @@ function App() {
 
           <section className="about-columns">
             <article className="about-panel card" aria-label={t('about.companyTitle')}>
-              <h3>{t('about.companyTitle')}</h3>
+              <h4>{t('about.companyTitle')}</h4>
               <ul className="about-panel__rows">
                 <li><span>{t('about.companyNameLabel')}</span><b>{t('about.legalCompany')}</b></li>
                 <li><span>{t('about.legalTaxLabel')}</span><b>{t('about.legalTaxValue')}</b></li>
@@ -1211,12 +1188,30 @@ function App() {
               </ul>
             </article>
             <article className="about-panel card" aria-label={t('about.reachTitle')}>
-              <h3>{t('about.reachTitle')}</h3>
+              <h4>{t('about.reachTitle')}</h4>
               <ul className="about-panel__rows">
-                <li><span>{t('about.phoneWhatsappLabel')}</span><b>+36 705 549 233</b></li>
-                <li><span>{t('about.telegramLabel')}</span><b>@matedelivery</b></li>
-                <li><span>{t('about.emailLabel')}</span><b>info@matedelivery.com</b></li>
-                <li><span>{t('about.languagesLabel')}</span><b>{t('about.languagesValue')}</b></li>
+                <li>
+                  <span>{t('about.phoneWhatsappLabel')}</span>
+                  <a className="about-panel__link" href="https://wa.me/36705549233" target="_blank" rel="noopener noreferrer">
+                    +36 705 549 233
+                  </a>
+                </li>
+                <li>
+                  <span>{t('about.telegramLabel')}</span>
+                  <a className="about-panel__link" href="https://t.me/matedelivery" target="_blank" rel="noopener noreferrer">
+                    @matedelivery
+                  </a>
+                </li>
+                <li>
+                  <span>{t('about.emailLabel')}</span>
+                  <a className="about-panel__link" href="mailto:info@matedelivery.com">
+                    info@matedelivery.com
+                  </a>
+                </li>
+                <li>
+                  <span>{t('about.languagesLabel')}</span>
+                  <b>{t('about.languagesValue')}</b>
+                </li>
               </ul>
             </article>
           </section>
@@ -1227,12 +1222,15 @@ function App() {
               <p>{t('about.ctaLead')}</p>
             </div>
             <div className="about-cta__actions">
-              <a className="btn btn-lime" href="mailto:info@matedelivery.com">
+              <a className="btn btn-lime" href="mailto:info@matedelivery.com?subject=Mate%20Delivery">
                 {t('about.writeUs')}
               </a>
-              <button className="btn btn-outline" type="button" onClick={() => setPage('services')}>
+              <a
+                className="btn btn-outline"
+                href="mailto:info@matedelivery.com?subject=FAQ%20%2F%20Questions"
+              >
                 {t('about.ctaSecondary')}
-              </button>
+              </a>
             </div>
           </section>
 
