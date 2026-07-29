@@ -8512,6 +8512,12 @@ body {
   color: #b42318;
 }
 
+.calc-form__hint--brand {
+  background: var(--navy);
+  color: var(--lime);
+  border: 1px solid rgba(225, 255, 1, 0.18);
+}
+
 .calc-city-row {
   display: flex;
   gap: 8px;

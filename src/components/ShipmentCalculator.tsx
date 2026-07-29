@@ -2389,7 +2389,7 @@ export function CalcForm({
                     <small>{t('calc.yourWeight')}</small>
                   </div>
                 </div>
-                <p className="calc-form__hint">{t('calc.sizeCustomBestPriceHint')}</p>
+                <p className="calc-form__hint calc-form__hint--brand">{t('calc.sizeCustomBestPriceHint')}</p>
               </div>
               )}
               <label className="calc-form__check">
