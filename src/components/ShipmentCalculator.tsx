@@ -2232,7 +2232,6 @@ export function CalcForm({
                 title={stepMeta[3].title}
                 subtitle={stepMeta[3].sub}
               />
-              {sizeKey !== 'custom' && (
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
                   const price = s.key === 'custom'
@@ -2272,7 +2271,6 @@ export function CalcForm({
                   );
                 })}
               </div>
-              )}
               {sizeKey === 'custom' && (
               <div className="calc-custom-dims">
                 <div className="calc-weight-slider">
