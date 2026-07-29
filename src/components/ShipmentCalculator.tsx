@@ -2271,6 +2271,7 @@ export function CalcForm({
                   );
                 })}
               </div>
+              {sizeKey === 'custom' && (
               <div className="calc-custom-dims">
                 <div className="calc-weight-slider">
                   <div className="calc-weight-slider__head">
@@ -2311,6 +2312,15 @@ export function CalcForm({
                         const n = Math.round(Number(e.target.value) * 10) / 10;
                         setSizeKey('custom');
                         setCustomSize((prev) => ({ ...prev, kg: String(n) }));
+                      }}
+                      style={{
+                        ['--weight-pct' as string]: `${Math.min(
+                          100,
+                          Math.max(
+                            0,
+                            ((customWeightValue - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100,
+                          ),
+                        )}%`,
                       }}
                     />
                   </div>
@@ -2381,6 +2391,7 @@ export function CalcForm({
                 </div>
                 <p className="calc-form__hint">{t('calc.sizeCustomBestPriceHint')}</p>
               </div>
+              )}
               <label className="calc-form__check">
                 <input type="checkbox" checked={fragile} onChange={(e) => setFragile(e.target.checked)} />
                 <span>{t('calc.fragile', { fee: fragileFeeLabel })}</span>
