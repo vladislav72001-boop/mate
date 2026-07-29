@@ -2330,7 +2330,7 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, l: e.target.value }));
                       }}
                     />
-                    <small>{t('calc.sizeCustomSub')}</small>
+                    <small>{t('calc.yourDims')}</small>
                   </div>
                   <div className="field-block">
                     <label>{t('calc.widthCm')}</label>
@@ -2345,7 +2345,7 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, w: e.target.value }));
                       }}
                     />
-                    <small>{t('calc.sizeCustomSub')}</small>
+                    <small>{t('calc.yourDims')}</small>
                   </div>
                   <div className="field-block">
                     <label>{t('calc.heightCm')}</label>
@@ -2360,7 +2360,7 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, h: e.target.value }));
                       }}
                     />
-                    <small>{t('calc.sizeCustomSub')}</small>
+                    <small>{t('calc.yourDims')}</small>
                   </div>
                   <div className="field-block">
                     <label>{t('calc.weightKg')}</label>
@@ -2376,12 +2376,10 @@ export function CalcForm({
                         setCustomSize((prev) => ({ ...prev, kg: e.target.value }));
                       }}
                     />
-                    <small>{t('calc.weightHint')}</small>
+                    <small>{t('calc.yourWeight')}</small>
                   </div>
                 </div>
-                <p className="calc-form__hint">
-                  {t('calc.sizeCustomSub')}
-                </p>
+                <p className="calc-form__hint">{t('calc.sizeCustomBestPriceHint')}</p>
               </div>
               <label className="calc-form__check">
                 <input type="checkbox" checked={fragile} onChange={(e) => setFragile(e.target.checked)} />
