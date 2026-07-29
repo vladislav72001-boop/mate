@@ -3579,7 +3579,9 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 1.35rem;
+  line-height: 1;
   margin-bottom: 11px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
 }
 
 .about-reason b {

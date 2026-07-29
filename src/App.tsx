@@ -1147,7 +1147,7 @@ function App() {
 
             <section className="about-reasons" aria-label={t('about.reasonsAria')}>
               {([
-                { icon: '💶', titleKey: 'reasonPriceTitle', textKey: 'reasonPriceText' },
+                { icon: '💵', titleKey: 'reasonPriceTitle', textKey: 'reasonPriceText' },
                 { icon: '📅', titleKey: 'reasonDateTitle', textKey: 'reasonDateText' },
                 { icon: '🤝', titleKey: 'reasonSupportTitle', textKey: 'reasonSupportText' },
               ] as const).map((item) => (
