@@ -3452,46 +3452,46 @@ body {
 
 .about-map-svg {
   width: 100%;
-  max-width: 520px;
+  max-width: 560px;
   height: auto;
   filter: drop-shadow(0 18px 40px rgba(18, 32, 35, 0.12));
 }
 
 .about-map-land {
-  transform-origin: 340px 240px;
-  animation: aboutLandBreathe 7s ease-in-out infinite;
+  transform-origin: 440px 340px;
+  animation: aboutLandBreathe 8s ease-in-out infinite;
 }
 
 .about-map-route {
-  stroke-dasharray: 6 8;
-  stroke-opacity: 0.72;
-  animation: aboutRouteFlow 2.8s linear infinite;
+  stroke-dasharray: 5 10;
+  stroke-opacity: 0.85;
+  animation: aboutRouteFlow 2.4s linear infinite;
 }
 
 .about-map-pulse {
-  fill: rgba(225, 255, 1, 0.18);
-  stroke: rgba(225, 255, 1, 0.55);
+  fill: rgba(225, 255, 1, 0.16);
+  stroke: rgba(18, 32, 35, 0.18);
   stroke-width: 1;
   transform-origin: center;
-  animation: aboutCityPulse 2.4s ease-out infinite;
+  animation: aboutCityPulse 2.6s ease-out infinite;
 }
 
 .about-map-pulse--lg {
   fill: rgba(225, 255, 1, 0.12);
-  stroke: rgba(225, 255, 1, 0.4);
-  animation-duration: 2.8s;
+  stroke: rgba(225, 255, 1, 0.45);
+  animation-duration: 3s;
 }
 
 .about-map-pulse--sm {
   fill: rgba(225, 255, 1, 0.1);
-  stroke: rgba(225, 255, 1, 0.35);
+  stroke: rgba(225, 255, 1, 0.3);
 }
 
 .about-map-label {
-  fill: #122023;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  fill: rgba(18, 32, 35, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .about-map-label--hub {
@@ -3501,10 +3501,10 @@ body {
 }
 
 .about-map-caption {
-  fill: rgba(18, 32, 35, 0.45);
+  fill: rgba(18, 32, 35, 0.42);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
