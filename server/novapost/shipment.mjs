@@ -10,7 +10,9 @@ import {
   capParcelDimensionsMmForShipment,
   capWeightGramsForShipment,
   resolveParcelLimits,
+  validateNovaPostParcelRules,
   validateParcelDimensionsCm,
+  NOVAPOST_PARCEL_RULES,
 } from './parcel.mjs';
 import { normalizeCountryCode } from './calculate.mjs';
 
@@ -126,7 +128,7 @@ function formatNovaPostShipmentError(err) {
   }
   if (raw.includes('validation.not_allowed.sender')) {
     if (raw.includes('actualWeight')) {
-      return 'Nova Post не принимает посылку с таким весом. Максимум — 20 кг для международной отправки.';
+      return 'Nova Post не принимает посылку с таким весом. Максимум — 30 кг.';
     }
     if (raw.includes('volumetricWeight')) {
       return 'Nova Post не принимает посылку с такими габаритами. Уменьшите размер или выберите меньший тариф.';
@@ -142,9 +144,10 @@ function formatNovaPostShipmentError(err) {
 export async function createInternationalShipment(body, clientOrder) {
   const parcel = body.parcel || {};
   const weightKg = Math.max(0.1, Number(parcel.weightKg ?? 1));
-  const lengthCm = Number(parcel.lengthCm ?? 30);
-  const widthCm = Number(parcel.widthCm ?? 20);
-  const heightCm = Number(parcel.heightCm ?? 15);
+  const isDocuments = ['XS', 'ENVELOPE', 'DOCUMENTS'].includes(String(parcel.boxSize || '').toUpperCase());
+  const lengthCm = isDocuments ? 35 : Number(parcel.lengthCm ?? 30);
+  const widthCm = isDocuments ? 25 : Number(parcel.widthCm ?? 20);
+  const heightCm = isDocuments ? 2 : Number(parcel.heightCm ?? 15);
   const boxSize = String(parcel.boxSize || '');
   const limits = resolveParcelLimits(lengthCm, widthCm, heightCm, weightKg, boxSize);
   const dimErr = validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits);
@@ -153,7 +156,10 @@ export async function createInternationalShipment(body, clientOrder) {
     throw new Error(`Weight ${weightKg} kg exceeds limit ${limits.maxWeightKg} kg`);
   }
 
-  const maxNpKg = Number(process.env.NOVAPOST_MAX_WEIGHT_KG ?? 20);
+  const npRuleErr = validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg);
+  if (npRuleErr) throw new Error(npRuleErr);
+
+  const maxNpKg = Number(process.env.NOVAPOST_MAX_WEIGHT_KG ?? NOVAPOST_PARCEL_RULES.maxWeightKg);
   if (weightKg > maxNpKg) {
     throw new Error(`Nova Post не принимает посылки тяжелее ${maxNpKg} кг. Выберите меньший размер или уменьшите вес.`);
   }
@@ -172,8 +178,11 @@ export async function createInternationalShipment(body, clientOrder) {
     lengthCm, widthCm, heightCm,
   );
   if (dimsCapped) {
-    console.warn(
-      `[novapost] Parcel dimensions capped for POST /shipments (${lengthCm}×${widthCm}×${heightCm} cm → ${lengthMm}×${widthMm}×${heightMm} mm)`,
+    const maxL = Math.round(Number(process.env.NOVAPOST_MAX_LENGTH_MM ?? 1200) / 10);
+    const maxW = Math.round(Number(process.env.NOVAPOST_MAX_WIDTH_MM ?? 1200) / 10);
+    const maxH = Math.round(Number(process.env.NOVAPOST_MAX_HEIGHT_MM ?? 1200) / 10);
+    throw new Error(
+      `Габариты ${lengthCm}×${widthCm}×${heightCm} см превышают лимит Nova Post (${maxL}×${maxW}×${maxH} см). Уменьшите размер посылки.`,
     );
   }
   const { grams: actualWeight, capped: weightCapped } = capWeightGramsForShipment(weightKg);
@@ -181,7 +190,6 @@ export async function createInternationalShipment(body, clientOrder) {
     throw new Error(`Nova Post не принимает посылки тяжелее ${maxNpKg} кг.`);
   }
   const insuranceCost = Math.max(1, Number(parcel.declaredValue ?? 100));
-  const isDocuments = String(parcel.boxSize || '').toUpperCase() === 'XS';
 
   const jwt = await getNovaPostJwt();
   const senderCountry = normalizeCountryCode(body.sender?.country || 'HU');

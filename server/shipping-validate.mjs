@@ -1,5 +1,11 @@
 import { normalizeCountryCode } from './novapost/calculate.mjs';
-import { inferParcelTier, resolveParcelLimits, validateParcelDimensionsCm } from './novapost/parcel.mjs';
+import {
+  inferParcelTier,
+  resolveParcelLimits,
+  validateNovaPostParcelRules,
+  validateParcelDimensionsCm,
+  NOVAPOST_PARCEL_RULES,
+} from './novapost/parcel.mjs';
 
 const CALLING_CODE_BY_ISO2 = {
   CZ: '420', DE: '49', EE: '372', ES: '34', FR: '33', GB: '44',
@@ -12,7 +18,7 @@ const MAX_NATIONAL_DIGITS = {
   FR: 9, ES: 9, IT: 10, GB: 10, NL: 9, LT: 8, LV: 8, EE: 8, MD: 8,
 };
 
-const MAX_NP_WEIGHT_KG = Number(process.env.NOVAPOST_MAX_WEIGHT_KG ?? 20);
+const MAX_NP_WEIGHT_KG = Number(process.env.NOVAPOST_MAX_WEIGHT_KG ?? NOVAPOST_PARCEL_RULES.maxWeightKg);
 
 function validatePersonName(name, label) {
   const raw = String(name ?? '').trim().replace(/[—–-]+/g, ' ');
@@ -126,6 +132,8 @@ export function validateCheckoutBody(body) {
     if (weightKg > MAX_NP_WEIGHT_KG) {
       errors.push(`Посылка: Nova Post принимает до ${MAX_NP_WEIGHT_KG} кг на одну отправку`);
     }
+    const npRuleErr = validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg);
+    if (npRuleErr) errors.push(`Посылка: ${npRuleErr}`);
   }
 
   const toCountry = normalizeCountryCode(receiver.country || tariff.toCountry);

@@ -12,6 +12,8 @@ type Props = {
   onTrack?: (order: ShippingOrder) => void;
   paying?: boolean;
   cancelling?: boolean;
+  /** When false, hide Pay even if status is pending_payment (sender waiting for recipient). */
+  canPayOverride?: boolean;
 };
 
 function formatDate(iso: string | null | undefined, locale: string) {
@@ -29,12 +31,18 @@ function formatMoney(amount: number, currency: string) {
   return `${amount.toFixed(2)} ${currency}`;
 }
 
-function statusLabel(status: string, t: (key: string) => string) {
+function statusLabel(
+  status: string,
+  t: (key: string) => string,
+  opts?: { awaitingRecipient?: boolean },
+) {
   if (status === 'submitted') return t('dash.statusSubmitted');
   if (status === 'delivered') return t('dash.statusDelivered');
   if (status === 'waiting_from_you') return t('dash.statusWaitingFromYou');
   if (status === 'paid') return t('dash.statusPaid');
-  if (status === 'pending_payment') return t('dash.statusPending');
+  if (status === 'pending_payment') {
+    return opts?.awaitingRecipient ? t('dash.statusAwaitingRecipient') : t('dash.statusPending');
+  }
   if (status === 'cancelled') return t('dash.statusCancelled');
   return status;
 }
@@ -57,11 +65,13 @@ export function ShipmentDetailModal({
   onTrack,
   paying = false,
   cancelling = false,
+  canPayOverride,
 }: Props) {
   const { t, locale, intlLocale } = useI18n();
-  const canPay = order.status === 'pending_payment';
+  const canPay = canPayOverride ?? (order.status === 'pending_payment');
   const canCancel = order.status === 'pending_payment';
   const canTrack = ['submitted', 'waiting_from_you', 'delivered'].includes(order.status) || Boolean(order.npTtn);
+  const awaitingRecipient = order.status === 'pending_payment' && !canPay;
 
   return (
     <div className="ship-detail-overlay" role="dialog" aria-modal="true" onClick={onClose}>
@@ -71,7 +81,7 @@ export function ShipmentDetailModal({
             <p className="ship-detail__eyebrow">{t('dash.detailEyebrow')}</p>
             <h2>{order.orderNumber}</h2>
             <span className={`client-dash__badge client-dash__badge--${statusClass(order.status)}`}>
-              {statusLabel(order.status, t)}
+              {statusLabel(order.status, t, { awaitingRecipient })}
             </span>
           </div>
           <button type="button" className="ship-detail__close" onClick={onClose} aria-label={t('dash.close')}>×</button>

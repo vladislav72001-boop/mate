@@ -32,12 +32,9 @@ import {
 } from './stripe.mjs';
 import {
   getSettings,
-  calculateMatePrice,
-  finalizeExternalQuote,
+  getPricing,
+  finalizeNovaPostClientPrice,
   computeOrderExtras,
-  applyVat,
-  roundAmount,
-  convertToSettingsCurrency,
   chargeableWeightKg,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
@@ -82,23 +79,49 @@ function buildSideCoverage({ country, city, npCounts, useFallback }) {
 }
 
 async function sendCheckoutEmail(order, checkoutUrl) {
-  if (!order?.customerEmail) return;
+  if (!order?.customerEmail && !order?.payload?.receiver?.email) return;
+  const payUrl = order?.publicToken
+    ? `${String(process.env.APP_URL || 'http://localhost:5011').replace(/\/$/, '')}/?pay=${encodeURIComponent(order.publicToken)}`
+    : checkoutUrl;
   // Never block Stripe redirect on SMTP
-  void sendOrderCreatedEmail(order, { checkoutUrl })
+  void sendOrderCreatedEmail(order, { checkoutUrl, payUrl })
     .then(() => {
-      console.log(`[mail] checkout email sent to ${order.customerEmail} (${order.orderNumber})`);
+      console.log(`[mail] checkout email sent (${order.orderNumber}) payer=${order.payload?.tariff?.payer || 'sender'}`);
     })
     .catch((err) => {
       console.error('[mail] checkout email failed:', err);
     });
 }
 
+function isRecipientPayer(source) {
+  const payer = String(
+    source?.payload?.tariff?.payer
+    || source?.tariff?.payer
+    || '',
+  ).toLowerCase();
+  return payer === 'receiver' || payer === 'recipient';
+}
+
+function stripeCustomerEmailForOrder(order, fallbackEmail = '') {
+  if (isRecipientPayer(order)) {
+    const receiverEmail = String(order?.payload?.receiver?.email || '').trim().toLowerCase();
+    if (receiverEmail) return receiverEmail;
+  }
+  return String(
+    order?.customerEmail
+    || order?.payload?.customerEmail
+    || fallbackEmail
+    || '',
+  ).trim().toLowerCase();
+}
+
 async function createStripeCheckoutForOrder(order, customerEmail) {
+  const email = stripeCustomerEmailForOrder(order, customerEmail);
   const session = await createB2CCheckoutSession({
     order,
     amount: order.amount,
     currency: order.currency,
-    customerEmail,
+    customerEmail: email,
   });
   await updateOrder(order.id, {
     stripeSessionId: session.id,
@@ -176,7 +199,7 @@ export async function resolveCheckoutAmount(body, userId = null) {
 
   let currency = reconciled.currency;
   let total = reconciled.amount;
-  let priceSource = reconciled.priceSource || 'mate-matrix';
+  let priceSource = reconciled.priceSource || 'estimate';
   let breakdown = reconciled.breakdown || null;
 
   const log = Array.isArray(breakdown?.log) ? [...breakdown.log] : [];
@@ -511,42 +534,16 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         payerType,
       });
       const mode = resolvePricingMode(pickupMode, deliveryMode || 'locker');
-      const settings = await getSettings();
-      const preferNovaPost = String(process.env.PRICING_PREFER || 'mate').toLowerCase() === 'novapost';
-
-      // Same welcome discount as calculate-final (reconcile), so the price
-      // doesn't jump when the user reaches steps 7–8.
-      const withWelcomeDiscount = (quote) => {
-        const beforeVat = quote?.breakdown?.beforeVat;
-        if (!(welcomeDiscountPercent > 0) || beforeVat == null || !Number.isFinite(Number(beforeVat))) {
-          return quote;
-        }
-        const discounted = Number(beforeVat) * (1 - welcomeDiscountPercent / 100);
-        const afterVat = applyVat(discounted, settings);
-        const total = roundAmount(afterVat, settings);
-        return {
-          ...quote,
-          total,
-          breakdown: {
-            ...quote.breakdown,
-            welcomeDiscountPercent,
-            welcomeDiscountAmount: Math.round((Number(beforeVat) - discounted) * 100) / 100,
-            beforeVat: Math.round(discounted * 100) / 100,
-            afterVat: Math.round(afterVat * 100) / 100,
-            total,
-          },
-        };
-      };
+      const [settings, pricing] = await Promise.all([getSettings(), getPricing()]);
 
       const quotes = { ...result.quotes };
       let currency = result.currency;
       let priceSource = result.priceSource;
       let usedNova = 0;
-      let usedMate = 0;
+      let usedEstimate = 0;
 
       for (const size of sizes) {
         const key = size.boxSize;
-        const isCustomQuote = String(key || '').startsWith('CUSTOM:');
         const raw = quotes[key];
         const npTotal = typeof raw === 'number' ? raw : raw?.total;
         const npCurrency = typeof raw === 'object' && raw?.currency?.code
@@ -561,94 +558,41 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           size.boxSize,
         );
 
-        const canUseNp = preferNovaPost
-          && !isCustomQuote
-          && npSource === 'novapost'
-          && npTotal != null
-          && Number.isFinite(Number(npTotal));
-
-        if (canUseNp) {
-          const finalized = finalizeExternalQuote(npTotal, npCurrency, settings, 'novapost');
-          currency = { code: finalized.currency, symbol: finalized.currency };
-          quotes[key] = withWelcomeDiscount({
-            ...(typeof raw === 'object' && raw ? raw : {}),
-            total: finalized.amount,
-            currency: finalized.currency,
-            priceSource: 'novapost',
-            breakdown: {
-              ...finalized.breakdown,
-              deliveryMode: mode,
-              npServices: typeof raw === 'object' ? raw.breakdown : null,
-            },
-          });
-          usedNova += 1;
-          continue;
-        }
-
-        const mate = await calculateMatePrice({
-          toCountry,
-          weightKg,
-          deliveryMode: mode,
-          monthlyShipments,
-        });
-        if (mate.amount != null) {
-          // Same max(matrix net, Nova Post net) as calculate-final / checkout
-          // (including CUSTOM:… keys), so the sidebar never jumps on later steps.
-          const matrixNet = Number(mate.breakdown?.beforeVat ?? mate.breakdown?.cost) || 0;
-          let chosenNet = matrixNet;
-          let source = 'mate-matrix';
-          if (
-            npSource === 'novapost'
-            && npTotal != null
-            && Number.isFinite(Number(npTotal))
-          ) {
-            const npNet = Math.round(
-              convertToSettingsCurrency(Number(npTotal), npCurrency, settings) * 100,
-            ) / 100;
-            if (npNet > chosenNet) {
-              chosenNet = npNet;
-              source = 'novapost';
-            }
-          }
-          const afterVat = applyVat(chosenNet, settings);
-          const total = roundAmount(afterVat, settings);
-          currency = { code: mate.currency, symbol: mate.currency };
-          quotes[key] = withWelcomeDiscount({
-            ...(typeof raw === 'object' && raw ? raw : {}),
-            total,
-            currency: mate.currency,
-            priceSource: source,
-            breakdown: {
-              ...mate.breakdown,
-              matrixNet: Math.round(matrixNet * 100) / 100,
-              beforeVat: Math.round(chosenNet * 100) / 100,
-              afterVat: Math.round(afterVat * 100) / 100,
-              total,
-              source,
-            },
-          });
-          if (source === 'novapost') usedNova += 1;
-          else usedMate += 1;
-        } else if (npTotal != null && Number.isFinite(Number(npTotal))) {
-          const finalized = finalizeExternalQuote(
+        // Carrier quote + markup + VAT + rounding. Matrix never participates.
+        if (
+          npTotal != null
+          && Number.isFinite(Number(npTotal))
+        ) {
+          const source = npSource === 'novapost' ? 'novapost' : 'estimate';
+          const finalized = finalizeNovaPostClientPrice({
             npTotal,
-            npCurrency,
+            quoteCurrency: npCurrency,
             settings,
-            npSource === 'novapost' ? 'novapost' : 'estimate',
-          );
+            weightMarkups: pricing.weightMarkups,
+            tiers: pricing.tiers,
+            weightKg,
+            monthlyShipments,
+            welcomeDiscountPercent,
+            source,
+            deliveryMode: mode,
+            npServices: typeof raw === 'object' ? raw.breakdown : null,
+          });
           currency = { code: finalized.currency, symbol: finalized.currency };
-          quotes[key] = withWelcomeDiscount({
+          quotes[key] = {
             ...(typeof raw === 'object' && raw ? raw : {}),
             total: finalized.amount,
             currency: finalized.currency,
-            priceSource: finalized.breakdown.source,
+            priceSource: source,
             breakdown: finalized.breakdown,
-          });
+          };
+          if (source === 'novapost') usedNova += 1;
+          else usedEstimate += 1;
+          continue;
         }
       }
 
       if (usedNova) priceSource = 'novapost';
-      else if (usedMate) priceSource = 'mate-matrix';
+      else if (usedEstimate) priceSource = 'estimate';
 
       res.json({
         data: {
@@ -676,7 +620,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     }
   });
 
-  /** Final price: max(matrix net, Nova Post net) + VAT — for steps 7–8 and checkout */
+  /** Final price: Nova Post + markup + VAT — for steps 7–8 and checkout */
   router.post('/calculate-final', optionalAuth, async (req, res) => {
     try {
       const {
@@ -744,6 +688,11 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const customerEmail = String(body.customerEmail || '').trim().toLowerCase();
       const clientAmount = Number(body.amount);
       const clientCurrency = String(body.currency || 'EUR').toUpperCase();
+      const recipientPays = isRecipientPayer(body);
+      const receiverEmail = String(body.receiver?.email || '').trim().toLowerCase();
+      if (recipientPays && !receiverEmail) {
+        return res.status(400).json({ error: 'Укажите email получателя для оплаты' });
+      }
 
       const fingerprint = checkoutPayloadFingerprint(body);
       const existing = await findRecentPendingOrder(customerEmail, fingerprint);
@@ -760,6 +709,20 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         }
         if (stripeEnabled()) {
           const checkoutUrl = await createStripeCheckoutForOrder(existing, customerEmail);
+          if (recipientPays) {
+            await sendCheckoutEmail(existing, checkoutUrl);
+            return res.json({
+              data: {
+                awaitingRecipientPayment: true,
+                publicToken: existing.publicToken,
+                orderNumber: existing.orderNumber,
+                amount: existing.amount,
+                currency: existing.currency,
+                reused: true,
+                recipientEmail: existing.payload?.receiver?.email || body.receiver?.email || null,
+              },
+            });
+          }
           return res.json({
             data: {
               checkoutUrl,
@@ -772,6 +735,21 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           });
         }
         const { successUrl } = buildStripeReturnUrls(existing.publicToken);
+        if (recipientPays) {
+          await sendCheckoutEmail(existing, successUrl);
+          return res.json({
+            data: {
+              awaitingRecipientPayment: true,
+              mockPayment: true,
+              publicToken: existing.publicToken,
+              orderNumber: existing.orderNumber,
+              amount: existing.amount,
+              currency: existing.currency,
+              reused: true,
+              recipientEmail: existing.payload?.receiver?.email || body.receiver?.email || null,
+            },
+          });
+        }
         return res.json({
           data: {
             checkoutUrl: successUrl,
@@ -837,6 +815,18 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         try {
           const checkoutUrl = await createStripeCheckoutForOrder(order, customerEmail);
           await sendCheckoutEmail(order, checkoutUrl);
+          if (recipientPays) {
+            return res.json({
+              data: {
+                awaitingRecipientPayment: true,
+                publicToken: order.publicToken,
+                orderNumber: order.orderNumber,
+                amount: pricing.total,
+                currency: pricing.currency,
+                recipientEmail: body.receiver?.email || null,
+              },
+            });
+          }
           return res.json({
             data: {
               checkoutUrl,
@@ -857,6 +847,19 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const { successUrl } = buildStripeReturnUrls(order.publicToken);
       await updateOrder(order.id, { paymentMode: 'mock' }, { notify: false });
       await sendCheckoutEmail(order, successUrl);
+      if (recipientPays) {
+        return res.json({
+          data: {
+            awaitingRecipientPayment: true,
+            mockPayment: true,
+            publicToken: order.publicToken,
+            orderNumber: order.orderNumber,
+            amount: pricing.total,
+            currency: pricing.currency,
+            recipientEmail: body.receiver?.email || null,
+          },
+        });
+      }
       return res.json({
         data: {
           checkoutUrl: successUrl,
@@ -953,13 +956,25 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         if (npRef) {
           deleteInternationalShipment(npRef).catch((e) => console.error('[shipping] rollback failed:', e));
         }
-        // Payment is kept — client/admin can retry confirm-payment after fixing NP config.
         const msg = npErr instanceof Error ? npErr.message : String(npErr);
+        // Keep payment; store failure so admin/client can diagnose and retry confirm-payment.
+        const failedOrder = await updateOrder(paidOrder.id, {
+          status: 'paid',
+          paidAt: paidOrder.paidAt || paidAt,
+          npSnapshot: {
+            provider: 'error',
+            reason: 'np_after_payment_failed',
+            error: msg,
+            at: new Date().toISOString(),
+            clientOrder: paidOrder.orderNumber,
+          },
+          payload: nextPayload,
+        }) || paidOrder;
         return res.status(502).json({
           error: msg,
           code: 'NP_AFTER_PAYMENT_FAILED',
           paymentCaptured: true,
-          data: publicOrder(paidOrder),
+          data: publicOrder(failedOrder),
         });
       }
     } catch (err) {
@@ -1026,7 +1041,10 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
       // Nova Post is created only after payment confirmation — not here.
 
-      const customerEmail = order.customerEmail || order.payload?.customerEmail;
+      const customerEmail = stripeCustomerEmailForOrder(order);
+      if (!customerEmail) {
+        return res.status(400).json({ error: 'Не указан email для оплаты' });
+      }
       const checkoutUrl = await createStripeCheckoutForOrder(order, customerEmail);
       res.json({
         data: {

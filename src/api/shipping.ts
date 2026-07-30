@@ -26,14 +26,30 @@ async function shippingRequest<T>(path: string, options: RequestInit = {}, timeo
         ...(options.headers || {}),
       },
     });
-    const data = await res.json().catch(() => ({})) as { error?: string; errors?: string[] };
+    const data = await res.json().catch(() => ({})) as {
+      error?: string;
+      errors?: string[];
+      code?: string;
+      paymentCaptured?: boolean;
+      data?: unknown;
+    };
     if (!res.ok) {
       const msg = data.errors?.length
         ? data.errors.join('\n')
         : (data.error || (res.status === 502 || res.status === 503
           ? 'errors.serverDownDev'
           : 'errors.serverTemp'));
-      throw new Error(msg);
+      const err = new Error(msg) as Error & {
+        code?: string;
+        paymentCaptured?: boolean;
+        data?: unknown;
+        status?: number;
+      };
+      err.code = data.code;
+      err.paymentCaptured = Boolean(data.paymentCaptured);
+      err.data = data.data;
+      err.status = res.status;
+      throw err;
     }
     return data as T;
   } catch (err) {
@@ -235,6 +251,8 @@ export async function checkout(payload: Record<string, unknown>) {
   const res = await shippingRequest<ApiData<{
     checkoutUrl?: string | null;
     mockPayment?: boolean;
+    awaitingRecipientPayment?: boolean;
+    recipientEmail?: string | null;
     publicToken: string;
     orderNumber: string;
     amount: number;
@@ -418,7 +436,13 @@ export async function fetchAddressSuggestions(params: {
   return res.data.suggestions;
 }
 
-export async function updateProfile(payload: { name?: string; email?: string; phone?: string; password?: string }) {
+export async function updateProfile(payload: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  currentPassword?: string;
+}) {
   const res = await shippingRequest<{ user: import('./auth').AuthUser }>('/api/client/profile', {
     method: 'PATCH',
     body: JSON.stringify(payload),

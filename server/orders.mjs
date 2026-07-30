@@ -18,6 +18,8 @@ export function orderBelongsToUser(order, user) {
   const email = String(user.email || '').trim().toLowerCase();
   const phone = normalizePhone(user.phone);
   if (email && order.customerEmail === email) return true;
+  const receiverEmail = String(order.payload?.receiver?.email || '').trim().toLowerCase();
+  if (email && receiverEmail && receiverEmail === email) return true;
   if (phone) {
     const sender = normalizePhone(order.senderPhone);
     const receiver = normalizePhone(order.receiverPhone);
@@ -96,6 +98,7 @@ export async function findById(id) {
 export function checkoutPayloadFingerprint(body) {
   const parcel = body?.parcel || {};
   const tariff = body?.tariff || {};
+  const payer = String(tariff.payer || 'sender').toLowerCase();
   return JSON.stringify({
     to: body?.receiver?.country,
     from: body?.sender?.country || tariff.fromCountry,
@@ -105,6 +108,7 @@ export function checkoutPayloadFingerprint(body) {
     fragile: Boolean(parcel.fragile),
     insurance: Boolean(parcel.insurance),
     pickup: tariff.pickupDate,
+    payer: payer === 'recipient' ? 'receiver' : payer,
   });
 }
 
@@ -192,6 +196,10 @@ export function publicOrder(order) {
     receiverName: [receiver.firstName, receiver.lastName].filter(Boolean).join(' '),
     receiverLine: receiver.destinationLine,
     receiverPhone: receiver.phone,
+    receiverEmail: receiver.email || null,
+    payer: String(tariff.payer || 'sender').toLowerCase() === 'recipient'
+      ? 'receiver'
+      : (String(tariff.payer || 'sender').toLowerCase() || 'sender'),
     customerEmail: order.customerEmail,
     createdAt: order.createdAt,
     paidAt: order.paidAt,
@@ -259,6 +267,7 @@ export async function findOrdersForUser(user) {
       OR: [
         { userId: user.id },
         ...(email ? [{ customerEmail: email }] : []),
+        ...(email ? [{ payload: { path: ['receiver', 'email'], equals: email } }] : []),
       ],
     },
     orderBy: { createdAt: 'desc' },
@@ -266,15 +275,7 @@ export async function findOrdersForUser(user) {
 
   const filtered = rows
     .map(mapOrder)
-    .filter((o) => {
-      if (o.userId && o.userId === user.id) return true;
-      if (email && o.customerEmail === email) return true;
-      if (phone) {
-        if (normalizePhone(o.senderPhone).includes(phone) || phone.includes(normalizePhone(o.senderPhone))) return true;
-        if (normalizePhone(o.receiverPhone).includes(phone) || phone.includes(normalizePhone(o.receiverPhone))) return true;
-      }
-      return false;
-    });
+    .filter((o) => orderBelongsToUser(o, user));
 
   return filtered.map(publicOrder);
 }

@@ -21,6 +21,7 @@ import {
   storeAdminToken,
   updateAdminOrder,
   updateAdminUser,
+  retryAdminOrderNp,
   type AdminPricing,
   type AdminSettings,
 } from '../../api/admin';
@@ -599,6 +600,26 @@ function OrdersTab() {
     await changeStatus(order.id, 'cancelled');
   };
 
+  const retryNp = async (order: { id: string; publicToken?: string; orderNumber?: string }) => {
+    if (!order.publicToken) {
+      setError('Нет publicToken у заказа');
+      return;
+    }
+    if (!window.confirm(`Создать заявку в Nova Post для ${order.orderNumber || order.id}?`)) return;
+    setSaving(true);
+    setError('');
+    try {
+      await retryAdminOrderNp(order.publicToken);
+      await load();
+      const detail = await fetchAdminOrder(order.id);
+      setSelected(detail.order);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка Nova Post');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const priceLog = selected?.priceBreakdown?.log as
     | Array<{ step: number; title: string; detail?: string; value: number }>
     | undefined;
@@ -851,6 +872,9 @@ function OrdersTab() {
                   <div><dt>ТТН</dt><dd>{selected.npTtn || '—'}</dd></div>
                   <div><dt>Создан</dt><dd>{formatDate(selected.createdAt)}</dd></div>
                   <div><dt>Оплачен</dt><dd>{formatDate(selected.paidAt)}</dd></div>
+                  {selected.npSnapshot?.error && (
+                    <div><dt>Ошибка NP</dt><dd className="admin-danger-text">{selected.npSnapshot.error}</dd></div>
+                  )}
                 </dl>
 
                 <section className="admin-order-price">
@@ -890,6 +914,16 @@ function OrdersTab() {
 
                 {selected.status !== 'cancelled' ? (
                   <div className="admin-drawer__actions">
+                    {(selected.status === 'paid' || (!selected.npTtn && selected.paidAt)) && (
+                      <button
+                        type="button"
+                        className="btn btn-lime"
+                        disabled={saving}
+                        onClick={() => retryNp(selected)}
+                      >
+                        Создать в Nova Post
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn-outline admin-btn--danger"

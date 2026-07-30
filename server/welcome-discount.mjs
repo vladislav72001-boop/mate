@@ -2,7 +2,7 @@ import { findOrdersForUser } from './orders.mjs';
 import { findById, markWelcomeDiscountUsed as storeMarkUsed } from './store.mjs';
 import { isCountedShipment } from './loyalty.mjs';
 
-export const WELCOME_DISCOUNT_PERCENT = 35;
+export const WELCOME_DISCOUNT_PERCENT = 20;
 
 export async function isWelcomeDiscountEligible(user) {
   if (!user || user.type !== 'client') return false;

@@ -9,6 +9,7 @@ import {
 import {
   normalizeParcelDimensionsMm,
   resolveParcelLimits,
+  validateNovaPostParcelRules,
   validateParcelDimensionsCm,
 } from './parcel.mjs';
 
@@ -86,6 +87,13 @@ function validateParcelInput(input) {
   if (weightKg > limits.maxWeightKg) {
     throw new Error(`Weight ${weightKg} kg exceeds limit ${limits.maxWeightKg} kg`);
   }
+
+  // Official Nova Post parcel rules for every quote (docs: ≤30 kg, side ≤120, sum ≤150).
+  const isDocuments = ['XS', 'ENVELOPE', 'DOCUMENTS'].includes(String(input.boxSize || '').toUpperCase());
+  if (!isDocuments) {
+    const npErr = validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg);
+    if (npErr) throw new Error(npErr);
+  }
 }
 
 function normalizeQuoteParty(location, fallbackCountryCode, fallbackDivisionId) {
@@ -118,24 +126,26 @@ function normalizeQuoteParty(location, fallbackCountryCode, fallbackDivisionId) 
 }
 
 async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDivisionId, toDivisionId, input) {
-  const lengthCm = Math.max(1, Number(input.lengthCm) || 30);
-  const widthCm = Math.max(1, Number(input.widthCm) || 20);
-  const heightCm = Math.max(1, Number(input.heightCm) || 15);
+  const isDocuments = ['XS', 'ENVELOPE', 'DOCUMENTS'].includes(String(input.boxSize || '').toUpperCase());
+  // Documents must go to NP as a real envelope. Placeholder 1x1x1 cm gets parcel-like tariffs.
+  const lengthCm = isDocuments ? 35 : Math.max(1, Number(input.lengthCm) || 30);
+  const widthCm = isDocuments ? 25 : Math.max(1, Number(input.widthCm) || 20);
+  const heightCm = isDocuments ? 2 : Math.max(1, Number(input.heightCm) || 15);
   const insuranceCost = Math.max(1, Math.round(Number(input.declaredValue ?? 100)));
   const dims = normalizeParcelDimensionsMm(lengthCm, widthCm, heightCm);
+  const weightKg = Math.max(0.1, Number(input.weightKg) || (isDocuments ? 0.2 : 1));
 
-  const isDocuments = String(input.boxSize || '').toUpperCase() === 'XS';
   const payload = {
     payerType: input.payerType === 'Recipient' ? 'Recipient' : 'Sender',
     parcels: [{
       rowNumber: 1,
       cargoCategory: isDocuments ? 'documents' : 'parcel',
-      parcelDescription: 'Calculation request',
+      parcelDescription: isDocuments ? 'Documents' : 'Calculation request',
       insuranceCost,
       length: dims.length,
       width: dims.width,
       height: dims.height,
-      actualWeight: Math.max(1, Math.round(input.weightKg * 1000)),
+      actualWeight: Math.max(1, Math.round(weightKg * 1000)),
     }],
     sender: {
       ...normalizeQuoteParty(input.pickupLocation, fromCountryCode, fromDivisionId),
@@ -240,15 +250,30 @@ export async function calculateBatch({
     payerType,
   }));
 
-  for (const input of inputs) validateParcelInput(input);
+  // Per-size validation so one bad CUSTOM dims doesn't 500 the whole batch.
+  const validInputs = [];
+  const quotes = {};
+  const errors = {};
+  for (const input of inputs) {
+    const key = String(input.boxSize || 'parcel');
+    try {
+      validateParcelInput(input);
+      validInputs.push(input);
+    } catch (err) {
+      errors[key] = err?.message || String(err);
+    }
+  }
 
   if (isNovaPostMock()) {
-    const quotes = {};
-    for (const input of inputs) {
+    for (const input of validInputs) {
       const key = String(input.boxSize || 'parcel');
       quotes[key] = calculateMock(input);
     }
-    return { quotes, currency: { code: 'EUR', symbol: 'EUR' }, priceSource: 'mock' };
+    return { quotes, errors, currency: { code: 'EUR', symbol: 'EUR' }, priceSource: 'mock' };
+  }
+
+  if (!validInputs.length) {
+    return { quotes, errors, currency: { code: 'EUR', symbol: 'EUR' }, priceSource: 'novapost' };
   }
 
   try {
@@ -258,11 +283,10 @@ export async function calculateBatch({
       getNovaPostDivisionId(jwt, toCode),
     ]);
 
-    const quotes = {};
     let currency = { code: 'EUR', symbol: 'EUR' };
 
     const pending = [];
-    for (const input of inputs) {
+    for (const input of validInputs) {
       const key = String(input.boxSize || 'parcel');
       const cacheKey = quoteCacheKey(fromCode, toCode, declaredValue ?? 100, input);
       const cached = getCachedQuote(cacheKey);
@@ -277,27 +301,34 @@ export async function calculateBatch({
     if (pending.length) {
       const entries = await Promise.all(
         pending.map(async ({ key, input, cacheKey }) => {
-          const result = await calculateWithSession(jwt, fromCode, toCode, fromDivisionId, toDivisionId, input);
-          setCachedQuote(cacheKey, result);
-          return [key, result];
+          try {
+            const result = await calculateWithSession(jwt, fromCode, toCode, fromDivisionId, toDivisionId, input);
+            setCachedQuote(cacheKey, result);
+            return [key, result, null];
+          } catch (err) {
+            return [key, null, err?.message || String(err)];
+          }
         }),
       );
-      for (const [key, result] of entries) {
-        quotes[key] = result;
-        currency = result.currency;
+      for (const [key, result, errMsg] of entries) {
+        if (result) {
+          quotes[key] = result;
+          currency = result.currency;
+        } else if (errMsg) {
+          errors[key] = errMsg;
+        }
       }
     }
 
-    return { quotes, currency, priceSource: 'novapost' };
+    return { quotes, errors, currency, priceSource: 'novapost' };
   } catch (err) {
     markNovaPostUnavailable();
     console.warn('[novapost] calculateBatch fallback to estimate:', err?.message || err);
-    const quotes = {};
-    for (const input of inputs) {
+    for (const input of validInputs) {
       const key = String(input.boxSize || 'parcel');
-      quotes[key] = calculateMock(input);
+      if (!quotes[key]) quotes[key] = calculateMock(input);
     }
-    return { quotes, currency: { code: 'EUR', symbol: 'EUR' }, priceSource: 'estimate' };
+    return { quotes, errors, currency: { code: 'EUR', symbol: 'EUR' }, priceSource: 'estimate' };
   }
 }
 

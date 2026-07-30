@@ -16,16 +16,16 @@ export const PARCEL_PRESETS: Record<ParcelKey, {
   heightCm: number;
   weightKg: number;
 }> = {
-  // ✉️ Конверт: в UI вес фиксируем, габариты для расчёта не должны раздувать объёмный вес.
-  XS: { lengthCm: 1, widthCm: 1, heightCm: 1, weightKg: 0.2 },
-  // S / Kicsi
+  // Конверт / документы: реальные габариты для Nova Post (не 1×1×1 — иначе NP тарифицирует почти как посылку).
+  XS: { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.2 },
+  // S / Kicsi — sample dims; tier allows up to 5 kg
   S: { lengthCm: 35, widthCm: 20, heightCm: 10, weightKg: 2 },
   // M / Közepes
   M: { lengthCm: 40, widthCm: 30, heightCm: 30, weightKg: 10 },
-  // L / Nagy
-  L: { lengthCm: 70, widthCm: 42, heightCm: 40, weightKg: 30 },
-  // XL оставляем как копию L, т.к. в интерфейсе XL теперь не показываем
-  XL: { lengthCm: 70, widthCm: 42, heightCm: 40, weightKg: 30 },
+  // L — sample within common locker/branch dims; weight label uses tier max
+  L: { lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 20 },
+  // XL — upper parcel band up to Nova Post 30 kg
+  XL: { lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 30 },
 };
 
 /** Delivery modes allowed for each tariff (locker = postamat). */
@@ -39,8 +39,10 @@ export const SIZE_ALLOWED_MODES: Record<ParcelKey | 'custom', ReadonlyArray<'loc
 };
 
 export const NONSTANDARD_LIMITS = {
-  maxLengthCm: 175,
-  maxWeightKg: 31,
+  /** Official NP: longest side ≤120 cm, sum of sides ≤150 cm, weight ≤30 kg. */
+  maxLengthCm: 120,
+  maxSumSidesCm: 150,
+  maxWeightKg: 30,
   minSideCm: [5, 15, 15] as const,
 };
 
@@ -124,7 +126,7 @@ export function formatQuoteMoney(amount: number, currencyCode = DEFAULT_QUOTE_CU
   return `${amount.toFixed(2)} ${code}`;
 }
 
-/** Local price estimate when Nova Post API is unavailable */
+/** Local price estimate when Nova Post API is unavailable (net → +20% → +27% VAT → round 10). */
 export function estimateParcelPrice(preset: {
   lengthCm: number;
   widthCm: number;
@@ -136,8 +138,10 @@ export function estimateParcelPrice(preset: {
   const volumetricKg = (preset.lengthCm * preset.widthCm * preset.heightCm) / 4000;
   const chargeableKg = isDocuments ? weightKg : Math.max(weightKg, volumetricKg);
   const baseEur = 12 + chargeableKg * 2.1;
-  const inCurrency = eurToQuoteCurrency(Math.round(baseEur * 100) / 100, currency);
-  return currency === 'HUF' ? Math.round(inCurrency) : Math.round(inCurrency * 100) / 100;
+  const net = eurToQuoteCurrency(Math.round(baseEur * 100) / 100, currency);
+  const withMarkupVat = net * 1.2 * 1.27;
+  if (currency === 'HUF') return Math.round(withMarkupVat / 10) * 10;
+  return Math.round(withMarkupVat * 100) / 100;
 }
 
 export function countryLabel(code: string, locale?: Locale) {

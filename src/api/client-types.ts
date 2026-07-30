@@ -29,6 +29,8 @@ export type ShippingOrder = {
   receiverName?: string;
   receiverLine?: string;
   receiverPhone?: string;
+  receiverEmail?: string | null;
+  payer?: 'sender' | 'receiver' | string;
   customerEmail?: string;
   createdAt: string;
   paidAt: string | null;

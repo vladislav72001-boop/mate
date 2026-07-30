@@ -20,6 +20,7 @@ import { PartnerLogo, PARTNER_IDS } from './components/PartnerLogo';
 import { LanguageSelect } from './components/LanguageSelect';
 import { useI18n } from './i18n/context';
 import type { ShippingOrder } from './api/shipping';
+import { resumeCheckout } from './api/shipping';
 import {
   clearSession,
   fetchMe,
@@ -28,7 +29,25 @@ import {
   type AuthUser,
 } from './api/auth';
 
-type TopPage = 'home' | 'services' | 'business' | 'about' | 'dashboard' | 'client-dashboard' | 'admin';
+type TopPage = 'home' | 'services' | 'about' | 'dashboard' | 'client-dashboard' | 'admin';
+
+function normalizePath(pathname = window.location.pathname) {
+  const cleaned = String(pathname || '/').replace(/\/+$/, '');
+  return cleaned || '/';
+}
+
+function pageFromPath(pathname = window.location.pathname): TopPage {
+  const path = normalizePath(pathname);
+  if (path === '/admin') return 'admin';
+  if (path === '/cabinet') return 'client-dashboard';
+  return 'home';
+}
+
+function pathForPage(page: TopPage) {
+  if (page === 'admin') return '/admin';
+  if (page === 'client-dashboard') return '/cabinet';
+  return '/';
+}
 type ClientAuthMode = 'register' | 'login' | 'forgot' | 'reset';
 type ServiceFilter =
   | 'all'
@@ -114,32 +133,6 @@ const services: ServiceItem[] = [
   },
 ];
 
-const bizSolutions = [
-  { id: 'parcel',      svgId: 'parcel',      title: 'Доставка заказов',    desc: 'Автоматический выбор лучшего перевозчика по цене и срокам доставки.' },
-  { id: 'warehouse',   svgId: 'warehouse',   title: 'Склады в Европе',     desc: 'Хранение товаров на наших складах в ключевых странах Европы.' },
-  { id: 'fulfillment', svgId: 'fulfillment', title: 'Фулфилмент',          desc: 'Приёмка, хранение, упаковка, комплектация и отправка заказов вашим клиентам.' },
-  { id: 'returns',     svgId: 'returns',     title: 'Возвраты',            desc: 'Удобное управление возвратами и обменами по всей Европе.' },
-  { id: 'analytics',   svgId: 'tracking',    title: 'Аналитика',           desc: 'Полная аналитика по отправлениям, расходам и SLA в реальном времени.' },
-  { id: 'api',         svgId: 'customs',     title: 'API и интеграции',    desc: 'Быстрое подключение через API и готовые интеграции с вашими системами.' },
-];
-
-const bizStats = [
-  { icon: 'cargo',       num: '1000+', label: 'компаний\nдоверяют нам' },
-  { icon: 'warehouse',   num: '26',    label: 'складов\nв Европе' },
-  { icon: 'parcel',      num: '200+',  label: 'перевозчиков\nпо всему миру' },
-  { icon: 'tracking',    num: '99.8%', label: 'доставок\nвовремя' },
-  { icon: 'fulfillment', num: '24/7',  label: 'поддержка\nклиентов' },
-];
-
-const bizSteps = [
-  { n: '1', icon: 'parcel',      title: 'Заказ',               desc: 'Поступает заказ в ваш магазин' },
-  { n: '2', icon: 'fulfillment', title: 'MATE получает',        desc: 'Мы получаем заказ и проверяем его' },
-  { n: '3', icon: 'cargo',       title: 'Выбор перевозчика',   desc: 'Система выбирает лучшего перевозчика' },
-  { n: '4', icon: 'customs',     title: 'Создание отправки',   desc: 'Создаём накладную и этикетку' },
-  { n: '5', icon: 'warehouse',   title: 'Передача на склад',   desc: 'Товар передаётся на ближайший склад' },
-  { n: '6', icon: 'tracking',    title: 'Доставка клиенту',    desc: 'Клиент получает заказ в срок' },
-];
-
 const dashOrders = [
   { id: '#10254', carrier: 'DPD',    status: 'В пути',     stColor: '#1da1f2', route: 'Таллин → Берлин',   price: '․24.50' },
   { id: '#10253', carrier: 'DHL',    status: 'Доставлено', stColor: '#22c55e', route: 'Рига → Мюнхен',     price: '․18.75' },
@@ -196,26 +189,6 @@ function ContactIcon({ id, size = 18 }: { id: string; size?: number }) {
     case 'vat': return <svg {...p}><circle cx="12" cy="12" r="9"/><path d="M8 10h5a2.5 2.5 0 0 1 0 5H8V7h4.5"/></svg>;
     default: return <svg {...p}><circle cx="12" cy="12" r="4"/></svg>;
   }
-}
-
-function ArrowIcon({ size = 14 }: { size?: number }) {
-  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-  return <svg {...p} aria-hidden><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>;
-}
-
-function TextLink({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <button className="text-link" type="button" onClick={onClick}>
-      <span>{children}</span>
-      <span className="text-link__arrow"><ArrowIcon size={13} /></span>
-    </button>
-  );
 }
 
 function FeatureIcon({ id }: { id: string }) {
@@ -363,11 +336,13 @@ function PartnersSection({ about = false }: { about?: boolean }) {
 
 function App() {
   const { t } = useI18n();
-  const [page, setPage] = useState<TopPage>(() => (
-    window.location.pathname.replace(/\/+$/, '') === '/admin' ? 'admin' : 'home'
-  ));
+  const mailTo = useCallback((subjectKey: string) => (
+    `mailto:info@matedelivery.com?subject=${encodeURIComponent(t(subjectKey))}`
+  ), [t]);
+  const [page, setPage] = useState<TopPage>(() => pageFromPath());
   const [filter, setFilter] = useState<ServiceFilter>('all');
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [sessionReady, setSessionReady] = useState(() => !getStoredToken());
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcResumeSignal, setCalcResumeSignal] = useState(0);
   const [draftTick, setDraftTick] = useState(0);
@@ -381,12 +356,9 @@ function App() {
   const [clientAuthMode, setClientAuthMode] = useState<ClientAuthMode | null>(null);
   const [clientAuthStep, setClientAuthStep] = useState(0);
   const [clientAuthResetToken, setClientAuthResetToken] = useState('');
-  const [corpRegOpen, setCorpRegOpen] = useState(false);
-  const [corpRegStep, setCorpRegStep] = useState(0);
-  const [regVol, setRegVol] = useState('1000–5000');
   const [dashboardType, setDashboardType] = useState<'client' | 'corp'>('client');
   const [paymentNotice, setPaymentNotice] = useState<{
-    type: 'success' | 'cancel' | 'error';
+    type: 'success' | 'cancel' | 'error' | 'awaiting_recipient' | 'paid_np_pending';
     order?: ShippingOrder;
     message?: string;
   } | null>(null);
@@ -512,34 +484,55 @@ function App() {
   }, [page]);
 
   useEffect(() => {
-    const goAdmin = () => {
-      if (window.location.pathname.replace(/\/+$/, '') === '/admin') setPage('admin');
+    const syncFromUrl = () => {
+      const next = pageFromPath();
+      setPage((prev) => (prev === next ? prev : next));
     };
-    window.addEventListener('popstate', goAdmin);
-    return () => window.removeEventListener('popstate', goAdmin);
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
   }, []);
 
   useEffect(() => {
-    if (page === 'admin') {
-      if (window.location.pathname.replace(/\/+$/, '') !== '/admin') {
-        window.history.pushState({}, '', '/admin');
+    const target = pathForPage(page);
+    if (normalizePath() === target) return;
+    // Keep marketing pages (services/about) on `/` — only admin/cabinet own a path.
+    if (page === 'home' || page === 'services' || page === 'about' || page === 'dashboard') {
+      if (normalizePath() === '/admin' || normalizePath() === '/cabinet') {
+        window.history.pushState({}, '', '/');
       }
       return;
     }
-    if (window.location.pathname.replace(/\/+$/, '') === '/admin') {
-      window.history.pushState({}, '', '/');
-    }
+    window.history.pushState({}, '', target);
   }, [page]);
 
   useEffect(() => {
     const token = getStoredToken();
-    if (!token) return;
+    if (!token) {
+      setSessionReady(true);
+      if (normalizePath() === '/cabinet') {
+        setPage('home');
+        window.history.replaceState({}, '', '/');
+        setClientAuthMode('login');
+      }
+      return;
+    }
     fetchMe(token)
       .then(({ user: me }) => {
         setUser(me);
         setDashboardType(me.type === 'corp' ? 'corp' : 'client');
+        if (normalizePath() === '/cabinet' || pageFromPath() === 'client-dashboard') {
+          setPage(me.type === 'corp' ? 'dashboard' : 'client-dashboard');
+        }
       })
-      .catch(() => clearSession());
+      .catch(() => {
+        clearSession();
+        if (normalizePath() === '/cabinet') {
+          setPage('home');
+          window.history.replaceState({}, '', '/');
+          setClientAuthMode('login');
+        }
+      })
+      .finally(() => setSessionReady(true));
   }, []);
 
   useEffect(() => {
@@ -550,6 +543,7 @@ function App() {
     const orderToken = params.get('order');
     const cabinet = params.get('cabinet');
     const reset = params.get('reset');
+    const payToken = params.get('pay');
 
     if (reset) {
       setClientAuthResetToken(reset);
@@ -558,6 +552,27 @@ function App() {
       params.delete('reset');
       const next = params.toString();
       window.history.replaceState({}, '', `${window.location.pathname}${next ? `?${next}` : ''}`);
+    }
+
+    if (payToken) {
+      window.history.replaceState({}, '', window.location.pathname);
+      resumeCheckout(payToken)
+        .then((result) => {
+          if (result.checkoutUrl) {
+            window.location.assign(result.checkoutUrl);
+            return;
+          }
+          setPaymentNotice({
+            type: 'error',
+            message: t('payment.confirmError'),
+          });
+        })
+        .catch((err) => {
+          setPaymentNotice({
+            type: 'error',
+            message: err instanceof Error ? err.message : t('payment.confirmError'),
+          });
+        });
     }
 
     const hasDeepLink = Boolean(track || orderToken || cabinet);
@@ -572,7 +587,7 @@ function App() {
         trackQuery: track || undefined,
         orderToken: orderToken || undefined,
       });
-      window.history.replaceState({}, '', window.location.pathname);
+      window.history.replaceState({}, '', '/cabinet');
     }
 
     if (payment === 'success' && token) {
@@ -589,21 +604,34 @@ function App() {
               /* loyalty/orders refresh still updates discount visibility */
             }
           }
-          setPage(user ? 'client-dashboard' : 'home');
+          setPage('client-dashboard');
         })
         .catch((err) => {
+          const captured = Boolean((err as { paymentCaptured?: boolean })?.paymentCaptured)
+            || (err as { code?: string })?.code === 'NP_AFTER_PAYMENT_FAILED';
+          const order = (err as { data?: ShippingOrder })?.data;
+          if (captured) {
+            setPaymentNotice({
+              type: 'paid_np_pending',
+              order,
+              message: err instanceof Error ? err.message : t('payment.paidNpPending'),
+            });
+            setOrdersRefresh((n) => n + 1);
+            if (getStoredToken()) setPage('client-dashboard');
+            return;
+          }
           setPaymentNotice({
             type: 'error',
             message: err instanceof Error ? err.message : t('payment.confirmError'),
           });
         })
         .finally(() => {
-          window.history.replaceState({}, '', window.location.pathname);
+          window.history.replaceState({}, '', '/cabinet');
         });
     } else if (payment === 'cancel') {
       setPaymentNotice({ type: 'cancel', message: t('payment.cancelMsg') });
-      window.history.replaceState({}, '', window.location.pathname);
-      if (user) setPage('client-dashboard');
+      window.history.replaceState({}, '', getStoredToken() ? '/cabinet' : '/');
+      if (getStoredToken()) setPage('client-dashboard');
     }
   // run once on mount for payment/deep links
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -624,6 +652,7 @@ function App() {
     setUser(authUser);
     setDashboardType(authUser.type === 'corp' ? 'corp' : 'client');
     setDraftTick((n) => n + 1);
+    setPage(authUser.type === 'corp' ? 'dashboard' : 'client-dashboard');
   }, []);
 
   const openClientAuth = useCallback((mode: ClientAuthMode) => {
@@ -662,13 +691,6 @@ function App() {
     goPage('home');
   }, [goPage]);
 
-  useEffect(() => {
-    if (corpRegStep === 1) {
-      const t = setTimeout(() => setCorpRegStep(2), 2800);
-      return () => clearTimeout(t);
-    }
-  }, [corpRegStep]);
-
   const localizedServices = useMemo(() => services.map((s) => {
     const titleKey = s.id === 'all' ? 'services.intlTitle' : `services.${s.id}Title`;
     const descKey = s.id === 'all' ? 'services.intlDesc' : `services.${s.id}Desc`;
@@ -698,9 +720,34 @@ function App() {
       <AdminApp
         onExit={() => {
           goPage('home');
-          window.history.pushState({}, '', '/');
         }}
       />
+    );
+  }
+
+  if (page === 'client-dashboard' && !user) {
+    return (
+      <div className="mate-app mate-app--cabinet-boot">
+        <div className="cabinet-boot">
+          <MateLogo height={48} />
+          <p>{sessionReady ? t('nav.login') : t('dash.loading')}</p>
+        </div>
+        {clientAuthMode && (
+          <ClientAuthModal
+            mode={clientAuthMode}
+            step={clientAuthStep}
+            resetToken={clientAuthResetToken}
+            onClose={closeClientAuth}
+            onSwitchMode={(next) => {
+              setClientAuthMode(next);
+              if (next !== 'reset') setClientAuthResetToken('');
+            }}
+            onStepChange={setClientAuthStep}
+            onSuccess={handleAuthSuccess}
+            onNavigate={handleAuthNavigate}
+          />
+        )}
+      </div>
     );
   }
 
@@ -881,12 +928,22 @@ function App() {
                   {t('nav.services')}
                 </button>
               </div>
-              <div className="hero-trust">{t('home.trust')}</div>
             </div>
             <div className="hero-module">
               <CalcCard
                 user={user}
                 onOrderSuccess={() => setOrdersRefresh((n) => n + 1)}
+                onAwaitingRecipientPayment={(info) => {
+                  setOrdersRefresh((n) => n + 1);
+                  setPaymentNotice({
+                    type: 'awaiting_recipient',
+                    message: t('payment.awaitingRecipient', {
+                      email: info.recipientEmail,
+                      order: info.orderNumber,
+                    }),
+                  });
+                  if (user) setPage('client-dashboard');
+                }}
                 onStepChange={setHeroCalcStep}
                 resetToStep1Signal={calcResetSignal}
                 resumeSignal={calcResumeSignal}
@@ -928,210 +985,115 @@ function App() {
 
           <MateHowItWorks />
         </main>
-      ) : page === 'business' ? (
-        <main className="container page-enter">
-          {/* ── HERO ── */}
-          <section className="biz-hero card">
-            <div className="biz-hero__map" aria-hidden>
-              <svg className="biz-map-svg" viewBox="0 0 600 360" fill="none">
-                <defs>
-                  <pattern id="map-dots" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
-                    <circle cx="7" cy="7" r="1.7" fill="#122023" fillOpacity="0.18"/>
-                  </pattern>
-                </defs>
-                <rect width="600" height="360" fill="url(#map-dots)"/>
-                {/* spokes from hub */}
-                {([[95,80],[190,38],[325,45],[462,72],[495,198],[378,292],[185,282],[48,208]] as [number,number][]).map(([x,y],i)=>(
-                  <line key={i} x1="232" y1="158" x2={x} y2={y} stroke="#E1FF01" strokeWidth="1.3" strokeOpacity="0.5"/>
-                ))}
-                {([[95,80],[190,38],[325,45],[462,72],[495,198],[378,292],[185,282],[48,208]] as [number,number][]).map(([x,y],i)=>(
-                  <circle key={i} cx={x} cy={y} r="4.2" fill="#E1FF01" fillOpacity="0.88"/>
-                ))}
-                <circle cx="232" cy="158" r="7" fill="#E1FF01"/>
-                <circle cx="232" cy="158" r="14" stroke="#E1FF01" strokeWidth="1.5" strokeOpacity="0.3"/>
-                <circle cx="232" cy="158" r="22" stroke="#E1FF01" strokeWidth="0.8" strokeOpacity="0.15"/>
-              </svg>
-            </div>
-            <div className="biz-hero__copy">
-              <div className="biz-badge">✦ MATE FOR BUSINESS</div>
-              <h1>Логистика, которая<br /><span>усиливает</span> ваш бизнес</h1>
-              <p>Доставка, склады, фулфилмент, возвраты, интеграции и аналитика — всё, что нужно для роста компании. В одной платформе.</p>
-              <div className="biz-hero__btns">
-                <button className="btn btn-lime" type="button" onClick={() => { setCorpRegOpen(true); setCorpRegStep(0); }}>Стать клиентом →</button>
-                <button className="btn btn-outline" type="button">Связаться с нами</button>
-              </div>
-              <div className="hero-trust">Нам доверяют 1000+ компаний</div>
-            </div>
-          </section>
-
-          {/* ── SOLUTIONS ── */}
-          <section className="page-section">
-            <h2 className="biz-section-title">Все логистические решения для вашего бизнеса</h2>
-            <div className="biz-solutions">
-              {bizSolutions.map((s) => (
-                <article key={s.id} className="biz-card card">
-                  <div className="biz-card__icon"><ServiceSvgIcon id={s.svgId} size={26} /></div>
-                  <h3>{s.title}</h3>
-                  <p>{s.desc}</p>
-                  <TextLink>Подробнее</TextLink>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          {/* ── STATSBAR ── */}
-          <section className="biz-statsbar card page-section">
-            <div className="biz-statsbar__label"><b>MATE — надёжный<br />партнёр для бизнеса<br />по всей Европе</b></div>
-            <div className="biz-statsbar__items">
-              {bizStats.map((s) => (
-                <div key={s.num} className="biz-stat">
-                  <ServiceSvgIcon id={s.icon} size={22} />
-                  <div><b>{s.num}</b><span>{s.label}</span></div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* ── HOW IT WORKS ── */}
-          <section className="biz-how card page-section">
-            <h2 className="biz-section-title">Как это работает</h2>
-            <div className="biz-steps">
-              {bizSteps.map((s, i) => (
-                <div key={s.n} className="biz-step-wrap">
-                  <div className="biz-step">
-                    <div className="biz-step__num">{s.n}</div>
-                    <ServiceSvgIcon id={s.icon} size={24} />
-                    <b>{s.title}</b>
-                    <p>{s.desc}</p>
-                  </div>
-                  {i < bizSteps.length - 1 && (
-                    <span className="biz-step__arr" aria-hidden><ArrowIcon size={16} /></span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* ── INTEGRATIONS ── */}
-          <section className="biz-integrations card page-section">
-            <h2 className="biz-section-title">Интеграции без границ</h2>
-            <p className="biz-section-sub">Подключайтесь к популярным платформам и управляйте логистикой из одного кабинета.</p>
-            <div className="biz-int-logos">
-              {[{c:'#96bf48',l:'shopify'},{c:'#7f54b3',l:'WooCommerce'},{c:'#f26322',l:'Magento'},{c:'#1da1f2',l:'opencart'},{c:'#df0067',l:'PrestaShop'},{c:'#ff9900',l:'amazon'},{c:'#e53238',l:'ebay'},{c:'#122023',l:'⚙ API'}].map((p) => (
-                <span key={p.l} className="biz-int-logo" style={{ color: p.c }}>{p.l}</span>
-              ))}
-            </div>
-            <TextLink>Смотреть все интеграции</TextLink>
-          </section>
-
-          {/* ── CTA ── */}
-          <section className="biz-cta page-section">
-            <div className="biz-cta__copy">
-              <h2>Готовы масштабировать<br />ваш бизнес с <span className="biz-cta__accent">MATE?</span></h2>
-              <p>Присоединяйтесь к тысячам компаний, которые уже доверяют нам свою логистику и сосредоточены на росте.</p>
-              <div className="biz-cta__btns">
-                <button className="btn btn-lime" type="button" onClick={() => { setCorpRegOpen(true); setCorpRegStep(0); }}>Начать сотрудничество →</button>
-                <button className="btn biz-cta__ghost" type="button">Связаться с нами</button>
-              </div>
-            </div>
-            <div className="biz-cta__img" aria-hidden><div className="biz-cta__truck">MATE.</div></div>
-          </section>
-        </main>
       ) : page === 'services' ? (
-        <main className="container page-enter">
-          <section className="services-hero card">
-            <div className="world-fx world-fx--services" aria-hidden />
-            <h1>{t('services.heroTitle')}</h1>
-            <p>
-              {t('services.heroLead')}
-            </p>
-          </section>
+        <main className="page-enter services-page">
+          <div className="container services-page__body">
+            <section className="services-head">
+              <h1>{t('services.pageTitle')}</h1>
+              <p>{t('services.pageLead')}</p>
+            </section>
 
-          <section className="services-layout">
-            <aside className="services-sidebar card">
-              {([
-                'all',
-                'parcel',
-                'cargo',
-                'warehouse',
-                'fulfillment',
-                'express',
-                'returns',
-                'tracking',
-              ] as ServiceFilter[]).map((id) => {
-                const soon = id !== 'all' && id !== 'parcel';
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`side-link ${filter === id ? 'active' : ''}${soon ? ' side-link--soon' : ''}`}
-                    onClick={() => setFilter(id)}
-                  >
-                    <span className="side-link__icon"><ServiceSvgIcon id={id} size={16} /></span>
-                    <span className="side-link__text">{serviceLabel(id)}</span>
-                    {soon && <small className="side-link__soon">{t('common.soon')}</small>}
-                  </button>
-                );
-              })}
-            </aside>
+            <section className="services-showcase" aria-label={t('services.pageTitle')}>
+              <article className="services-card services-card--primary">
+                <div className="services-card__badge">{t('services.activeBadge')}</div>
+                <h2>{t('services.parcelNowTitle')}</h2>
+                <p>{t('services.parcelNowLead')}</p>
+                <div className="services-facts">
+                  {([
+                    ['services.factWeightLabel', 'services.factWeightValue'],
+                    ['services.factTimingLabel', 'services.factTimingValue'],
+                    ['services.factPriceLabel', 'services.factPriceValue'],
+                    ['services.factWaysLabel', 'services.factWaysValue'],
+                  ] as const).map(([labelKey, valueKey]) => (
+                    <div key={labelKey} className="services-facts__row">
+                      <span>{t(labelKey)}</span>
+                      <b>{t(valueKey)}</b>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn btn-lime services-card__cta" type="button" onClick={openCalcFresh}>
+                  {t('services.calcCta')}
+                </button>
+              </article>
+            </section>
 
-            <div className="services-grid">
-              {filteredServices.map((service) => (
-                <article key={service.id} className="service-card card">
-                  <div className="service-icon">
-                    <ServiceSvgIcon id={service.id} size={26} />
-                  </div>
-                  <h3>
-                    {service.title}{service.soon && <small>{t('common.soon')}</small>}
-                  </h3>
-                  <p>{service.description}</p>
-                  <TextLink
-                    onClick={
-                      service.id === 'parcel'
-                        ? openCalcFresh
-                        : undefined
-                    }
-                  >
-                    {t('services.learnMore')}
-                  </TextLink>
-                </article>
-              ))}
-            </div>
-          </section>
+            <section className="services-biz" aria-label={t('services.bizTitle')}>
+              <div className="services-biz__copy">
+                <h3>{t('services.bizTitle')}</h3>
+                <p>{t('services.bizLead')}</p>
+              </div>
+              <div className="services-biz__actions">
+                <a
+                  className="services-chip services-chip--dark"
+                  href={mailTo('services.mailSubjectRequest')}
+                >
+                  {t('services.bizCtaPrimary')}
+                </a>
+                <a
+                  className="services-chip"
+                  href={mailTo('services.mailSubjectApi')}
+                >
+                  {t('services.bizCtaSecondary')}
+                </a>
+              </div>
+            </section>
 
-          <section className="stats card page-section">
-            <div>
-              <div className="stat-icon"><ServiceSvgIcon id="all" size={24} /></div>
-              <div className="stat-text"><b>{t('services.statBlock1Title')}</b><span>{t('services.statBlock1Sub')}</span></div>
-            </div>
-            <div>
-              <div className="stat-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
+            <section className="services-coming" aria-label={t('services.soonTitle')}>
+              <div className="services-section-copy">
+                <h3>{t('services.soonTitle')}</h3>
+                <p>{t('services.soonLead')}</p>
               </div>
-              <div className="stat-text"><b>{t('services.statBlock2Title')}</b><span>{t('services.statBlock2Sub')}</span></div>
-            </div>
-            <div>
-              <div className="stat-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
+              <div className="services-coming__grid">
+                {([
+                  { icon: '📦', titleKey: 'services.soonStorageTitle', textKey: 'services.soonStorageText' },
+                  { icon: '🚚', titleKey: 'services.soonMovesTitle', textKey: 'services.soonMovesText' },
+                  { icon: '🏭', titleKey: 'services.soonFulfillmentTitle', textKey: 'services.soonFulfillmentText' },
+                ] as const).map((item) => (
+                  <article key={item.titleKey} className="services-soon-card">
+                    <div className="services-soon-card__icon" aria-hidden>{item.icon}</div>
+                    <b>{t(item.titleKey)}</b>
+                    <span>{t(item.textKey)}</span>
+                  </article>
+                ))}
               </div>
-              <div className="stat-text"><b>{t('services.statBlock3Title')}</b><span>{t('services.statBlock3Sub')}</span></div>
-            </div>
-            <div>
-              <div className="stat-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
-                  <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/>
-                  <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
-                </svg>
+            </section>
+          </div>
+
+          <footer className="about-site-footer" aria-label={t('about.footerAria')}>
+            <div className="container about-site-footer__inner">
+              <div className="about-site-footer__cols">
+                <div>
+                  <b>{t('about.footerBrand')}</b>
+                  <p>{t('about.footerBrandText')}</p>
+                </div>
+                <div>
+                  <b>{t('about.footerServices')}</b>
+                  <button type="button" onClick={openCalcFresh}>{t('about.footerParcels')}</button>
+                  <button type="button" onClick={openCalcFresh}>{t('about.footerPickup')}</button>
+                  <a href={mailTo('services.mailSubjectRequest')}>{t('about.footerBusiness')}</a>
+                </div>
+                <div>
+                  <b>{t('about.footerHelp')}</b>
+                  <a href="mailto:info@matedelivery.com?subject=FAQ%20%2F%20Questions">{t('about.ctaSecondary')}</a>
+                  <button type="button" onClick={() => setPage('home')}>{t('about.footerTrack')}</button>
+                  <a href="mailto:info@matedelivery.com">{t('about.writeUs')}</a>
+                </div>
+                <div>
+                  <b>{t('about.footerContacts')}</b>
+                  <a href="tel:+36705549233">+36 705 549 233</a>
+                  <a href="mailto:info@matedelivery.com">info@matedelivery.com</a>
+                  <p>
+                    <a href="https://t.me/matedelivery" target="_blank" rel="noopener noreferrer">Telegram</a>
+                    {' · '}
+                    <a href="https://wa.me/36705549233" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+                  </p>
+                </div>
               </div>
-              <div className="stat-text"><b>{t('about.support247')}</b><span>{t('about.support247Sub')}</span></div>
+              <div className="about-site-footer__legal">
+                {t('about.legalCompany')} · {t('about.legalTaxLabel')} {t('about.legalTaxValue')} · {t('about.legalAddress')}
+              </div>
             </div>
-          </section>
+          </footer>
         </main>
       ) : page === 'about' ? (
         <main className="page-enter about-page">
@@ -1278,7 +1240,7 @@ function App() {
                   <b>{t('about.footerServices')}</b>
                   <button type="button" onClick={openCalcFresh}>{t('about.footerParcels')}</button>
                   <button type="button" onClick={openCalcFresh}>{t('about.footerPickup')}</button>
-                  <button type="button" onClick={() => setPage('business')}>{t('about.footerBusiness')}</button>
+                  <a href={mailTo('services.mailSubjectRequest')}>{t('about.footerBusiness')}</a>
                 </div>
                 <div>
                   <b>{t('about.footerHelp')}</b>
@@ -1319,121 +1281,6 @@ function App() {
           onSuccess={handleAuthSuccess}
           onNavigate={handleAuthNavigate}
         />
-      )}
-
-      {corpRegOpen && (
-        <div
-          className="reg-overlay"
-          role="dialog"
-          aria-modal="true"
-          onClick={(e) => { if (e.target === e.currentTarget) { setCorpRegOpen(false); setCorpRegStep(0); } }}
-        >
-          <div className={`reg-modal reg-modal--step${corpRegStep}`}>
-
-            {/* ── STEP 0: FORM ── */}
-            {corpRegStep === 0 && (
-              <div className="reg-s1">
-                <button className="reg-close" type="button" onClick={() => { setCorpRegOpen(false); setCorpRegStep(0); }}>✕</button>
-                <div className="reg-left">
-                  <div className="reg-logo">MATE<span>.</span></div>
-                  <h2>Создайте корпоративный аккаунт за 1 минуту</h2>
-                  <p>Получите доступ ко всем возможностям платформы и индивидуальные условия для вашего бизнеса.</p>
-                  <ul className="reg-benefits">
-                    <li><span className="reg-check">✓</span>Индивидуальные тарифы под ваш объём</li>
-                    <li><span className="reg-check">✓</span>Персональный менеджер и поддержка 24/7</li>
-                    <li><span className="reg-check">✓</span>Все логистические решения в одной платформе</li>
-                  </ul>
-                  <div className="reg-privacy">🔒 Ваши данные защищены и не будут переданы третьим лицам</div>
-                </div>
-                <div className="reg-right">
-                  <div className="reg-progress">
-                    <span className="reg-prog-step active">1</span>
-                    <span className="reg-prog-line" />
-                    <span className="reg-prog-step">2</span>
-                    <span className="reg-prog-line" />
-                    <span className="reg-prog-step">3</span>
-                  </div>
-                  <h3>Расскажите о вашей компании</h3>
-                  <label className="reg-field"><span>Название компании</span><input placeholder="ООО «Ваша компания»" type="text" /></label>
-                  <label className="reg-field">
-                    <span>Страна</span>
-                    <select><option>Венгрия</option><option>Германия</option><option>Польша</option><option>Франция</option><option>Украина</option></select>
-                  </label>
-                  <label className="reg-field"><span>Email</span><input placeholder="name@company.com" type="email" /></label>
-                  <label className="reg-field"><span>Телефон</span><input placeholder="+7 (...)" type="tel" /></label>
-                  <div className="reg-vol-label">Сколько отправлений в месяц?</div>
-                  <div className="reg-vol-btns">
-                    {['До 100', '100–500', '500–1000', '1000–5000', '5000+'].map((v) => (
-                      <button key={v} type="button" className={`reg-vol-btn${regVol === v ? ' active' : ''}`} onClick={() => setRegVol(v)}>{v}</button>
-                    ))}
-                  </div>
-                  {(regVol === '1000–5000' || regVol === '5000+') && (
-                    <p className="reg-vol-note">Для вашего объёма мы подготовим индивидуальные тарифы и персонального менеджера.</p>
-                  )}
-                  <button className="btn btn-lime reg-submit" type="button" onClick={() => setCorpRegStep(1)}>
-                    Создать корпоративный аккаунт
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 1: PROCESSING ── */}
-            {corpRegStep === 1 && (
-              <div className="reg-s2">
-                <div className="reg-s2__left">
-                  <div className="reg-logo">MATE<span>.</span></div>
-                  <h2>Создаём ваш<br />корпоративный аккаунт</h2>
-                  <p>Это займёт всего несколько секунд</p>
-                  <ul className="reg-checklist">
-                    <li className="done"><span className="reg-check-circle">✓</span>Создаём аккаунт</li>
-                    <li className="anim1"><span className="reg-check-circle">✓</span>Настраиваем рабочее пространство</li>
-                    <li className="anim2"><span className="reg-check-empty">○</span>Подключаем тарифы и условия</li>
-                    <li className="anim3"><span className="reg-check-empty">○</span>Готово!</li>
-                  </ul>
-                </div>
-                <div className="reg-s2__right">
-                  <div className="reg-illustration">
-                    <span>📦</span>
-                    <span className="reg-illu-truck">🚚</span>
-                    <span className="reg-illu-globe">🌍</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 2: SUCCESS ── */}
-            {corpRegStep === 2 && (
-              <div className="reg-s3">
-                <div className="reg-logo">MATE<span>.</span></div>
-                <div className="reg-success-icon">✓</div>
-                <h2>Добро пожаловать<br />в MATE!</h2>
-                <p>Ваш корпоративный аккаунт успешно создан.</p>
-                <div className="reg-next-label">Что дальше?</div>
-                <ul className="reg-next-list">
-                  <li>
-                    <div className="reg-next-icon"><ServiceSvgIcon id="parcel" size={18} /></div>
-                    <div><b>Создайте первую отправку</b><span>Рассчитайте стоимость и отправьте посылку</span></div>
-                    <span className="reg-next-arr">→</span>
-                  </li>
-                  <li>
-                    <div className="reg-next-icon"><ServiceSvgIcon id="customs" size={18} /></div>
-                    <div><b>Подключите ваш магазин</b><span>Интегрируйте Shopify, WooCommerce и другие платформы</span></div>
-                    <span className="reg-next-arr">→</span>
-                  </li>
-                  <li>
-                    <div className="reg-next-icon"><ServiceSvgIcon id="fulfillment" size={18} /></div>
-                    <div><b>Получите индивидуальный тариф</b><span>Наш менеджер свяжется с вами в ближайшее время</span></div>
-                    <span className="reg-next-arr">→</span>
-                  </li>
-                </ul>
-                <button className="btn btn-lime reg-submit" type="button" onClick={() => { setCorpRegOpen(false); setCorpRegStep(0); setDashboardType('corp'); setPage('dashboard'); }}>
-                  Перейти в личный кабинет
-                </button>
-              </div>
-            )}
-
-          </div>
-        </div>
       )}
 
       {/* ── PAYMENT NOTICE ── */}
@@ -1485,6 +1332,23 @@ function App() {
                 <p>{paymentNotice.message}</p>
               </>
             )}
+            {paymentNotice.type === 'paid_np_pending' && (
+              <>
+                <div className="payment-notice__icon">✓</div>
+                <h2>{t('payment.paidNpPendingTitle')}</h2>
+                <p>{t('payment.paidNpPending')}</p>
+                {paymentNotice.message && (
+                  <p className="payment-notice__detail">{paymentNotice.message}</p>
+                )}
+              </>
+            )}
+            {paymentNotice.type === 'awaiting_recipient' && (
+              <>
+                <div className="payment-notice__icon">✓</div>
+                <h2>{t('payment.awaitingRecipientTitle')}</h2>
+                <p>{paymentNotice.message}</p>
+              </>
+            )}
             <button
               className="btn btn-lime"
               type="button"
@@ -1493,7 +1357,11 @@ function App() {
                 if (user) setPage('client-dashboard');
               }}
             >
-              {paymentNotice.type === 'success' ? t('common.toDashboard') : t('common.ok')}
+              {paymentNotice.type === 'success'
+                || paymentNotice.type === 'awaiting_recipient'
+                || paymentNotice.type === 'paid_np_pending'
+                ? t('common.toDashboard')
+                : t('common.ok')}
             </button>
           </div>
         </div>
@@ -1529,6 +1397,19 @@ function App() {
           setOrdersRefresh((n) => n + 1);
           setCalcOpen(false);
           setCalcModalResume(false);
+        }}
+        onAwaitingRecipientPayment={(info) => {
+          setOrdersRefresh((n) => n + 1);
+          setCalcOpen(false);
+          setCalcModalResume(false);
+          setPaymentNotice({
+            type: 'awaiting_recipient',
+            message: t('payment.awaitingRecipient', {
+              email: info.recipientEmail,
+              order: info.orderNumber,
+            }),
+          });
+          if (user) setPage('client-dashboard');
         }}
       />
 
@@ -1617,7 +1498,9 @@ function App() {
                 <b>Получите индивидуальный тариф для вашего бизнеса</b>
                 <span>Наш менеджер подготовит персональное предложение на основе ваших объёмов.</span>
               </div>
-              <button className="btn btn-lime" type="button">Запросить тариф</button>
+              <a className="btn btn-lime" href={mailTo('services.mailSubjectTariff')}>
+                Запросить тариф
+              </a>
             </div>
           </main>
         </div>
@@ -1631,7 +1514,7 @@ function App() {
         />
       )}
 
-      {page !== 'admin' && <ScrollToTop />}
+      {page !== 'admin' && !calcOpen && <ScrollToTop />}
     </div>
   );
 }

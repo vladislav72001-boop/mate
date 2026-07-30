@@ -1,16 +1,15 @@
 import { calculateSingle } from './novapost/calculate.mjs';
 import {
   getSettings,
-  calculateMatePrice,
-  applyVat,
-  roundAmount,
-  convertToSettingsCurrency,
+  getPricing,
   chargeableWeightKg,
+  finalizeNovaPostClientPrice,
 } from './pricing-config.mjs';
 
 /**
- * Compare matrix net tariff vs Nova Post net, take max, then VAT + rounding.
- * Matrix cells = prices without VAT (Excel). NP quote treated as net in its currency.
+ * Client delivery price from live Nova Post + markup + VAT + rounding.
+ * No Excel matrix participates in the calculation. If NP is temporarily
+ * unavailable, its clearly-labelled estimate follows the same formula.
  */
 export async function reconcileParcelPrice({
   fromCountry = 'HU',
@@ -28,30 +27,13 @@ export async function reconcileParcelPrice({
   deliveryLocation,
   payerType = 'Sender',
 }) {
-  const settings = await getSettings();
+  const [settings, pricing] = await Promise.all([getSettings(), getPricing()]);
   const currency = String(settings.currency || 'HUF').toUpperCase();
   const billableKg = chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm, boxSize);
 
-  const mate = await calculateMatePrice({
-    toCountry,
-    weightKg: billableKg,
-    deliveryMode,
-    monthlyShipments,
-  });
-
-  const matrixNet = mate.breakdown?.beforeVat != null
-    ? Number(mate.breakdown.beforeVat)
-    : mate.breakdown?.cost != null
-      ? Number(mate.breakdown.cost)
-      : null;
-
-  let npNet = null;
-  let npSource = null;
-  let npServices = null;
-  let npCurrency = null;
-
+  let npQuote = null;
   try {
-    const quote = await calculateSingle({
+    npQuote = await calculateSingle({
       fromCountry,
       toCountry,
       weightKg,
@@ -64,139 +46,35 @@ export async function reconcileParcelPrice({
       deliveryLocation,
       payerType,
     });
-    if (quote?.total != null && Number.isFinite(Number(quote.total))) {
-      npCurrency = quote.currency?.code || 'EUR';
-      npNet = convertToSettingsCurrency(Number(quote.total), npCurrency, settings);
-      npNet = Math.round(npNet * 100) / 100;
-      npSource = quote.priceSource || 'novapost';
-      npServices = quote.breakdown || null;
-    }
   } catch (err) {
     console.warn('[pricing] NP reconcile quote failed:', err?.message || err);
   }
 
-  let chosenNet = matrixNet;
-  let priceSource = 'mate-matrix';
+  const npOk = npQuote?.total != null
+    && Number.isFinite(Number(npQuote.total))
+    && (npQuote.priceSource === 'novapost' || npQuote.priceSource === 'mock' || npQuote.priceSource === 'estimate');
 
-  if (npNet != null && npSource === 'novapost') {
-    if (matrixNet != null) {
-      chosenNet = Math.max(matrixNet, npNet);
-      if (chosenNet > matrixNet) priceSource = 'novapost';
-      else if (chosenNet > npNet) priceSource = 'mate-matrix';
-      else priceSource = 'reconciled';
-    } else {
-      chosenNet = npNet;
-      priceSource = 'novapost';
-    }
-  } else if (chosenNet == null && npNet != null) {
-    chosenNet = npNet;
-    priceSource = npSource === 'novapost' ? 'novapost' : 'estimate';
-  }
-
-  if (chosenNet == null) {
-    return {
-      amount: null,
-      currency,
-      priceSource: null,
-      breakdown: null,
-    };
-  }
-
-  const baseNet = chosenNet;
-  let beforeVat = baseNet;
-  let welcomeDiscountAmount = 0;
-  const appliedWelcomePercent = Number(welcomeDiscountPercent) > 0
-    ? Math.min(100, Number(welcomeDiscountPercent))
-    : 0;
-
-  if (appliedWelcomePercent > 0) {
-    welcomeDiscountAmount = beforeVat * (appliedWelcomePercent / 100);
-    beforeVat = beforeVat - welcomeDiscountAmount;
-  }
-
-  const afterVat = applyVat(beforeVat, settings);
-  const amount = roundAmount(afterVat, settings);
-
-  const log = [];
-  if (matrixNet != null) {
-    log.push({
-      step: log.length + 1,
-      title: 'Матрица (без НДС)',
-      detail: `${deliveryMode} · ${toCountry}`,
-      value: Math.round(matrixNet * 100) / 100,
+  if (npOk) {
+    const source = npQuote.priceSource === 'novapost' ? 'novapost' : 'estimate';
+    return finalizeNovaPostClientPrice({
+      npTotal: npQuote.total,
+      quoteCurrency: npQuote.currency?.code || 'EUR',
+      settings,
+      weightMarkups: pricing.weightMarkups,
+      tiers: pricing.tiers,
+      weightKg: billableKg,
+      monthlyShipments,
+      welcomeDiscountPercent,
+      source,
+      deliveryMode,
+      npServices: npQuote.breakdown || null,
     });
   }
-  if (npNet != null) {
-    log.push({
-      step: log.length + 1,
-      title: 'Nova Post (без НДС)',
-      detail: npSource || 'novapost',
-      value: Math.round(npNet * 100) / 100,
-    });
-  }
-  log.push({
-    step: log.length + 1,
-    title: 'База max(матрица, NP)',
-    detail: priceSource,
-    value: Math.round(baseNet * 100) / 100,
-  });
-  if (appliedWelcomePercent > 0) {
-    log.push({
-      step: log.length + 1,
-      title: `Скидка новичка −${appliedWelcomePercent}%`,
-      detail: 'одноразовая',
-      value: -Math.round(welcomeDiscountAmount * 100) / 100,
-    });
-    log.push({
-      step: log.length + 1,
-      title: 'После скидки',
-      detail: 'без НДС',
-      value: Math.round(beforeVat * 100) / 100,
-    });
-  }
-  if (settings?.vatEnabled) {
-    log.push({
-      step: log.length + 1,
-      title: `НДС +${settings.vatPercent}%`,
-      detail: `${Math.round(beforeVat * 100) / 100} × ${(1 + Number(settings.vatPercent) / 100).toFixed(2)}`,
-      value: Math.round(afterVat * 100) / 100,
-    });
-  }
-  if (settings?.roundingEnabled) {
-    log.push({
-      step: log.length + 1,
-      title: `Округление до ${settings.roundingStep}`,
-      detail: '→ доставка',
-      value: amount,
-    });
-  }
-  log.push({
-    step: log.length + 1,
-    title: 'Итого доставка',
-    detail: currency,
-    value: amount,
-  });
 
   return {
-    amount,
+    amount: null,
     currency,
-    priceSource,
-    breakdown: {
-      matrixNet: matrixNet != null ? Math.round(matrixNet * 100) / 100 : null,
-      npNet: npNet != null ? Math.round(npNet * 100) / 100 : null,
-      chosenNet: Math.round(baseNet * 100) / 100,
-      welcomeDiscountPercent: appliedWelcomePercent || null,
-      welcomeDiscountAmount: appliedWelcomePercent > 0
-        ? Math.round(welcomeDiscountAmount * 100) / 100
-        : null,
-      beforeVat: Math.round(beforeVat * 100) / 100,
-      afterVat: Math.round(afterVat * 100) / 100,
-      total: amount,
-      currency,
-      source: priceSource,
-      deliveryMode,
-      npServices,
-      log,
-    },
+    priceSource: null,
+    breakdown: null,
   };
 }

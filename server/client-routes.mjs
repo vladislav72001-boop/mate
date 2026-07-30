@@ -65,6 +65,7 @@ export function createClientRouter({ authMiddleware }) {
       const phone = String(req.body.phone ?? user.phone).trim();
       const email = String(req.body.email ?? user.email).trim().toLowerCase();
       const password = String(req.body.password || '');
+      const currentPassword = String(req.body.currentPassword || '');
 
       if (name.length < 2) return res.status(400).json({ error: 'Имя слишком короткое' });
       if (phone.length < 6) return res.status(400).json({ error: 'Укажите телефон' });
@@ -78,6 +79,11 @@ export function createClientRouter({ authMiddleware }) {
       const profileChanged = name !== user.name || phone !== user.phone || email !== user.email;
       if (password) {
         if (password.length < 8) return res.status(400).json({ error: 'Пароль не короче 8 символов' });
+        if (!currentPassword) {
+          return res.status(400).json({ error: 'Укажите текущий пароль' });
+        }
+        const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!ok) return res.status(400).json({ error: 'Неверный текущий пароль' });
         patch.passwordHash = await bcrypt.hash(password, 10);
       }
       const saved = await updateUser(user.id, patch);

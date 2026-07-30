@@ -766,49 +766,97 @@ export async function sendProfileUpdatedEmail(user, meta = {}) {
 export async function sendOrderCreatedEmail(order, meta = {}) {
   const locale = localeFromOrder(order);
   const t = (key, vars) => mailT(locale, key, vars);
-  const payUrl = meta.checkoutUrl || appUrl();
-  const payLabel = meta.checkoutUrl ? t('payOrder') : t('goPay');
+  const payer = String(order?.payload?.tariff?.payer || meta.payer || 'sender').toLowerCase();
+  const recipientPays = payer === 'receiver' || payer === 'recipient';
+  // Durable app link — Stripe session URLs expire; /?pay=token creates a fresh session.
+  const payUrl = meta.payUrl
+    || (order?.publicToken ? `${appUrl()}/?pay=${encodeURIComponent(order.publicToken)}` : null)
+    || meta.checkoutUrl
+    || appUrl();
   const pending = statusLabel(locale, 'pending_payment');
   const summary = orderSummaryBlock(
     order,
     detailRow(t('status'), escapeHtml(pending), { strong: true, last: true, dark: true }),
     locale,
   );
-  const html = baseTemplate({
-    title: t('orderCreatedTitle'),
-    preheader: t('orderCreatedPre', { orderNumber: order.orderNumber }),
-    banner: t('newShipment'),
-    headerRight: order.orderNumber,
-    locale,
-    bodyHtml: `
-      <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
-        ${escapeHtml(t('orderCreatedBody'))}
-      </p>
-      ${summary}
-      ${ctaButton(payUrl, payLabel)}
-    `,
-  });
-  const recipientHtml = baseTemplate({
-    title: t('orderCreatedTitleRecipient'),
-    preheader: t('orderCreatedPreRecipient', { orderNumber: order.orderNumber }),
-    banner: t('newShipment'),
-    headerRight: order.orderNumber,
-    locale,
-    bodyHtml: `
-      <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
-        ${escapeHtml(t('orderCreatedBodyRecipient'))}
-      </p>
-      ${summary}
-      ${ctaButton(appUrl(), t('trackShipment'))}
-    `,
-  });
+
+  let html;
+  let recipientHtml;
+  let subject;
+  let recipientSubject;
+
+  if (recipientPays) {
+    html = baseTemplate({
+      title: t('orderCreatedTitle'),
+      preheader: t('orderCreatedPreSenderAwaitingRecipient', { orderNumber: order.orderNumber }),
+      banner: t('newShipment'),
+      headerRight: order.orderNumber,
+      locale,
+      bodyHtml: `
+        <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
+          ${escapeHtml(t('orderCreatedBodySenderAwaitingRecipient', {
+            email: receiverEmailFromOrder(order) || '—',
+          }))}
+        </p>
+        ${summary}
+        ${ctaButton(appUrl(), t('welcomeCta'))}
+      `,
+    });
+    recipientHtml = baseTemplate({
+      title: t('orderCreatedTitleRecipientPay'),
+      preheader: t('orderCreatedPreRecipientPay', { orderNumber: order.orderNumber }),
+      banner: t('newShipment'),
+      headerRight: order.orderNumber,
+      locale,
+      bodyHtml: `
+        <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
+          ${escapeHtml(t('orderCreatedBodyRecipientPay'))}
+        </p>
+        ${summary}
+        ${ctaButton(payUrl, t('payOrder'))}
+      `,
+    });
+    subject = t('orderCreatedSubjectSenderAwaitingRecipient', { orderNumber: order.orderNumber });
+    recipientSubject = t('orderCreatedSubjectRecipientPay', { orderNumber: order.orderNumber });
+  } else {
+    html = baseTemplate({
+      title: t('orderCreatedTitle'),
+      preheader: t('orderCreatedPre', { orderNumber: order.orderNumber }),
+      banner: t('newShipment'),
+      headerRight: order.orderNumber,
+      locale,
+      bodyHtml: `
+        <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
+          ${escapeHtml(t('orderCreatedBody'))}
+        </p>
+        ${summary}
+        ${ctaButton(payUrl, t('payOrder'))}
+      `,
+    });
+    recipientHtml = baseTemplate({
+      title: t('orderCreatedTitleRecipient'),
+      preheader: t('orderCreatedPreRecipient', { orderNumber: order.orderNumber }),
+      banner: t('newShipment'),
+      headerRight: order.orderNumber,
+      locale,
+      bodyHtml: `
+        <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
+          ${escapeHtml(t('orderCreatedBodyRecipient'))}
+        </p>
+        ${summary}
+        ${ctaButton(appUrl(), t('trackShipment'))}
+      `,
+    });
+    subject = t('orderCreatedSubject', { orderNumber: order.orderNumber });
+    recipientSubject = t('orderCreatedSubjectRecipient', { orderNumber: order.orderNumber });
+  }
 
   return deliverOrderMail({
     order,
-    subject: t('orderCreatedSubject', { orderNumber: order.orderNumber }),
+    subject,
     html,
     recipientHtml,
-    recipientSubject: t('orderCreatedSubjectRecipient', { orderNumber: order.orderNumber }),
+    recipientSubject,
     outboxName: `order-created-${order.id}.html`,
   });
 }

@@ -278,6 +278,27 @@ function needsHighWeightMerge(pricing) {
   return !pricing?.costPrices?.locker?.['100'];
 }
 
+/** One-shot: ES documents cells still at pre-Excel-fix rates (NP-inflated matrix). */
+function needsEsDocsExcelFix(pricing, seed) {
+  const dbLocker = Number(pricing?.costPrices?.locker?.docs?.ES);
+  const seedLocker = Number(seed?.costPrices?.locker?.docs?.ES);
+  if (!Number.isFinite(seedLocker) || seedLocker === dbLocker) return false;
+  // Known stale production values before Oleg's HU-ES docs correction.
+  return dbLocker === 3697 || dbLocker === 3423 || dbLocker === 3903;
+}
+
+function patchEsDocsFromSeed(costPrices, seed) {
+  const next = JSON.parse(JSON.stringify(costPrices || {}));
+  for (const mode of ['branch', 'locker', 'address']) {
+    const seedVal = seed?.costPrices?.[mode]?.docs?.ES;
+    if (seedVal == null || !Number.isFinite(Number(seedVal))) continue;
+    if (!next[mode]) next[mode] = {};
+    if (!next[mode].docs) next[mode].docs = {};
+    next[mode].docs.ES = Number(seedVal);
+  }
+  return next;
+}
+
 /**
  * Fix accidental spikes where a weight tier costs more than both neighbours
  * (e.g. locker/1kg/DE was 5500 while 0.5kg=2796 and 1.5kg=3264).
@@ -416,6 +437,16 @@ export async function syncPricingFromJsonIfNeeded() {
     current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
   }
 
+  if (needsEsDocsExcelFix(current, seed)) {
+    const patched = patchEsDocsFromSeed(current.costPrices, seed);
+    await prisma.pricingConfig.update({
+      where: { id: 1 },
+      data: { costPrices: patched },
+    });
+    console.log('[pricing] patched ES docs cells from Excel (2590 locker base)');
+    current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
+  }
+
   return current;
 }
 
@@ -542,7 +573,7 @@ export function weightKeyForKg(weightKg) {
   return WEIGHT_ROWS[WEIGHT_ROWS.length - 1].key;
 }
 
-function isDocumentBox(boxSize) {
+export function isDocumentBox(boxSize) {
   const key = String(boxSize || '').toUpperCase();
   return key === 'XS' || key === 'ENVELOPE' || key === 'DOCUMENTS';
 }
@@ -761,24 +792,96 @@ export function convertToSettingsCurrency(amount, fromCurrency, settings) {
 
 /**
  * Live NP (or estimate) quote → client-facing amount in settings currency + VAT + rounding.
+ * Prefer finalizeNovaPostClientPrice when weight markup / loyalty tiers should apply.
  */
 export function finalizeExternalQuote(total, quoteCurrency, settings, source = 'novapost') {
+  return finalizeNovaPostClientPrice({
+    npTotal: total,
+    quoteCurrency,
+    settings,
+    weightMarkups: [],
+    tiers: [],
+    weightKg: 0,
+    source,
+  });
+}
+
+/**
+ * Nova Post net → (+ weight markup) → (− tier discount) → (− welcome) → VAT → rounding.
+ * No Excel matrix — client price follows the live carrier quote for the chosen endpoints.
+ */
+export function finalizeNovaPostClientPrice({
+  npTotal,
+  quoteCurrency,
+  settings,
+  weightMarkups = [],
+  tiers = [],
+  weightKg = 0,
+  monthlyShipments = 1,
+  welcomeDiscountPercent = 0,
+  source = 'novapost',
+  deliveryMode,
+  npServices = null,
+}) {
   const currency = String(settings?.currency || 'HUF').toUpperCase();
-  const converted = convertToSettingsCurrency(total, quoteCurrency, settings);
-  const beforeVat = converted;
-  const afterVat = applyVat(converted, settings);
+  const npNet = Math.round(
+    convertToSettingsCurrency(Number(npTotal) || 0, quoteCurrency, settings) * 100,
+  ) / 100;
+  const markupPct = markupPercentForWeight(weightMarkups, weightKg);
+  const tier = tierForShipments(tiers, monthlyShipments);
+  const discountPct = Number(tier.discountPercent) || 0;
+
+  const afterMarkup = npNet * (1 + markupPct / 100);
+  const afterDiscount = afterMarkup * (1 - discountPct / 100);
+
+  let beforeVat = afterDiscount;
+  let welcomeDiscountAmount = 0;
+  const appliedWelcomePercent = Number(welcomeDiscountPercent) > 0
+    ? Math.min(100, Number(welcomeDiscountPercent))
+    : 0;
+  if (appliedWelcomePercent > 0) {
+    welcomeDiscountAmount = beforeVat * (appliedWelcomePercent / 100);
+    beforeVat -= welcomeDiscountAmount;
+  }
+
+  const afterVat = applyVat(beforeVat, settings);
   const amount = roundAmount(afterVat, settings);
+
   const log = [
     {
       step: 1,
       title: source === 'novapost' ? 'Тариф Nova Post' : 'Оценка Nova Post',
-      detail: `${Math.round(Number(total) * 100) / 100} ${String(quoteCurrency || 'EUR').toUpperCase()}`,
-      value: Math.round(beforeVat * 100) / 100,
+      detail: `${Math.round(Number(npTotal) * 100) / 100} ${String(quoteCurrency || 'EUR').toUpperCase()}`,
+      value: npNet,
     },
   ];
+  if (markupPct) {
+    log.push({
+      step: log.length + 1,
+      title: `Наценка +${markupPct}%`,
+      detail: `${npNet} × ${(1 + markupPct / 100).toFixed(2)}`,
+      value: Math.round(afterMarkup * 100) / 100,
+    });
+  }
+  if (discountPct) {
+    log.push({
+      step: log.length + 1,
+      title: `Скидка уровня «${tier.label || tier.id}» −${discountPct}%`,
+      detail: `отправок/мес: ${monthlyShipments}`,
+      value: Math.round(afterDiscount * 100) / 100,
+    });
+  }
+  if (appliedWelcomePercent > 0) {
+    log.push({
+      step: log.length + 1,
+      title: `Скидка новичка −${appliedWelcomePercent}%`,
+      detail: 'одноразовая',
+      value: -Math.round(welcomeDiscountAmount * 100) / 100,
+    });
+  }
   if (settings?.vatEnabled) {
     log.push({
-      step: 2,
+      step: log.length + 1,
       title: `НДС +${settings.vatPercent}%`,
       detail: `${Math.round(beforeVat * 100) / 100} × ${(1 + Number(settings.vatPercent) / 100).toFixed(2)}`,
       value: Math.round(afterVat * 100) / 100,
@@ -798,15 +901,30 @@ export function finalizeExternalQuote(total, quoteCurrency, settings, source = '
     detail: currency,
     value: amount,
   });
+
   return {
     amount,
     currency,
+    priceSource: source,
     breakdown: {
+      npNet,
+      matrixNet: null,
+      chosenNet: Math.round(afterDiscount * 100) / 100,
+      markupPercent: markupPct,
+      tierId: tier.id,
+      tierLabel: tier.label || tier.id,
+      discountPercent: discountPct,
+      welcomeDiscountPercent: appliedWelcomePercent || null,
+      welcomeDiscountAmount: appliedWelcomePercent > 0
+        ? Math.round(welcomeDiscountAmount * 100) / 100
+        : null,
+      beforeVat: Math.round(beforeVat * 100) / 100,
+      afterVat: Math.round(afterVat * 100) / 100,
       total: amount,
       currency,
       source,
-      beforeVat: Math.round(beforeVat * 100) / 100,
-      afterVat: Math.round(afterVat * 100) / 100,
+      deliveryMode: deliveryMode || null,
+      npServices,
       log,
     },
   };

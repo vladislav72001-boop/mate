@@ -71,6 +71,19 @@ function formatMoney(amount: number, currency: string) {
   return `${amount.toFixed(2)} ${currency}`;
 }
 
+function isRecipientPayerOrder(order: ShippingOrder) {
+  const payer = String(order.payer || '').toLowerCase();
+  return payer === 'receiver' || payer === 'recipient';
+}
+
+function userCanPayOrder(order: ShippingOrder, user: AuthUser) {
+  if (order.status !== 'pending_payment') return false;
+  if (!isRecipientPayerOrder(order)) return true;
+  const email = String(user.email || '').trim().toLowerCase();
+  const receiverEmail = String(order.receiverEmail || '').trim().toLowerCase();
+  return Boolean(email && receiverEmail && email === receiverEmail);
+}
+
 type DashNotification = {
   id: string;
   title: string;
@@ -78,6 +91,30 @@ type DashNotification = {
   time: string;
   onClick: () => void;
 };
+
+function readNotifsStorageKey(userId: string) {
+  return `mate_dash_read_notifs:${userId}`;
+}
+
+function loadReadNotifIds(userId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(readNotifsStorageKey(userId));
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((id): id is string => typeof id === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveReadNotifIds(userId: string, ids: Set<string>) {
+  try {
+    localStorage.setItem(readNotifsStorageKey(userId), JSON.stringify([...ids]));
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 function HelpIcon() {
   return (
@@ -134,17 +171,21 @@ export function ClientDashboard({
   const { t, intlLocale, locale } = useI18n();
   const firstName = user.name.split(' ')[0] || user.name;
 
-  const statusLabel = useCallback((status: string) => {
+  const statusLabel = useCallback((status: string, order?: ShippingOrder) => {
     switch (status) {
       case 'submitted': return t('dash.statusSubmitted');
       case 'delivered': return t('dash.statusDelivered');
       case 'waiting_from_you': return t('dash.statusWaitingFromYou');
       case 'paid': return t('dash.statusPaid');
-      case 'pending_payment': return t('dash.statusPending');
+      case 'pending_payment':
+        if (order && isRecipientPayerOrder(order) && !userCanPayOrder(order, user)) {
+          return t('dash.statusAwaitingRecipient');
+        }
+        return t('dash.statusPending');
       case 'cancelled': return t('dash.statusCancelled');
       default: return status;
     }
-  }, [t]);
+  }, [t, user]);
 
   const formatDate = useCallback((iso?: string | null) => {
     if (!iso) return '—';
@@ -168,16 +209,34 @@ export function ClientDashboard({
   const [addrForm, setAddrForm] = useState({ label: '', name: user.name, phone: user.phone, country: 'HU', city: '', street: '', postal: '' });
   const [addrSaving, setAddrSaving] = useState(false);
 
-  const [settingsForm, setSettingsForm] = useState({ name: user.name, email: user.email, phone: user.phone, password: '' });
+  const [settingsForm, setSettingsForm] = useState({
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    currentPassword: '',
+    password: '',
+    passwordConfirm: '',
+  });
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
 
   const [detailOrder, setDetailOrder] = useState<ShippingOrder | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => new Set());
+  const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => loadReadNotifIds(user.id));
+
+  // Keep read state across refresh / remount (notifications are order-derived, not server events).
+  useEffect(() => {
+    setReadNotifIds(loadReadNotifIds(user.id));
+  }, [user.id]);
+
+  useEffect(() => {
+    saveReadNotifIds(user.id, readNotifIds);
+  }, [user.id, readNotifIds]);
 
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -234,7 +293,16 @@ export function ClientDashboard({
   }, [selectedOrderId, t]);
 
   useEffect(() => { loadData(); }, [ordersRefresh, user.id, loadData]);
-  useEffect(() => { setSettingsForm({ name: user.name, email: user.email, phone: user.phone, password: '' }); }, [user]);
+  useEffect(() => {
+    setSettingsForm({
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      currentPassword: '',
+      password: '',
+      passwordConfirm: '',
+    });
+  }, [user]);
   useEffect(() => {
     setAddrForm((f) => ({ ...f, label: f.label || t('dash.addrHome') }));
   }, [t]);
@@ -296,13 +364,18 @@ export function ClientDashboard({
       case 'transit': return orders.filter((o) => o.status === 'submitted' || o.status === 'delivered');
       case 'paid': return orders.filter((o) => o.paidAt || ['paid', 'waiting_from_you', 'submitted', 'delivered'].includes(o.status));
       case 'pending': return orders.filter((o) => o.status === 'pending_payment');
-      default: return orders;
+      default: return orders.filter((o) => o.status !== 'cancelled');
     }
   }, [orders, shipFilter]);
 
   const switchTab = (next: Tab) => {
     setError(null);
     setTab(next);
+  };
+
+  const openShipmentsByStat = (filter: ShipmentFilter) => {
+    setShipFilter(filter);
+    switchTab('shipments');
   };
 
   const handleTrack = async (q = trackQuery) => {
@@ -346,14 +419,56 @@ export function ClientDashboard({
     setSettingsSaving(true);
     setSettingsMsg(null);
     try {
-      const updated = await updateProfile(settingsForm);
+      const updated = await updateProfile({
+        name: settingsForm.name,
+        email: settingsForm.email,
+        phone: settingsForm.phone,
+      });
       onUserUpdate?.(updated);
       setSettingsMsg(t('dash.profileSaved'));
-      setSettingsForm((f) => ({ ...f, password: '' }));
     } catch (err) {
       setSettingsMsg(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.saveProfileError'));
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordSaving(true);
+    setPasswordMsg(null);
+    const currentPassword = settingsForm.currentPassword;
+    const password = settingsForm.password;
+    const passwordConfirm = settingsForm.passwordConfirm;
+    if (!currentPassword) {
+      setPasswordMsg(t('dash.currentPasswordRequired'));
+      setPasswordSaving(false);
+      return;
+    }
+    if (password.length < 8) {
+      setPasswordMsg(t('dash.passwordTooShort'));
+      setPasswordSaving(false);
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setPasswordMsg(t('dash.passwordMismatch'));
+      setPasswordSaving(false);
+      return;
+    }
+    try {
+      const updated = await updateProfile({
+        name: settingsForm.name,
+        email: settingsForm.email,
+        phone: settingsForm.phone,
+        currentPassword,
+        password,
+      });
+      onUserUpdate?.(updated);
+      setPasswordMsg(t('dash.passwordChanged'));
+      setSettingsForm((f) => ({ ...f, currentPassword: '', password: '', passwordConfirm: '' }));
+    } catch (err) {
+      setPasswordMsg(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.saveProfileError'));
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -398,7 +513,7 @@ export function ClientDashboard({
   const orderCardProps = (o: ShippingOrder, mode: 'home' | 'full') => {
     const base = {
       order: o,
-      statusLabel: statusLabel(o.status),
+      statusLabel: statusLabel(o.status, o),
       statusClass: statusClass(o.status),
       amountLabel: formatMoney(o.amount, o.currency),
       onOpen: () => openDetail(o),
@@ -408,7 +523,12 @@ export function ClientDashboard({
       pickupDate: formatDate(o.pickupDate),
     };
     if (o.status === 'pending_payment') {
-      return { ...base, onPay: () => handlePayOrder(o), onCancel: () => handleCancelOrder(o) };
+      const canPay = userCanPayOrder(o, user);
+      return {
+        ...base,
+        ...(canPay ? { onPay: () => handlePayOrder(o) } : {}),
+        onCancel: () => handleCancelOrder(o),
+      };
     }
     if (o.status !== 'cancelled') {
       return { ...base, onTrack: () => openTracking(o) };
@@ -425,9 +545,10 @@ export function ClientDashboard({
       .filter((o) => o.status === 'pending_payment')
       .slice(0, 5)
       .forEach((o) => {
+        const awaitingRecipient = isRecipientPayerOrder(o) && !userCanPayOrder(o, user);
         items.push({
           id: `pay-${o.id}`,
-          title: t('dash.notifPending'),
+          title: awaitingRecipient ? t('dash.notifAwaitingRecipient') : t('dash.notifPending'),
           text: `${o.orderNumber} · ${formatMoney(o.amount, o.currency)}`,
           time: formatDate(o.createdAt),
           onClick: () => {
@@ -454,7 +575,7 @@ export function ClientDashboard({
         });
       });
     return items;
-  }, [orders, t, formatDate]);
+  }, [orders, t, formatDate, user]);
 
   const unreadCount = notifications.filter((n) => !readNotifIds.has(n.id)).length;
   const hasCompletedOrders = orders.some(
@@ -465,7 +586,7 @@ export function ClientDashboard({
       ? (loyalty.welcomeDiscount?.available ?? false)
       : (user.welcomeDiscountAvailable ?? false)
   );
-  const welcomeDiscountPercent = loyalty?.welcomeDiscount?.percent ?? 35;
+  const welcomeDiscountPercent = loyalty?.welcomeDiscount?.percent ?? 20;
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -477,7 +598,11 @@ export function ClientDashboard({
   }, []);
 
   const markAllRead = () => {
-    setReadNotifIds(new Set(notifications.map((n) => n.id)));
+    setReadNotifIds((prev) => {
+      const next = new Set(prev);
+      for (const n of notifications) next.add(n.id);
+      return next;
+    });
   };
 
   return (
@@ -657,33 +782,41 @@ export function ClientDashboard({
               <LoyaltyCard loyalty={loyalty} loading={loyaltyLoading} />
 
               <div className="client-dash__stats">
-                {[
-                  { label: t('dash.statTotal'), val: stats.total, delta: stats.total ? '+100%' : '0%', up: true },
-                  { label: t('dash.statTransit'), val: stats.transit, delta: stats.transit ? t('dash.statActive') : '—', up: true },
-                  { label: t('dash.statPaid'), val: stats.paid, delta: stats.paid ? 'ok' : '—', up: true },
-                  { label: t('dash.statPending'), val: stats.pending, delta: stats.pending ? '!' : '—', up: false },
-                ].map((s) => (
-                  <div key={s.label} className="client-dash__stat card">
+                {([
+                  { id: 'all' as const, label: t('dash.statTotal'), val: stats.total, delta: stats.total ? '+100%' : '0%', up: true },
+                  { id: 'transit' as const, label: t('dash.statTransit'), val: stats.transit, delta: stats.transit ? t('dash.statActive') : '—', up: true },
+                  { id: 'paid' as const, label: t('dash.statPaid'), val: stats.paid, delta: stats.paid ? 'ok' : '—', up: true },
+                  { id: 'pending' as const, label: t('dash.statPending'), val: stats.pending, delta: stats.pending ? '!' : '—', up: false },
+                ]).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`client-dash__stat card${shipFilter === s.id ? ' is-active' : ''}`}
+                    onClick={() => setShipFilter(s.id)}
+                    aria-pressed={shipFilter === s.id}
+                  >
                     <span>{s.label}</span>
                     <div><b>{s.val}</b><em className={s.up ? 'up' : 'dn'}>{s.delta}</em></div>
-                  </div>
+                  </button>
                 ))}
               </div>
 
               <section className="client-dash__panel card">
                 <div className="client-dash__panel-head">
                   <h2>{t('dash.recentShipments')}</h2>
-                  <button type="button" className="text-link" onClick={() => switchTab('shipments')}>{t('dash.allLink')}</button>
+                  <button type="button" className="text-link" onClick={() => openShipmentsByStat(shipFilter)}>{t('dash.allLink')}</button>
                 </div>
-                {loading ? <p className="client-dash__empty">{t('dash.loading')}</p> : orders.length === 0 ? (
+                {loading ? <p className="client-dash__empty">{t('dash.loading')}</p> : filteredOrders.length === 0 ? (
                   <div className="client-dash__empty-block">
-                    <p>{t('dash.noShipments')}</p>
-                    <button className="btn btn-lime" type="button" onClick={onCreateShipment}>{t('dash.createFirst')}</button>
+                    <p>{shipFilter === 'all' ? t('dash.noShipments') : t('dash.noShipmentsCategory', { email: user.email })}</p>
+                    {shipFilter === 'all' && (
+                      <button className="btn btn-lime" type="button" onClick={onCreateShipment}>{t('dash.createFirst')}</button>
+                    )}
                   </div>
                 ) : (
                   <>
                     <div className="client-dash__orders-cards">
-                      {orders.slice(0, 5).map((o) => (
+                      {filteredOrders.slice(0, 5).map((o) => (
                         <OrderCard key={o.id} {...orderCardProps(o, 'home')} />
                       ))}
                     </div>
@@ -701,7 +834,7 @@ export function ClientDashboard({
                             <tr><th>{t('dash.thNumber')}</th><th>{t('dash.thRoute')}</th><th>{t('dash.thStatus')}</th><th className="client-dash__th-amount">{t('dash.thAmount')}</th><th>{t('dash.thActions')}</th></tr>
                           </thead>
                           <tbody>
-                            {orders.slice(0, 5).map((o) => (
+                            {filteredOrders.slice(0, 5).map((o) => (
                               <tr key={o.id} className="client-dash__row-click" onClick={() => openDetail(o)}>
                                 <td><b>{o.orderNumber}</b>{o.npTtn && (
                                   <small className={o.npValid === false ? 'client-dash__ttn-warn' : ''}>
@@ -709,13 +842,15 @@ export function ClientDashboard({
                                   </small>
                                 )}</td>
                                 <td className="client-dash__route">{countryLabel(o.fromCountry || 'HU', locale)} → {countryLabel(o.toCountry || '', locale)}</td>
-                                <td><span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>{statusLabel(o.status)}</span></td>
+                                <td><span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>{statusLabel(o.status, o)}</span></td>
                                 <td className="client-dash__amount">{formatMoney(o.amount, o.currency)}</td>
                                 <td className="client-dash__cell-actions" onClick={(e) => e.stopPropagation()}>
                                   <div className="client-dash__row-actions">
                                     {o.status === 'pending_payment' ? (
                                       <>
-                                        <button type="button" className="btn btn-lime btn-sm" disabled={payingId === o.id} onClick={() => handlePayOrder(o)}>{payingId === o.id ? '…' : t('dash.pay')}</button>
+                                        {userCanPayOrder(o, user) && (
+                                          <button type="button" className="btn btn-lime btn-sm" disabled={payingId === o.id} onClick={() => handlePayOrder(o)}>{payingId === o.id ? '…' : t('dash.pay')}</button>
+                                        )}
                                         <button type="button" className="btn btn-outline btn-sm" disabled={cancellingId === o.id} onClick={() => handleCancelOrder(o)}>{t('dash.cancel')}</button>
                                       </>
                                     ) : o.status !== 'cancelled' ? (
@@ -790,13 +925,15 @@ export function ClientDashboard({
                               <td className="client-dash__route">{countryLabel(o.fromCountry || 'HU', locale)} → {countryLabel(o.toCountry || '', locale)}</td>
                               <td>{o.parcelSize || '—'}</td>
                               <td>{formatDate(o.pickupDate)}</td>
-                              <td><span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>{statusLabel(o.status)}</span></td>
+                              <td><span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>{statusLabel(o.status, o)}</span></td>
                               <td className="client-dash__amount">{formatMoney(o.amount, o.currency)}</td>
                               <td className="client-dash__cell-actions" onClick={(e) => e.stopPropagation()}>
                                 <div className="client-dash__row-actions">
                                   {o.status === 'pending_payment' ? (
                                     <>
-                                      <button type="button" className="btn btn-lime btn-sm" disabled={payingId === o.id} onClick={() => handlePayOrder(o)}>{payingId === o.id ? '…' : t('dash.pay')}</button>
+                                      {userCanPayOrder(o, user) && (
+                                        <button type="button" className="btn btn-lime btn-sm" disabled={payingId === o.id} onClick={() => handlePayOrder(o)}>{payingId === o.id ? '…' : t('dash.pay')}</button>
+                                      )}
                                       <button type="button" className="btn btn-outline btn-sm" disabled={cancellingId === o.id} onClick={() => handleCancelOrder(o)}>{t('dash.cancel')}</button>
                                     </>
                                   ) : o.status !== 'cancelled' ? (
@@ -920,10 +1057,10 @@ export function ClientDashboard({
                         order={o}
                         dateLabel={formatDate(o.paidAt || o.createdAt)}
                         amountLabel={formatMoney(o.amount, o.currency)}
-                        statusLabel={statusLabel(o.status)}
+                        statusLabel={statusLabel(o.status, o)}
                         statusClass={statusClass(o.status)}
                         onOpen={() => openDetail(o)}
-                        onPay={o.status === 'pending_payment' ? () => handlePayOrder(o) : undefined}
+                        onPay={userCanPayOrder(o, user) ? () => handlePayOrder(o) : undefined}
                         paying={payingId === o.id}
                       />
                     ))}
@@ -949,14 +1086,14 @@ export function ClientDashboard({
                               <td className="client-dash__amount">{formatMoney(o.amount, o.currency)}</td>
                               <td>
                                 <span className={`client-dash__badge client-dash__badge--${statusClass(o.status)}`}>
-                                  {statusLabel(o.status)}
+                                  {statusLabel(o.status, o)}
                                 </span>
                               </td>
                               <td className="client-dash__cell-actions" onClick={(e) => e.stopPropagation()}>
                                 <div className="client-dash__row-actions">
-                                  {o.status === 'pending_payment' ? (
+                                  {userCanPayOrder(o, user) ? (
                                     <button type="button" className="btn btn-lime btn-sm" disabled={payingId === o.id} onClick={() => handlePayOrder(o)}>{payingId === o.id ? '…' : t('dash.pay')}</button>
-                                  ) : (
+                                  ) : o.status === 'pending_payment' ? null : (
                                     <button type="button" className="text-link client-dash__link" onClick={() => window.print()}>{t('dash.download')}</button>
                                   )}
                                 </div>
@@ -980,9 +1117,49 @@ export function ClientDashboard({
                 <div className="field-block"><label>{t('dash.name')}</label><input value={settingsForm.name} onChange={(e) => setSettingsForm({ ...settingsForm, name: e.target.value })} /></div>
                 <div className="field-block"><label>Email</label><input type="email" value={settingsForm.email} onChange={(e) => setSettingsForm({ ...settingsForm, email: e.target.value })} /></div>
                 <div className="field-block"><label>{t('dash.phone')}</label><input value={settingsForm.phone} onChange={(e) => setSettingsForm({ ...settingsForm, phone: e.target.value })} /></div>
-                <div className="field-block"><label>{t('dash.newPassword')}</label><input type="password" value={settingsForm.password} onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })} placeholder={t('dash.passwordPlaceholder')} /></div>
               </div>
               <button className="btn btn-lime" type="button" disabled={settingsSaving} onClick={handleSaveSettings}>{settingsSaving ? t('dash.savingProfile') : t('dash.saveChanges')}</button>
+
+              <div className="client-dash__password-block">
+                <h3>{t('dash.changePassword')}</h3>
+                {passwordMsg && (
+                  <p className={passwordMsg === t('dash.passwordChanged') ? 'client-dash__ok' : 'client-dash__alert'}>
+                    {passwordMsg}
+                  </p>
+                )}
+                <div className="client-dash__settings-grid">
+                  <div className="field-block client-dash__settings-span">
+                    <label>{t('dash.currentPassword')}</label>
+                    <input
+                      type="password"
+                      autoComplete="current-password"
+                      value={settingsForm.currentPassword}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, currentPassword: e.target.value })}
+                    />
+                  </div>
+                  <div className="field-block">
+                    <label>{t('dash.newPassword')}</label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={settingsForm.password}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
+                    />
+                  </div>
+                  <div className="field-block">
+                    <label>{t('dash.confirmPassword')}</label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={settingsForm.passwordConfirm}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, passwordConfirm: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <button className="btn btn-lime" type="button" disabled={passwordSaving} onClick={handleChangePassword}>
+                  {passwordSaving ? t('dash.savingProfile') : t('dash.changePassword')}
+                </button>
+              </div>
 
               <div className="client-dash__advantages-mini">
                 <h3>{t('dash.benefitsTitle')}</h3>
@@ -1015,6 +1192,7 @@ export function ClientDashboard({
           onTrack={(o) => { openTracking(o); }}
           paying={payingId === detailOrder.id}
           cancelling={cancellingId === detailOrder.id}
+          canPayOverride={userCanPayOrder(detailOrder, user)}
         />
       )}
     </div>

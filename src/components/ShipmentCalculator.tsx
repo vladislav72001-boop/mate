@@ -68,6 +68,13 @@ type FormProps = {
   user?: AuthUser | null;
   initialTo?: string;
   onSuccess?: (order: ShippingOrder) => void;
+  onAwaitingRecipientPayment?: (info: {
+    orderNumber: string;
+    publicToken: string;
+    recipientEmail: string;
+    amount: number;
+    currency: string;
+  }) => void;
   onDone?: () => void;
   inModal?: boolean;
   onStepChange?: (step: number) => void;
@@ -99,7 +106,24 @@ const STEP_SUMMARY_KEYS: Record<number, string[]> = {
 
 const TOTAL_STEPS = 9;
 
-const ENVELOPE_PRESET = { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.5 };
+function isEnvelopeSize(sizeKey: SizeKey) {
+  return sizeKey === 'XS' || sizeKey === 'envelope';
+}
+
+/** Envelope = documents: skip contents (7); keep value/payer (8) so who-pays is always choosable. */
+function nextCalcStep(step: number, sizeKey: SizeKey) {
+  let n = step + 1;
+  if (isEnvelopeSize(sizeKey) && n === 7) n = 8;
+  return Math.min(n, TOTAL_STEPS);
+}
+
+function prevCalcStep(step: number, sizeKey: SizeKey) {
+  let n = step - 1;
+  if (isEnvelopeSize(sizeKey) && n === 7) n = 6;
+  return Math.max(n, 1);
+}
+
+const ENVELOPE_PRESET = { lengthCm: 35, widthCm: 25, heightCm: 2, weightKg: 0.2 };
 
 /** Preset sizes + non-standard (weight slider → tariff). */
 const SIZE_OPTION_KEYS: Array<ParcelKey | 'custom'> = ['XS', 'S', 'M', 'L', 'custom'];
@@ -110,7 +134,8 @@ const CUSTOM_WEIGHT_TIERS = [
   {
     key: 'XS',
     maxKg: 2,
-    dims: { ...PARCEL_PRESETS.XS },
+    // Courier-only small parcel — not document/envelope dims (those underprice ≤2 kg customs).
+    dims: { lengthCm: 5, widthCm: 35, heightCm: 50, weightKg: 2 },
     title: { ru: 'XS · до 2 кг', en: 'XS · up to 2 kg', hu: 'XS · 2 kg-ig', uk: 'XS · до 2 кг' },
     dimsLabel: {
       ru: 'до 5 × 35 × 50 см · только курьер',
@@ -139,10 +164,20 @@ const CUSTOM_WEIGHT_TIERS = [
   },
   {
     key: 'XL',
-    maxKg: 31,
+    maxKg: 30,
     dims: { ...PARCEL_PRESETS.XL },
-    title: { ru: 'XL · до 31 кг', en: 'XL · up to 31 kg', hu: 'XL · 31 kg-ig', uk: 'XL · до 31 кг' },
+    title: { ru: 'XL · до 30 кг', en: 'XL · up to 30 kg', hu: 'XL · 30 kg-ig', uk: 'XL · до 30 кг' },
   },
+] as const;
+
+/** Slider scale labels (kg), aligned with CUSTOM_WEIGHT_TIERS. */
+const CUSTOM_WEIGHT_SCALE = [
+  { w: 0.1, labelKey: 'xs' as const },
+  { w: 2, labelKey: '2' as const },
+  { w: 5, labelKey: 's5' as const },
+  { w: 10, labelKey: 'm10' as const },
+  { w: 20, labelKey: 'l20' as const },
+  { w: 30, labelKey: 'max' as const },
 ] as const;
 
 const SIZE_ICONS: Record<ParcelKey, string> = {
@@ -276,6 +311,8 @@ async function resolvePreliminaryQuoteLocations(
     }
     const primary = await firstInCity(country, city, mode === 'branch' ? 'branch' : 'locker', side);
     if (primary) return primary;
+    // Soft fallback only for preliminary catalog quotes when the preferred
+    // point type is missing in a city (exact selected points never use this path).
     const fallbackKind = mode === 'branch' ? 'locker' : 'branch';
     return firstInCity(country, city, fallbackKind, side);
   };
@@ -352,11 +389,11 @@ function tomorrowIso() {
 
 /** Tier limits — keep in sync with server/novapost/parcel.mjs */
 const PARCEL_LIMITS: Record<ParcelKey, { maxLongestCm: number; maxGirthCm: number; maxWeightKg: number }> = {
-  XS: { maxLongestCm: 50, maxGirthCm: 180, maxWeightKg: 2 },
+  XS: { maxLongestCm: 50, maxGirthCm: 180, maxWeightKg: 1 },
   S: { maxLongestCm: 60, maxGirthCm: 200, maxWeightKg: 5 },
   M: { maxLongestCm: 60, maxGirthCm: 220, maxWeightKg: 10 },
   L: { maxLongestCm: 60, maxGirthCm: 240, maxWeightKg: 20 },
-  XL: { maxLongestCm: 60, maxGirthCm: 300, maxWeightKg: 31 },
+  XL: { maxLongestCm: 120, maxGirthCm: 300, maxWeightKg: 30 },
 };
 
 function sortedSidesCm(l: number, w: number, h: number) {
@@ -372,10 +409,27 @@ function fitsParcelTier(lengthCm: number, widthCm: number, heightCm: number, wei
     && girth <= limits.maxGirthCm;
 }
 
-function modesForSize(sizeKey: SizeKey): ReadonlyArray<DeliveryMode> {
+function modesForSize(
+  sizeKey: SizeKey,
+  custom?: { l: string; w: string; h: string; kg: string },
+): ReadonlyArray<DeliveryMode> {
   if (sizeKey === 'envelope') return SIZE_ALLOWED_MODES.S;
   if (sizeKey === 'XXL') return SIZE_ALLOWED_MODES.XL;
-  if (sizeKey === 'custom') return SIZE_ALLOWED_MODES.custom;
+  if (sizeKey === 'custom') {
+    const lengthCm = Math.max(1, Number(custom?.l) || 0);
+    const widthCm = Math.max(1, Number(custom?.w) || 0);
+    const heightCm = Math.max(1, Number(custom?.h) || 0);
+    const weightKg = Math.max(0.1, Number(custom?.kg) || 0);
+    if (lengthCm && widthCm && heightCm && weightKg) {
+      for (const tier of (['XS', 'S', 'M', 'L', 'XL'] as ParcelKey[])) {
+        if (fitsParcelTier(lengthCm, widthCm, heightCm, weightKg, tier)) {
+          return SIZE_ALLOWED_MODES[tier];
+        }
+      }
+    }
+    // Oversized / incomplete dims → courier only (Nova Post nonstandard).
+    return SIZE_ALLOWED_MODES.custom;
+  }
   return SIZE_ALLOWED_MODES[sizeKey] ?? SIZE_ALLOWED_MODES.M;
 }
 
@@ -384,8 +438,9 @@ function clampModeToSize(
   sizeKey: SizeKey,
   side?: CoverageSide | null,
   excluded: ReadonlyArray<DeliveryMode> = [],
+  custom?: { l: string; w: string; h: string; kg: string },
 ): DeliveryMode {
-  const allowed = modesForSize(sizeKey);
+  const allowed = modesForSize(sizeKey, custom);
   const isOk = (key: DeliveryMode) => (
     !excluded.includes(key)
     && allowed.includes(key)
@@ -540,6 +595,7 @@ export function CalcForm({
   initialTo = 'DE',
   inModal = false,
   onSuccess: _onSuccess,
+  onAwaitingRecipientPayment,
   onDone: _onDone,
   onStepChange,
   resetToStep1Signal,
@@ -708,6 +764,15 @@ export function CalcForm({
     onStepChange?.(n);
     if (n < TOTAL_STEPS) setError(null);
   };
+
+  // Envelope = documents with low declared value; skip contents step only.
+  useEffect(() => {
+    if (!isEnvelopeSize(sizeKey)) return;
+    setContents('documents');
+    setContentsNote('');
+    setContentValue('under100');
+    if (step === 7) goTo(8);
+  }, [sizeKey, step]);
 
   useEffect(() => {
     onStepChange?.(step);
@@ -901,6 +966,8 @@ export function CalcForm({
 
   const apiParcelKey = sizeToApiKey(sizeKey, customSize);
   const declaredValue = VALUE_TO_EUR[contentValue];
+  // Must match checkout parcel.declaredValue so NP tariff doesn't jump at pay.
+  const npDeclaredValue = Math.max(insurance ? declaredValue : 100, 50);
   const quotePickupMode = deliveryModeToApi(pickupType);
   const quoteDeliveryMode = deliveryModeToApi(deliveryType);
   const pickupQuoteLocation = useMemo(() => (
@@ -921,7 +988,8 @@ export function CalcForm({
   const routeCacheKey = [
     PICKUP_COUNTRY,
     toCountry,
-    declaredValue,
+    npDeclaredValue,
+    apiParcelKey,
     pickupType,
     deliveryType,
     quotePayerType,
@@ -929,14 +997,14 @@ export function CalcForm({
     JSON.stringify(deliveryQuoteLocation || null),
   ].join(':');
 
+  // Catalog tile prices must NOT depend on pickup/delivery mode. Selecting
+  // "custom" forces address-only modes and used to rewrite envelope/S/M/L prices.
   const preliminaryRouteKey = [
     PICKUP_COUNTRY,
     toCountry,
     pickupCity.trim().toLowerCase(),
     destCity.trim().toLowerCase(),
-    declaredValue,
-    pickupType,
-    deliveryType,
+    npDeclaredValue,
   ].join(':');
 
   const applyCachedRouteQuotes = useCallback(() => {
@@ -949,7 +1017,7 @@ export function CalcForm({
   }, [routeCacheKey]);
 
   const applyCachedPreliminaryQuotes = useCallback(() => {
-    const cached = routeQuoteCache.current.get(`prelim:${preliminaryRouteKey}`);
+    const cached = routeQuoteCache.current.get(`catalog:${preliminaryRouteKey}`);
     if (!cached) return false;
     setParcelQuotes((prev) => ({ ...prev, ...cached.quotes }));
     setCurrency(cached.currency);
@@ -996,7 +1064,7 @@ export function CalcForm({
       const data = await calculateBatch({
         fromCountry: PICKUP_COUNTRY,
         toCountry,
-        declaredValue,
+        declaredValue: npDeclaredValue,
         deliveryMode: useMode,
         pickupMode: usePickupMode,
         pickupLocation: usePickup,
@@ -1054,7 +1122,7 @@ export function CalcForm({
       if (reqId === quoteRequestId.current) setQuoteRefreshing(false);
     }
   }, [
-    toCountry, declaredValue, routeCacheKey, quoteDeliveryMode, quotePickupMode,
+    toCountry, npDeclaredValue, routeCacheKey, quoteDeliveryMode, quotePickupMode,
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType,
     applyEstimateFallback, t,
   ]);
@@ -1069,12 +1137,6 @@ export function CalcForm({
       allowWithoutLocations?: boolean;
     },
   ): Promise<boolean> => {
-    const tier = sizeToApiKey('custom', {
-      l: String(preset.lengthCm),
-      w: String(preset.widthCm),
-      h: String(preset.heightCm),
-      kg: String(preset.weightKg),
-    });
     // Dedicated response key so custom quotes never collide with preset S/M/L/XL cache.
     const quoteKey = `CUSTOM:${preset.weightKg}:${preset.lengthCm}x${preset.widthCm}x${preset.heightCm}`;
     const usePickup = options?.pickupLocation ?? pickupQuoteLocation;
@@ -1089,7 +1151,7 @@ export function CalcForm({
       const data = await calculateBatch({
         fromCountry: PICKUP_COUNTRY,
         toCountry,
-        declaredValue,
+        declaredValue: npDeclaredValue,
         deliveryMode: useMode,
         pickupMode: usePickupMode,
         pickupLocation: usePickup,
@@ -1102,7 +1164,9 @@ export function CalcForm({
       const code = (data.currency?.code || DEFAULT_QUOTE_CURRENCY).toUpperCase();
       setCurrency(code);
 
-      const q = data.quotes[quoteKey] ?? data.quotes[tier] ?? Object.values(data.quotes || {})[0];
+      const q = data.quotes[quoteKey]
+        ?? (Object.entries(data.quotes || {}).find(([k]) => k.startsWith('CUSTOM:'))?.[1])
+        ?? null;
       const total = typeof q === 'number' ? q : (q?.total ?? null);
       setCustomQuote(total);
 
@@ -1127,16 +1191,71 @@ export function CalcForm({
       if (reqId === customQuoteRequestId.current) setQuoteRefreshing(false);
     }
   }, [
-    toCountry, declaredValue, quoteDeliveryMode, quotePickupMode,
+    toCountry, npDeclaredValue, quoteDeliveryMode, quotePickupMode,
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, t,
   ]);
 
-  // Steps 2–5: city-pair quotes that follow selected pickup/delivery modes.
+  // Steps 2–3: ask Nova Post for size-tile prices as soon as cities are known.
+  // Catalog uses branch↔branch sample points (locker pickup is not live yet).
   useEffect(() => {
-    if (step < 2 || step > 5) return;
+    if (step < 2 || step > 3) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
-    if (quoteLocationsReady && step >= 6) return;
     if (applyCachedPreliminaryQuotes()) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const { pickup: pickupLoc, delivery: deliveryLoc } = await resolvePreliminaryQuoteLocations(
+          'branch',
+          'branch',
+          pickupCity,
+          destCity,
+          toCountry,
+        );
+        if (cancelled) return;
+        await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
+          deliveryMode: 'branch',
+          pickupMode: 'branch',
+          pickupLocation: pickupLoc,
+          deliveryLocation: deliveryLoc,
+          cacheKey: `catalog:${preliminaryRouteKey}`,
+          allowWithoutLocations: true,
+        });
+      } catch {
+        if (cancelled) return;
+        await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
+          deliveryMode: 'branch',
+          pickupMode: 'branch',
+          cacheKey: `catalog:${preliminaryRouteKey}`,
+          allowWithoutLocations: true,
+        });
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    step, pickupCity, destCity, toCountry, npDeclaredValue, preliminaryRouteKey,
+    applyCachedPreliminaryQuotes, fetchQuoteKeys,
+  ]);
+
+  // Steps 4–5: re-price selected size for the chosen pickup/delivery modes.
+  useEffect(() => {
+    if (step < 4 || step > 5) return;
+    if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
+    if (quoteLocationsReady) return;
+
+    const modeCacheKey = [
+      'mode',
+      preliminaryRouteKey,
+      pickupType,
+      deliveryType,
+      sizeKey === 'custom'
+        ? `CUSTOM:${Number(customSize.kg) || 0}:${customSize.l}x${customSize.w}x${customSize.h}`
+        : sizeKey,
+    ].join(':');
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -1150,47 +1269,60 @@ export function CalcForm({
         );
         if (cancelled) return;
 
-        await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
-          deliveryMode: quoteDeliveryMode,
-          pickupMode: quotePickupMode,
-          pickupLocation: pickupLoc,
-          deliveryLocation: deliveryLoc,
-          cacheKey: `prelim:${preliminaryRouteKey}`,
-          allowWithoutLocations: true,
-        });
+        if (sizeKey === 'custom') {
+          const weightKg = Number(customSize.kg);
+          if (!Number.isFinite(weightKg) || weightKg < 0.1) return;
+          if (weightKg > MAX_CUSTOM_WEIGHT_KG) return;
+          await fetchCustomQuote(sizeToPreset('custom', customSize), {
+            deliveryMode: quoteDeliveryMode,
+            pickupMode: quotePickupMode,
+            pickupLocation: pickupLoc,
+            deliveryLocation: deliveryLoc,
+            allowWithoutLocations: true,
+          });
+        } else {
+          await fetchQuoteKeys([apiParcelKey], undefined, {
+            deliveryMode: quoteDeliveryMode,
+            pickupMode: quotePickupMode,
+            pickupLocation: pickupLoc,
+            deliveryLocation: deliveryLoc,
+            cacheKey: modeCacheKey,
+            allowWithoutLocations: true,
+          });
+        }
       } catch {
         if (cancelled) return;
-        await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
-          deliveryMode: quoteDeliveryMode,
-          pickupMode: quotePickupMode,
-          cacheKey: `prelim:${preliminaryRouteKey}`,
-          allowWithoutLocations: true,
-        });
+        setQuoteRefreshing(false);
+        setQuoteWarning(t('calc.quoteNpFail'));
       }
-    }, 120);
+    }, 180);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
   }, [
-    step, pickupCity, destCity, toCountry, pickupType, deliveryType,
+    step, pickupCity, destCity, toCountry, pickupType, deliveryType, sizeKey,
+    apiParcelKey, customSize.l, customSize.w, customSize.h, customSize.kg,
     quoteDeliveryMode, quotePickupMode, quoteLocationsReady, preliminaryRouteKey,
-    applyCachedPreliminaryQuotes, fetchQuoteKeys,
+    fetchQuoteKeys, fetchCustomQuote, t,
   ]);
+
+  const modesBeforeCustomRef = useRef<{ pickup: DeliveryMode; delivery: DeliveryMode } | null>(null);
 
   // Keep pickup/delivery modes within what the selected size physically allows.
   useEffect(() => {
-    setPickupType((prev) => clampModeToSize(prev, sizeKey, coverage?.pickup, pickupExcludedModes()));
-    setDeliveryType((prev) => clampModeToSize(prev, sizeKey, coverage?.delivery));
-  }, [sizeKey, coverage]);
+    setPickupType((prev) => clampModeToSize(prev, sizeKey, coverage?.pickup, pickupExcludedModes(), customSize));
+    setDeliveryType((prev) => clampModeToSize(prev, sizeKey, coverage?.delivery, [], customSize));
+  }, [sizeKey, coverage, customSize.l, customSize.w, customSize.h, customSize.kg]);
 
+  // Step 3 custom dims: live Nova Post quote while the user adjusts weight/size.
   useEffect(() => {
     if (sizeKey !== 'custom') {
       setCustomQuote(null);
       return;
     }
-    if (step < 3 || step > 9) return;
+    if (step !== 3) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
     if (!customSize.kg) {
       setCustomQuote(null);
@@ -1200,8 +1332,6 @@ export function CalcForm({
       setCustomQuote(null);
       return;
     }
-    // Steps 6+ with exact endpoints use the dedicated quote effect below.
-    if (quoteLocationsReady && step >= 6) return;
 
     let cancelled = false;
     if (customQuoteDebounce.current) clearTimeout(customQuoteDebounce.current);
@@ -1210,17 +1340,21 @@ export function CalcForm({
       if (!Number.isFinite(weightKg) || weightKg < 0.1) return;
       const preset = sizeToPreset('custom', customSize);
       try {
+        // Match catalog semantics: if dims fit branch/locker tiers, quote that —
+        // not courier — so custom doesn't look artificially more expensive than M/S.
+        const allowed = modesForSize('custom', customSize);
+        const catalogMode = allowed.includes('branch') ? 'branch' : 'home';
         const { pickup: pickupLoc, delivery: deliveryLoc } = await resolvePreliminaryQuoteLocations(
-          pickupType,
-          deliveryType,
+          catalogMode,
+          catalogMode,
           pickupCity,
           destCity,
           toCountry,
         );
         if (cancelled) return;
         await fetchCustomQuote(preset, {
-          deliveryMode: quoteDeliveryMode,
-          pickupMode: quotePickupMode,
+          deliveryMode: catalogMode === 'home' ? 'address' : 'branch',
+          pickupMode: catalogMode === 'home' ? 'address' : 'branch',
           pickupLocation: pickupLoc,
           deliveryLocation: deliveryLoc,
           allowWithoutLocations: true,
@@ -1228,8 +1362,8 @@ export function CalcForm({
       } catch {
         if (cancelled) return;
         await fetchCustomQuote(preset, {
-          deliveryMode: quoteDeliveryMode,
-          pickupMode: quotePickupMode,
+          deliveryMode: 'branch',
+          pickupMode: 'branch',
           allowWithoutLocations: true,
         });
       }
@@ -1241,9 +1375,7 @@ export function CalcForm({
     };
   }, [
     sizeKey, step, customSize.l, customSize.w, customSize.h, customSize.kg,
-    pickupCity, destCity, toCountry, pickupType, deliveryType,
-    quoteDeliveryMode, quotePickupMode, quoteLocationsReady,
-    fetchCustomQuote,
+    pickupCity, destCity, toCountry, fetchCustomQuote,
   ]);
 
   const lastExactQuoteKey = useRef<string | null>(null);
@@ -1262,6 +1394,8 @@ export function CalcForm({
     if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
 
     if (sizeKey === 'custom') {
+      setCustomQuote(null);
+      setQuoteRefreshing(true);
       const preset = sizeToPreset(sizeKey, customSize);
       quoteDebounce.current = setTimeout(() => {
         void fetchCustomQuote(preset).then((ok) => {
@@ -1271,8 +1405,9 @@ export function CalcForm({
     } else if (applyCachedRouteQuotes()) {
       lastExactQuoteKey.current = exactQuoteKey;
     } else {
+      setQuoteRefreshing(true);
       quoteDebounce.current = setTimeout(() => {
-        void fetchQuoteKeys(STEP3_QUOTE_KEYS).then((ok) => {
+        void fetchQuoteKeys([apiParcelKey]).then((ok) => {
           if (ok) lastExactQuoteKey.current = exactQuoteKey;
         });
       }, 80);
@@ -1282,35 +1417,39 @@ export function CalcForm({
       if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
     };
   }, [
-    step, exactQuoteKey, sizeKey, quoteLocationsReady,
+    step, exactQuoteKey, sizeKey, quoteLocationsReady, apiParcelKey,
     customSize.l, customSize.w, customSize.h, customSize.kg,
     applyCachedRouteQuotes, fetchQuoteKeys, fetchCustomQuote,
   ]);
 
   // If exact quote failed once (network / NP), retry while user is on steps 6–9.
+  // Never treat a preliminary/catalog number as an exact-route success.
   useEffect(() => {
     if (!quoteLocationsReady || step < 6 || step > 9) return;
     if (lastExactQuoteKey.current === exactQuoteKey) return;
     if (quoteRefreshing || quoteInFlight.current) return;
     if (sizeKey === 'custom') return;
-    if (parcelQuotes[apiParcelKey] != null && quotesFromNp) {
-      lastExactQuoteKey.current = exactQuoteKey;
+    if (routeQuoteCache.current.has(routeCacheKey)) {
+      if (applyCachedRouteQuotes()) {
+        lastExactQuoteKey.current = exactQuoteKey;
+      }
       return;
     }
     const timer = window.setTimeout(() => {
       if (lastExactQuoteKey.current === exactQuoteKey || quoteInFlight.current) return;
-      void fetchQuoteKeys(STEP3_QUOTE_KEYS).then((ok) => {
+      void fetchQuoteKeys([apiParcelKey]).then((ok) => {
         if (ok) lastExactQuoteKey.current = exactQuoteKey;
       });
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [
     step, exactQuoteKey, quoteLocationsReady, quoteRefreshing, sizeKey,
-    parcelQuotes, apiParcelKey, quotesFromNp, fetchQuoteKeys,
+    apiParcelKey, routeCacheKey, applyCachedRouteQuotes, fetchQuoteKeys,
   ]);
 
   useEffect(() => {
     if (prevRouteKey.current && prevRouteKey.current !== preliminaryRouteKey) {
+      routeQuoteCache.current.delete(`catalog:${prevRouteKey.current}`);
       routeQuoteCache.current.delete(`prelim:${prevRouteKey.current}`);
       setQuotesFromNp(false);
       // Keep last quotes on screen while the next batch loads — clearing here
@@ -1320,14 +1459,13 @@ export function CalcForm({
     prevRouteKey.current = preliminaryRouteKey;
   }, [preliminaryRouteKey]);
 
-  // Before the size step the user hasn't picked a parcel yet, so the summary
-  // shows the cheapest available size ("от …") instead of the default preset.
   const minQuote = useMemo(() => {
     const values = STEP3_QUOTE_KEYS
       .map((key) => parcelQuotes[key])
       .filter((v): v is number => v != null);
     return values.length ? Math.min(...values) : null;
   }, [parcelQuotes]);
+  // Before size is chosen, summary shows the cheapest size ("от …").
   const priceIsMinimum = step < 3;
   const basePrice = priceIsMinimum
     ? minQuote
@@ -1391,8 +1529,15 @@ export function CalcForm({
         sizeKey,
         data.pickup,
         pickupExcludedModes(),
+        customSize,
       ));
-      setDeliveryType((prev) => clampModeToSize(firstAvailableMode(data.delivery, prev), sizeKey, data.delivery));
+      setDeliveryType((prev) => clampModeToSize(
+        firstAvailableMode(data.delivery, prev),
+        sizeKey,
+        data.delivery,
+        [],
+        customSize,
+      ));
       return data;
     } catch (e) {
       setCoverageError(e instanceof Error ? e.message : t('calc.coverageCheckFail'));
@@ -1713,15 +1858,25 @@ export function CalcForm({
       key: 'contents',
       label: t('calc.summaryContents'),
       value: contentLabel(contents, contentsNote),
-      onEdit: () => goTo(7),
+      onEdit: isEnvelopeSize(sizeKey) ? undefined : () => goTo(7),
     },
-    { key: 'value', label: t('calc.summaryValue'), value: valueOptions.find((v) => v.key === contentValue)?.label || '—', onEdit: () => goTo(8) },
-    { key: 'pays', label: t('calc.summaryPays'), value: payer === 'sender' ? t('calc.payerSender') : t('calc.payerReceiver'), onEdit: () => goTo(8) },
+    {
+      key: 'value',
+      label: t('calc.summaryValue'),
+      value: valueOptions.find((v) => v.key === contentValue)?.label || '—',
+      onEdit: isEnvelopeSize(sizeKey) ? undefined : () => goTo(8),
+    },
+    {
+      key: 'pays',
+      label: t('calc.summaryPays'),
+      value: payer === 'sender' ? t('calc.payerSender') : t('calc.payerReceiver'),
+      onEdit: isEnvelopeSize(sizeKey) ? undefined : () => goTo(8),
+    },
     { key: 'sender', label: t('calc.summarySender'), value: [senderFirst, senderLast].filter(Boolean).join(' ') || pickupLocationObj?.provider || '—', onEdit: () => goTo(5) },
     { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(6) },
     { key: 'when', label: t('calc.summaryWhen'), value: pickupDate ? `${pickupDate}, ${pickupTime}` : '—' },
   ], [
-    t, toCountry, pickupCity, destCity, pickupType, deliveryType, sizeLabel, contents, contentsNote, contentValue, payer,
+    t, toCountry, pickupCity, destCity, pickupType, deliveryType, sizeKey, sizeLabel, contents, contentsNote, contentValue, payer,
     senderFirst, senderLast, pickupLocationObj, receiverFirst, receiverLast, destLocationObj, pickupDate, pickupTime,
     contentLabel, formatDeliveryTypeLocalized, valueOptions,
   ]);
@@ -1756,6 +1911,11 @@ export function CalcForm({
         const minMid = NONSTANDARD_LIMITS.minSideCm[1];
         // If the smallest side < 5 or the middle side < 15 — courier label may not fit.
         if (lwh[0] < minSmall || lwh[1] < minMid) return t('calc.sizeNonstandardNote');
+        // Official Nova Post: longest ≤120 cm, sum of sides ≤150 cm.
+        if (lwh[2] > NONSTANDARD_LIMITS.maxLengthCm) return t('calc.valMaxLength');
+        if (lwh[0] + lwh[1] + lwh[2] > NONSTANDARD_LIMITS.maxSumSidesCm) {
+          return t('calc.valMaxSumSides');
+        }
       }
     }
     if (step === 4) {
@@ -1763,7 +1923,7 @@ export function CalcForm({
       if (PICKUP_FROM_LOCKER_COMING_SOON && pickupType === 'locker') {
         return t('calc.valPickupLockerSoon');
       }
-      const sizeModes = modesForSize(sizeKey);
+      const sizeModes = modesForSize(sizeKey, customSize);
       if (!sizeModes.includes(pickupType) || !sizeModes.includes(deliveryType)) {
         return t('calc.valSizeMode');
       }
@@ -1859,13 +2019,13 @@ export function CalcForm({
     if (step === 2) {
       const data = await loadCoverage();
       if (!data) {
-        // Still allow continue with home-only fallback if API failed
-        setPickupType('home');
-        setDeliveryType('home');
+        // Keep current modes — forcing home while size tiles still show branch
+        // prices caused a silent ~+3,660 HUF jump later.
+        setCoverageError(t('calc.coverageCheckFail'));
       }
     }
 
-    goTo(step + 1);
+    goTo(nextCalcStep(step, sizeKey));
   };
 
   const handlePay = async () => {
@@ -1881,6 +2041,15 @@ export function CalcForm({
       setError(emailErr);
       goTo(5);
       return;
+    }
+    const recipientEmail = receiverEmail.trim().toLowerCase();
+    if (payer === 'receiver') {
+      const rEmailErr = validateEmail(recipientEmail, t('calc.fieldReceiverEmail'));
+      if (rEmailErr) {
+        setError(rEmailErr);
+        goTo(6);
+        return;
+      }
     }
 
     payInFlight.current = true;
@@ -1912,7 +2081,7 @@ export function CalcForm({
           firstName: receiverFirst || 'Recipient',
           lastName: receiverLast || 'Customer',
           phone: composePhone(receiverDial, receiverPhone),
-          email: receiverEmail.trim().toLowerCase(),
+          email: recipientEmail,
           destinationLine: destLabel,
           country: toCountry,
         },
@@ -1957,6 +2126,19 @@ export function CalcForm({
         },
       });
 
+      if (result.awaitingRecipientPayment) {
+        clearCalcDraft(inModal, user?.id);
+        onAwaitingRecipientPayment?.({
+          orderNumber: result.orderNumber,
+          publicToken: result.publicToken,
+          recipientEmail: result.recipientEmail || recipientEmail,
+          amount: result.amount,
+          currency: result.currency,
+        });
+        _onDone?.();
+        return;
+      }
+
       if (result.checkoutUrl) {
         clearCalcDraft(inModal, user?.id);
         window.location.assign(result.checkoutUrl);
@@ -1984,7 +2166,7 @@ export function CalcForm({
         </div>
       )}
       {step > 1 && (
-        <button type="button" className="btn btn-outline" onClick={() => goTo(step - 1)}>
+        <button type="button" className="btn btn-outline" onClick={() => goTo(prevCalcStep(step, sizeKey))}>
           {t('common.back')}
         </button>
       )}
@@ -2005,10 +2187,12 @@ export function CalcForm({
           onClick={handlePay}
         >
           {submitting
-            ? t('calc.paying')
+            ? (payer === 'receiver' ? t('calc.sendingPayLink') : t('calc.paying'))
             : (totalPrice == null || quoteRefreshing)
               ? t('calc.summaryCalculating')
-              : t('calc.pay', { amount: formatMoney(totalPrice) })}
+              : payer === 'receiver'
+                ? t('calc.sendPayLink', { amount: formatMoney(totalPrice) })
+                : t('calc.pay', { amount: formatMoney(totalPrice) })}
         </button>
       )}
     </div>
@@ -2047,7 +2231,10 @@ export function CalcForm({
     9: { title: t('calc.step9Title'), sub: t('calc.step9Sub') },
   }), [t]);
 
-  const sizeAllowedModes = useMemo(() => modesForSize(sizeKey), [sizeKey]);
+  const sizeAllowedModes = useMemo(
+    () => modesForSize(sizeKey, customSize),
+    [sizeKey, customSize.l, customSize.w, customSize.h, customSize.kg],
+  );
 
   const deliveryModes = useMemo(() => DELIVERY_MODE_KEYS.map((key) => ({
     key,
@@ -2061,7 +2248,9 @@ export function CalcForm({
 
   const sizeOptions = useMemo(() => (
     SIZE_OPTION_KEYS.map((key) => {
-      const allowed = key === 'custom' ? SIZE_ALLOWED_MODES.custom : SIZE_ALLOWED_MODES[key];
+      const allowed = key === 'custom'
+        ? modesForSize('custom', customSize)
+        : SIZE_ALLOWED_MODES[key];
       if (key === 'custom') {
         return {
           key,
@@ -2073,16 +2262,17 @@ export function CalcForm({
         };
       }
       const p = PARCEL_PRESETS[key];
+      const maxKg = PARCEL_LIMITS[key]?.maxWeightKg ?? p.weightKg;
       return {
         key,
         label: key === 'XS' ? t('calc.sizeEnvelope') : key,
         icon: SIZE_ICONS[key],
         dims: key === 'XS' ? '' : t('calc.sizeDimsFmt', { l: p.lengthCm, w: p.widthCm, h: p.heightCm }),
-        weight: t('calc.sizeWeightFmt', { kg: p.weightKg }),
+        weight: t('calc.sizeWeightFmt', { kg: key === 'XS' ? p.weightKg : maxKg }),
         modes: allowed,
       };
     })
-  ), [t]);
+  ), [t, customSize.l, customSize.w, customSize.h, customSize.kg]);
 
   const customWeightValue = Math.min(
     MAX_CUSTOM_WEIGHT_KG,
@@ -2254,9 +2444,33 @@ export function CalcForm({
                       type="button"
                       className={`calc-form__size${sizeKey === s.key ? ' active' : ''}`}
                       onClick={() => {
+                        if (s.key === 'custom') {
+                          if (sizeKey !== 'custom') {
+                            modesBeforeCustomRef.current = {
+                              pickup: pickupType,
+                              delivery: deliveryType,
+                            };
+                          }
+                          setSizeKey('custom');
+                          return;
+                        }
+
                         setSizeKey(s.key);
-                        if (s.key !== 'custom') {
-                          setCustomSize(presetToEditableSize(PARCEL_PRESETS[s.key]));
+                        setCustomSize(presetToEditableSize(PARCEL_PRESETS[s.key]));
+                        if (s.key === 'XS') {
+                          setContents('documents');
+                          setContentsNote('');
+                          setContentValue('under100');
+                        }
+                        const restored = modesBeforeCustomRef.current;
+                        if (restored) {
+                          modesBeforeCustomRef.current = null;
+                          setPickupType(
+                            clampModeToSize(restored.pickup, s.key, coverage?.pickup, pickupExcludedModes()),
+                          );
+                          setDeliveryType(
+                            clampModeToSize(restored.delivery, s.key, coverage?.delivery),
+                          );
                         }
                       }}
                     >
@@ -2277,11 +2491,16 @@ export function CalcForm({
                         </em>
                       ) : s.key === 'custom' ? (
                         <em className="calc-form__price-est">{t('calc.sizeCustomPrice')}</em>
+                      ) : quoteRefreshing ? (
+                        <em className="calc-form__price-est">{t('calc.summaryCalculating')}</em>
                       ) : null}
                     </button>
                   );
                 })}
               </div>
+              <p className="calc-form__hint calc-form__hint--brand">
+                {t('calc.sizeCustomBestPriceHint')}
+              </p>
               {sizeKey === 'custom' && (
               <div className="calc-custom-dims">
                 <div className="calc-weight-slider">
@@ -2296,21 +2515,6 @@ export function CalcForm({
                     </b>
                   </div>
                   <div className="calc-weight-slider__rail">
-                    <div className="calc-weight-slider__marks" aria-hidden>
-                      {[
-                        { w: 0.2, key: 'envelope' },
-                        { w: 2, key: 'xs' },
-                        { w: 10, key: 'm' },
-                        { w: 30, key: 'l' },
-                      ].map((m) => (
-                        <span
-                          key={m.key}
-                          style={{
-                            left: `${((m.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100}%`,
-                          }}
-                        />
-                      ))}
-                    </div>
                     <input
                       type="range"
                       className="calc-weight-slider__range"
@@ -2334,6 +2538,33 @@ export function CalcForm({
                         )}%`,
                       }}
                     />
+                    <div className="calc-weight-slider__ticks" aria-hidden>
+                      {CUSTOM_WEIGHT_SCALE.map((m, i) => {
+                        const pct = ((m.w - CUSTOM_WEIGHT_MIN_KG) / (MAX_CUSTOM_WEIGHT_KG - CUSTOM_WEIGHT_MIN_KG)) * 100;
+                        const label = m.labelKey === 'xs'
+                          ? 'XS'
+                          : m.labelKey === '2'
+                            ? '2'
+                            : m.labelKey === 's5'
+                              ? 'S · 5'
+                              : m.labelKey === 'm10'
+                                ? 'M · 10'
+                                : m.labelKey === 'l20'
+                                  ? 'L · 20'
+                                  : t('calc.weightScaleMax', { kg: MAX_CUSTOM_WEIGHT_KG });
+                        const edge = i === 0 ? ' calc-weight-slider__tick--start' : i === CUSTOM_WEIGHT_SCALE.length - 1 ? ' calc-weight-slider__tick--end' : '';
+                        return (
+                          <span
+                            key={m.labelKey}
+                            className={`calc-weight-slider__tick${edge}`}
+                            style={edge ? undefined : { left: `${pct}%` }}
+                          >
+                            <i />
+                            <b>{label}</b>
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
                   <p className="calc-weight-slider__hint">{t('calc.weightHint')}</p>
                 </div>
@@ -2400,7 +2631,7 @@ export function CalcForm({
                     <small>{t('calc.yourWeight')}</small>
                   </div>
                 </div>
-                <p className="calc-form__hint calc-form__hint--brand">{t('calc.sizeCustomBestPriceHint')}</p>
+                <p className="calc-form__hint">{t('calc.sizeNonstandardNote')}</p>
               </div>
               )}
               <label className="calc-form__check">
@@ -2453,20 +2684,28 @@ export function CalcForm({
 
           {step === 8 && (
             <>
-              <StepHeader step={8} title={stepMeta[8].title} subtitle={stepMeta[8].sub} />
-              <div className="calc-form__options calc-form__options--2">
-                {valueOptions.map((v) => (
-                  <button
-                    key={v.key}
-                    type="button"
-                    className={`calc-form__option${contentValue === v.key ? ' active' : ''}`}
-                    onClick={() => setContentValue(v.key)}
-                  >
-                    <span>{v.label}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="calc-form__group-label">{t('calc.whoPays')}</p>
+              <StepHeader
+                step={8}
+                title={isEnvelopeSize(sizeKey) ? t('calc.whoPays') : stepMeta[8].title}
+                subtitle={isEnvelopeSize(sizeKey) ? undefined : stepMeta[8].sub}
+              />
+              {!isEnvelopeSize(sizeKey) && (
+                <div className="calc-form__options calc-form__options--2">
+                  {valueOptions.map((v) => (
+                    <button
+                      key={v.key}
+                      type="button"
+                      className={`calc-form__option${contentValue === v.key ? ' active' : ''}`}
+                      onClick={() => setContentValue(v.key)}
+                    >
+                      <span>{v.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!isEnvelopeSize(sizeKey) && (
+                <p className="calc-form__group-label">{t('calc.whoPays')}</p>
+              )}
               <div className="calc-form__options calc-form__options--2">
                 <button
                   type="button"
@@ -2879,13 +3118,28 @@ type ModalProps = {
   onClose: () => void;
   user?: AuthUser | null;
   onSuccess?: (order: ShippingOrder) => void;
+  onAwaitingRecipientPayment?: (info: {
+    orderNumber: string;
+    publicToken: string;
+    recipientEmail: string;
+    amount: number;
+    currency: string;
+  }) => void;
   /** Bump to remount form with latest draft (e.g. continue unfinished shipment). */
   resumeKey?: number;
   /** When true, open on the last saved draft step instead of step 1. */
   draftResume?: boolean;
 };
 
-export function ShipmentCalculator({ open, onClose, user, onSuccess, resumeKey = 0, draftResume = false }: ModalProps) {
+export function ShipmentCalculator({
+  open,
+  onClose,
+  user,
+  onSuccess,
+  onAwaitingRecipientPayment,
+  resumeKey = 0,
+  draftResume = false,
+}: ModalProps) {
   const { t } = useI18n();
   const [formKey, setFormKey] = useState(0);
 
@@ -2927,6 +3181,7 @@ export function ShipmentCalculator({ open, onClose, user, onSuccess, resumeKey =
             user={user}
             startFromStep1={!draftResume}
             onSuccess={onSuccess}
+            onAwaitingRecipientPayment={onAwaitingRecipientPayment}
             onDone={() => { setFormKey((k) => k + 1); onClose(); }}
           />
         </div>
@@ -3001,6 +3256,8 @@ export function TrackShipment() {
 
 export async function resumePaymentFromUrl(token: string) {
   const status = await fetchOrderStatus(token);
-  if (['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(status.status)) return status;
+  // Paid without a real NP TTN means create-shipment failed after Stripe — retry NP.
+  if (['submitted', 'waiting_from_you', 'delivered'].includes(status.status)) return status;
+  if (status.status === 'paid' && status.npTtn && status.npValid !== false) return status;
   return confirmPayment(token);
 }
