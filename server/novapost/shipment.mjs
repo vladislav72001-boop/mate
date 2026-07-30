@@ -120,6 +120,9 @@ function applyShipmentLocation(party, location) {
 
 function formatNovaPostShipmentError(err) {
   const raw = String(err?.message || err);
+  if (raw.includes('wrong_company') || raw.includes('validation.payer.contract.wrong_company')) {
+    return 'Оплата прошла, но номер договора Nova Post принадлежит другой компании (wrong_company). В Railway нужен NOVAPOST_PAYER_CONTRACT_NUMBER именно для org API-ключа Mate (формат GNPHU-… из кабинета NP, не бумажный 21/04/2026-1).';
+  }
   if (raw.includes('ContractEntity.number') || raw.includes('validation.exists')) {
     return 'Оплата прошла, но Nova Post не принял номер договора (payerContractNumber). Проверьте NOVAPOST_PAYER_CONTRACT_NUMBER в Railway — заявка останется оплаченной, отправление можно создать повторно.';
   }
@@ -209,20 +212,17 @@ export async function createInternationalShipment(body, clientOrder) {
     body.tariff?.deliveryLocation,
   );
 
-  // Non-cash payment under Mate↔Nova Post contract (per NP support).
-  // Without payerContractNumber NP treats the shipment as unpaid/cash.
-  // Use CRM/API contract id (e.g. GNPHU-00026481), NOT the paper date number (21/04/2026-1).
-  const payerContractNumber = (
-    process.env.NOVAPOST_PAYER_CONTRACT_NUMBER
-    || 'GNPHU-00026481'
-  ).trim();
+  // Non-cash under Mate↔Nova Post contract when a valid API contract id is configured.
+  // Paper numbers (e.g. 21/04/2026-1) and contracts from another company (wrong_company) break create.
+  // Historical working shipments used payerType=Sender without payerContractNumber.
+  const payerContractNumber = String(process.env.NOVAPOST_PAYER_CONTRACT_NUMBER || '').trim();
 
   const payload = {
     status: 'ReadyToShip',
     clientOrder: clientOrder.slice(0, 50),
     note: `Mate B2C ${clientOrder}`.slice(0, 255),
     payerType: 'Sender',
-    payerContractNumber,
+    ...(payerContractNumber ? { payerContractNumber } : {}),
     parcels: [{
       rowNumber: 1,
       cargoCategory: isDocuments ? 'documents' : 'parcel',
