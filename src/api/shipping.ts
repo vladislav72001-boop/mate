@@ -125,8 +125,8 @@ export async function calculateFinal(payload: {
   fromCountry: string;
   toCountry: string;
   declaredValue?: number;
-  deliveryMode?: 'home' | 'branch' | 'locker' | 'address';
-  pickupMode?: 'home' | 'branch' | 'locker' | 'address';
+  deliveryMode?: 'home' | 'branch' | 'locker' | 'pudo' | 'address';
+  pickupMode?: 'home' | 'branch' | 'locker' | 'pudo' | 'address';
   pickupLocation?: QuoteLocation;
   deliveryLocation?: QuoteLocation;
   payerType?: 'Sender' | 'Recipient';
@@ -157,8 +157,8 @@ export async function calculateBatch(payload: {
   fromCountry: string;
   toCountry: string;
   declaredValue?: number;
-  deliveryMode?: 'home' | 'branch' | 'locker' | 'address';
-  pickupMode?: 'home' | 'branch' | 'locker' | 'address';
+  deliveryMode?: 'home' | 'branch' | 'locker' | 'pudo' | 'address';
+  pickupMode?: 'home' | 'branch' | 'locker' | 'pudo' | 'address';
   pickupLocation?: QuoteLocation;
   deliveryLocation?: QuoteLocation;
   payerType?: 'Sender' | 'Recipient';
@@ -264,6 +264,31 @@ export async function checkout(payload: Record<string, unknown>) {
   return res.data;
 }
 
+export async function previewPromoCheckout(payload: Record<string, unknown>) {
+  const res = await shippingRequest<ApiData<{
+    total: number;
+    currency: string;
+    priceSource?: string;
+    breakdown?: {
+      welcomeDiscountPercent?: number | null;
+      promoCode?: string | null;
+      promoType?: string | null;
+      promoValue?: number | null;
+      promoDiscountAmount?: number | null;
+      deliveryAmount?: number | null;
+      fragileFee?: number;
+      insuranceFee?: number;
+      insurancePercent?: number;
+      total?: number;
+      [key: string]: unknown;
+    } | null;
+  }>>('/api/shipping/promo/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, 30000);
+  return res.data;
+}
+
 export async function confirmPayment(publicToken: string) {
   const res = await shippingRequest<ApiData<ShippingOrder>>(
     `/api/shipping/orders/${publicToken}/confirm-payment`,
@@ -364,6 +389,7 @@ export type CoverageModeInfo = {
 export type CoverageSide = {
   home: CoverageModeInfo;
   locker: CoverageModeInfo;
+  pudo: CoverageModeInfo;
   branch: CoverageModeInfo;
   counts: {
     postomat: number;
@@ -389,7 +415,7 @@ export type ShippingPoint = {
 export async function fetchShippingPoints(params: {
   country: string;
   city: string;
-  kind: 'locker' | 'branch';
+  kind: 'locker' | 'pudo' | 'branch';
   side?: 'pickup' | 'delivery';
 }) {
   const qs = new URLSearchParams({

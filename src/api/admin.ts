@@ -223,3 +223,49 @@ export async function previewAdminPrice(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+export type AdminPromo = {
+  id: string;
+  code: string;
+  type: 'percent' | 'fixed' | string;
+  value: number;
+  active: boolean;
+  maxUses: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  note: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export async function fetchAdminPromos() {
+  return adminRequest<{ promos: AdminPromo[] }>('/api/admin/promos');
+}
+
+export async function createAdminPromo(payload: {
+  code: string;
+  type: 'percent' | 'fixed';
+  value: number;
+  active?: boolean;
+  maxUses?: number | null;
+  expiresAt?: string | null;
+  note?: string;
+}) {
+  return adminRequest<{ promo: AdminPromo }>('/api/admin/promos', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function setAdminPromoActive(id: string, active: boolean) {
+  return adminRequest<{ promo: AdminPromo }>(`/api/admin/promos/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active }),
+  });
+}
+
+export async function deleteAdminPromo(id: string) {
+  return adminRequest<{ ok: boolean }>(`/api/admin/promos/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}

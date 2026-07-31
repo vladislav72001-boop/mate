@@ -28,11 +28,11 @@ export const PARCEL_PRESETS: Record<ParcelKey, {
   XL: { lengthCm: 60, widthCm: 40, heightCm: 40, weightKg: 30 },
 };
 
-/** Delivery modes allowed for each tariff (locker = postamat). */
-export const SIZE_ALLOWED_MODES: Record<ParcelKey | 'custom', ReadonlyArray<'locker' | 'branch' | 'home'>> = {
-  XS: ['locker', 'branch', 'home'],
-  S: ['locker', 'branch', 'home'],
-  M: ['locker', 'branch', 'home'],
+/** Delivery modes allowed for each tariff (locker = Postomat, pudo = partner pickup point). */
+export const SIZE_ALLOWED_MODES: Record<ParcelKey | 'custom', ReadonlyArray<'locker' | 'pudo' | 'branch' | 'home'>> = {
+  XS: ['locker', 'pudo', 'branch', 'home'],
+  S: ['locker', 'pudo', 'branch', 'home'],
+  M: ['locker', 'pudo', 'branch', 'home'],
   L: ['branch', 'home'],
   XL: ['home'],
   custom: ['home'],
@@ -76,6 +76,53 @@ export const PICKUP_TIMES = [
   '17:30-19:00',
 ];
 
+/** Local calendar YYYY-MM-DD (avoid UTC shift from toISOString). */
+export function toLocalIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function parseLocalIsoDate(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Courier pickup is Mon–Fri (NP: outside Budapest Mon–Fri; Sunday never). */
+export function isCourierPickupWeekend(iso: string): boolean {
+  const d = parseLocalIsoDate(iso);
+  if (!d) return true;
+  const day = d.getDay();
+  return day === 0 || day === 6;
+}
+
+/** Earliest selectable courier pickup day: tomorrow, skipping Sat/Sun. */
+export function nextCourierPickupDateIso(from: Date = new Date()): string {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return toLocalIsoDate(d);
+}
+
+/** Snap invalid/weekend/past dates to the next allowed courier pickup day. */
+export function coerceCourierPickupDate(iso: string, from: Date = new Date()): string {
+  const min = nextCourierPickupDateIso(from);
+  const d = parseLocalIsoDate(iso);
+  if (!d) return min;
+  let candidate = toLocalIsoDate(d);
+  if (candidate < min) candidate = min;
+  const coerced = parseLocalIsoDate(candidate)!;
+  while (coerced.getDay() === 0 || coerced.getDay() === 6) {
+    coerced.setDate(coerced.getDate() + 1);
+  }
+  const out = toLocalIsoDate(coerced);
+  return out < min ? min : out;
+}
 /**
  * Complete ISO country/region calling-code catalog from libphonenumber metadata.
  * Calling codes are sorted numerically (+1, +7, +20, +27, +30...) like Apple's

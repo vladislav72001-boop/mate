@@ -24,6 +24,7 @@ function modeLabel(mode) {
   const raw = String(mode || '').toLowerCase();
   if (raw === 'home' || raw === 'address' || raw === 'courier') return 'Адрес / курьер';
   if (raw === 'branch' || raw === 'office') return 'Отделение';
+  if (raw === 'pudo') return 'Пункт выдачи';
   if (raw === 'locker') return 'Постамат';
   return raw || '—';
 }

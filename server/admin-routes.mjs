@@ -31,7 +31,7 @@ import {
   publicOrder,
 } from './orders.mjs';
 import { resolveCheckoutAmount } from './shipping.mjs';
-import { sendPasswordChangedEmail, sendProfileUpdatedEmail, sendOrderStatusEmail } from './mail.mjs';
+import { sendPasswordChangedEmail, sendProfileUpdatedEmail, sendOrderStatusEmail, sendOrderTrackingEmail, sendArrivedAtPointEmail } from './mail.mjs';
 import { localeFromRequest } from './mail-i18n.mjs';
 
 const ALLOWED_STATUSES = [
@@ -466,6 +466,81 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
     }
   });
 
+  router.post('/orders/:id/resend-tracking', async (req, res) => {
+    try {
+      const order = await findOrderById(req.params.id);
+      if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      if (!order.npTtn) {
+        return res.status(400).json({ error: 'У заказа ещё нет ТТН Nova Post' });
+      }
+      const result = await sendOrderTrackingEmail(order);
+      res.json({
+        ok: true,
+        orderNumber: order.orderNumber,
+        npTtn: order.npTtn,
+        skipped: Boolean(result?.skipped),
+        messageId: result?.messageId || null,
+      });
+    } catch (err) {
+      console.error('[admin] resend tracking:', err);
+      res.status(500).json({ error: err?.message || 'Не удалось отправить письмо' });
+    }
+  });
+
+  router.post('/orders/:id/resend-arrived', async (req, res) => {
+    try {
+      const order = await findOrderById(req.params.id);
+      if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      const mode = String(
+        order.payload?.tariff?.deliveryMode || order.payload?.tariff?.deliveryType || '',
+      ).toLowerCase();
+      if (!['locker', 'pudo', 'branch'].includes(mode)) {
+        return res.status(400).json({ error: 'Письмо доступно только для доставки в постамат / PUDO / филиал' });
+      }
+      const result = await sendArrivedAtPointEmail(order);
+      const snap = (order.npSnapshot && typeof order.npSnapshot === 'object')
+        ? { ...order.npSnapshot }
+        : {};
+      await updateOrder(order.id, {
+        npSnapshot: {
+          ...snap,
+          arrivedAtPointMailSentAt: new Date().toISOString(),
+          arrivedAtPointNpStatus: snap.arrivedAtPointNpStatus || 'manual_resend',
+        },
+      }, { notify: false });
+      res.json({
+        ok: true,
+        orderNumber: order.orderNumber,
+        npTtn: order.npTtn,
+        skipped: Boolean(result?.skipped),
+        messageId: result?.messageId || null,
+      });
+    } catch (err) {
+      console.error('[admin] resend arrived:', err);
+      res.status(500).json({ error: err?.message || 'Не удалось отправить письмо' });
+    }
+  });
+
+  router.post('/orders/:id/resend-waiting', async (req, res) => {
+    try {
+      const order = await findOrderById(req.params.id);
+      if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      const result = await sendOrderStatusEmail(
+        { ...order, status: 'waiting_from_you' },
+        order.status === 'waiting_from_you' ? 'paid' : order.status,
+      );
+      res.json({
+        ok: true,
+        orderNumber: order.orderNumber,
+        skipped: Boolean(result?.skipped),
+        messageId: result?.messageId || null,
+      });
+    } catch (err) {
+      console.error('[admin] resend waiting:', err);
+      res.status(500).json({ error: err?.message || 'Не удалось отправить письмо' });
+    }
+  });
+
   /** Send the 3 waiting_from_you mockup emails (courier / branch / locker) to a mailbox. */
   router.post('/mail/preview-waiting', async (req, res) => {
     try {
@@ -629,6 +704,163 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Не удалось рассчитать' });
+    }
+  });
+
+  router.get('/promos', async (_req, res) => {
+    try {
+      const { listPromoCodes } = await import('./promo-codes.mjs');
+      res.json({ promos: await listPromoCodes() });
+    } catch (err) {
+      console.error('[admin] list promos:', err);
+      res.status(500).json({ error: err?.message || 'Не удалось загрузить промокоды' });
+    }
+  });
+
+  router.post('/promos', async (req, res) => {
+    try {
+      const { createPromoCode } = await import('./promo-codes.mjs');
+      const promo = await createPromoCode(req.body || {});
+      res.status(201).json({ promo });
+    } catch (err) {
+      console.error('[admin] create promo:', err);
+      res.status(400).json({ error: err?.message || 'Не удалось создать промокод' });
+    }
+  });
+
+  router.patch('/promos/:id', async (req, res) => {
+    try {
+      const { setPromoCodeActive } = await import('./promo-codes.mjs');
+      if (typeof req.body?.active !== 'boolean') {
+        return res.status(400).json({ error: 'Укажите active: true/false' });
+      }
+      const promo = await setPromoCodeActive(req.params.id, req.body.active);
+      res.json({ promo });
+    } catch (err) {
+      console.error('[admin] patch promo:', err);
+      res.status(400).json({ error: err?.message || 'Не удалось обновить промокод' });
+    }
+  });
+
+  router.delete('/promos/:id', async (req, res) => {
+    try {
+      const { deletePromoCode } = await import('./promo-codes.mjs');
+      await deletePromoCode(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[admin] delete promo:', err);
+      res.status(400).json({ error: err?.message || 'Не удалось удалить промокод' });
+    }
+  });
+
+  // Ops: verify NP create with contract/TIN without touching real orders. Deletes shipment after success.
+  router.post('/novapost/probe-shipment', async (req, res) => {
+    try {
+      const {
+        getNovaPostJwt,
+        novaPostFetchJson,
+        novaPostAuthHeader,
+      } = await import('./novapost/client.mjs');
+
+      const payerType = String(req.body?.payerType || 'Sender').trim() || 'Sender';
+      const contractRaw = req.body?.payerContractNumber;
+      const contract = contractRaw === null || contractRaw === ''
+        ? null
+        : String(contractRaw || process.env.NOVAPOST_PAYER_CONTRACT_NUMBER || '').trim() || null;
+      const tinRaw = String(req.body?.companyTin ?? process.env.NOVAPOST_COMPANY_TIN ?? '32834374243');
+      const tin = tinRaw.replace(/\D/g, '') || null;
+      const withTin = req.body?.withTin !== false && Boolean(contract || req.body?.withTin) && Boolean(tin);
+      const companyName = String(req.body?.companyName || '').trim() || null;
+      const keep = Boolean(req.body?.keep);
+      const clientOrder = String(req.body?.clientOrder || `MD-PROBE-${Date.now().toString(36).toUpperCase()}`).slice(0, 50);
+      const note = String(req.body?.note || (keep ? `Mate B2C ${clientOrder}` : 'Mate admin NP probe')).slice(0, 255);
+
+      const senderBody = req.body?.sender && typeof req.body.sender === 'object' ? req.body.sender : null;
+      const recipientBody = req.body?.recipient && typeof req.body.recipient === 'object' ? req.body.recipient : null;
+      const parcelBody = req.body?.parcel && typeof req.body.parcel === 'object' ? req.body.parcel : null;
+
+      const sender = senderBody || {
+        countryCode: 'HU',
+        name: companyName || 'Mate Probe',
+        phone: '+36704135566',
+        email: 'info@matedelivery.com',
+        addressParts: {
+          city: 'Budapest',
+          street: 'Karinthy Frigyes út',
+          building: '7',
+          postCode: '1117',
+        },
+      };
+      if (withTin) sender.companyTin = tin;
+      if (companyName) sender.companyName = companyName;
+
+      const payload = {
+        status: 'ReadyToShip',
+        clientOrder,
+        note,
+        payerType,
+        ...(contract ? { payerContractNumber: contract } : {}),
+        parcels: [{
+          rowNumber: 1,
+          cargoCategory: String(parcelBody?.cargoCategory || 'parcel'),
+          parcelDescription: String(parcelBody?.description || parcelBody?.parcelDescription || 'B2C shipment').slice(0, 120),
+          insuranceCost: Math.max(1, Number(parcelBody?.insuranceCost ?? parcelBody?.declaredValue ?? 100)),
+          length: Number(parcelBody?.length ?? 400),
+          width: Number(parcelBody?.width ?? 300),
+          height: Number(parcelBody?.height ?? 300),
+          actualWeight: Number(parcelBody?.actualWeight ?? 5000),
+        }],
+        sender,
+        recipient: recipientBody || {
+          countryCode: 'DE',
+          divisionId: 1844740,
+          name: 'Olha Zaletska',
+          phone: '+4916091470469',
+          email: 'malino.olga22@gmail.com',
+        },
+      };
+
+      const jwt = await getNovaPostJwt();
+      try {
+        const created = await novaPostFetchJson('/shipments', {
+          method: 'POST',
+          headers: { ...novaPostAuthHeader(jwt), 'Content-Type': 'application/json' },
+          body: payload,
+        });
+        if (created?.id && !keep) {
+          await novaPostFetchJson(`/shipments/${created.id}`, {
+            method: 'DELETE',
+            headers: novaPostAuthHeader(jwt),
+          }).catch(() => {});
+        }
+        return res.json({
+          ok: true,
+          kept: keep,
+          request: payload,
+          response: {
+            id: created.id,
+            number: created.number,
+            cost: created.cost,
+            status: created.status,
+            scheduledDeliveryDate: created.scheduledDeliveryDate ?? null,
+          },
+        });
+      } catch (err) {
+        const raw = String(err?.message || err);
+        return res.status(422).json({
+          ok: false,
+          request: {
+            payerType,
+            payerContractNumber: contract,
+            companyTin: withTin ? tin : null,
+            companyName,
+          },
+          error: raw.slice(0, 800),
+        });
+      }
+    } catch (err) {
+      console.error('[admin] novapost probe:', err);
+      res.status(500).json({ error: String(err?.message || err).slice(0, 500) });
     }
   });
 

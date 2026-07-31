@@ -20,6 +20,32 @@ const MAX_NATIONAL_DIGITS = {
 
 const MAX_NP_WEIGHT_KG = Number(process.env.NOVAPOST_MAX_WEIGHT_KG ?? NOVAPOST_PARCEL_RULES.maxWeightKg);
 
+function parseLocalIsoDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isCourierPickupWeekend(iso) {
+  const d = parseLocalIsoDate(iso);
+  if (!d) return true;
+  const day = d.getDay();
+  return day === 0 || day === 6;
+}
+
+function nextCourierPickupDateIso(from = new Date()) {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function validatePersonName(name, label) {
   const raw = String(name ?? '').trim().replace(/[—–-]+/g, ' ');
   const words = raw.match(/[\p{L}][\p{L}\s'.]*/gu) ?? [];
@@ -152,6 +178,16 @@ export function validateCheckoutBody(body) {
     'Доставка',
   );
   if (deliveryLocationErr) errors.push(deliveryLocationErr);
+
+  const pickupMode = String(tariff.pickupMode || tariff.pickupType || body.pickupMode || '').toLowerCase();
+  if (pickupMode === 'home' || pickupMode === 'address' || pickupMode === 'courier') {
+    const pickupDate = String(tariff.pickupDate || body.pickupDate || '').trim();
+    if (!pickupDate) {
+      errors.push('Забор: укажите дату забора курьером');
+    } else if (isCourierPickupWeekend(pickupDate) || pickupDate < nextCourierPickupDateIso()) {
+      errors.push('Забор: курьер забирает только в будни (пн–пт)');
+    }
+  }
 
   return { ok: errors.length === 0, errors };
 }

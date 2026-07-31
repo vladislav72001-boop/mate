@@ -99,6 +99,7 @@ export function checkoutPayloadFingerprint(body) {
   const parcel = body?.parcel || {};
   const tariff = body?.tariff || {};
   const payer = String(tariff.payer || 'sender').toLowerCase();
+  const promo = String(body?.promoCode || tariff?.promoCode || '').trim().toUpperCase();
   return JSON.stringify({
     to: body?.receiver?.country,
     from: body?.sender?.country || tariff.fromCountry,
@@ -109,6 +110,7 @@ export function checkoutPayloadFingerprint(body) {
     insurance: Boolean(parcel.insurance),
     pickup: tariff.pickupDate,
     payer: payer === 'recipient' ? 'receiver' : payer,
+    promo: promo || null,
   });
 }
 

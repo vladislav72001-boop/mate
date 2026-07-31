@@ -18,6 +18,7 @@ type Props = {
   pricePending?: boolean;
   priceIsMinimum?: boolean;
   welcomeDiscountPercent?: number | null;
+  promoHint?: string | null;
   deliveryAmount?: number | null;
   fragileFee?: number;
   insuranceFee?: number;
@@ -33,6 +34,7 @@ export function OrderSummary({
   pricePending = false,
   priceIsMinimum = false,
   welcomeDiscountPercent = null,
+  promoHint = null,
   deliveryAmount = null,
   fragileFee = 0,
   insuranceFee = 0,
@@ -103,6 +105,9 @@ export function OrderSummary({
         </strong>
         {welcomeDiscountPercent != null && welcomeDiscountPercent > 0 && (
           <span className="calc-summary__discount">{t('dash.welcomeDiscountTitle', { percent: welcomeDiscountPercent })}</span>
+        )}
+        {promoHint && (
+          <span className="calc-summary__discount">{promoHint}</span>
         )}
         <span>{estimate}</span>
       </div>

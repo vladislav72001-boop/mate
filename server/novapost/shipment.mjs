@@ -120,8 +120,17 @@ function applyShipmentLocation(party, location) {
 
 function formatNovaPostShipmentError(err) {
   const raw = String(err?.message || err);
+  if (raw.includes('forbidden by API key') || raw.includes('Access to the company is forbidden')) {
+    return 'Оплата прошла, но companyTin не совпал с компанией API-ключа. В sender нужен TIN без символов: 32834374243 (NOVAPOST_COMPANY_TIN).';
+  }
   if (raw.includes('wrong_company') || raw.includes('validation.payer.contract.wrong_company')) {
-    return 'Оплата прошла, но номер договора Nova Post принадлежит другой компании (wrong_company). В Railway нужен NOVAPOST_PAYER_CONTRACT_NUMBER именно для org API-ключа Mate (формат GNPHU-… из кабинета NP, не бумажный 21/04/2026-1).';
+    return 'Оплата прошла, но номер договора Nova Post принадлежит другой компании (wrong_company). Нужен договор org API-ключа Mate + sender.companyTin этой же компании.';
+  }
+  if (raw.includes('companyTin')) {
+    return 'Оплата прошла, но Nova Post отклонил sender.companyTin. При договоре в блоке отправителя нужен TIN компании-владельца договора (NOVAPOST_COMPANY_TIN).';
+  }
+  if (raw.includes('invalid.contract.type') || raw.includes('validation.invalid.contract.type')) {
+    return 'Оплата прошла, но тип договора не подходит для payerType=Sender (часто CNPHU — клиентский). Нужен логистический договор компании Mate на этот же API-ключ.';
   }
   if (raw.includes('ContractEntity.number') || raw.includes('validation.exists')) {
     return 'Оплата прошла, но Nova Post не принял номер договора (payerContractNumber). Проверьте NOVAPOST_PAYER_CONTRACT_NUMBER в Railway — заявка останется оплаченной, отправление можно создать повторно.';
@@ -213,9 +222,17 @@ export async function createInternationalShipment(body, clientOrder) {
   );
 
   // Non-cash under Mate↔Nova Post contract when a valid API contract id is configured.
-  // Paper numbers (e.g. 21/04/2026-1) and contracts from another company (wrong_company) break create.
-  // Historical working shipments used payerType=Sender without payerContractNumber.
+  // NP: companyTin must match the API-key company exactly, digits only (e.g. 32834374243, not 32834374-2-43).
   const payerContractNumber = String(process.env.NOVAPOST_PAYER_CONTRACT_NUMBER || '').trim();
+  const companyTin = String(
+    process.env.NOVAPOST_COMPANY_TIN
+    || process.env.MATE_COMPANY_TIN
+    || '32834374243',
+  ).replace(/\D/g, '');
+
+  if (payerContractNumber && companyTin) {
+    sender.companyTin = companyTin;
+  }
 
   const payload = {
     status: 'ReadyToShip',
@@ -306,6 +323,7 @@ function isNovaPostShipmentGoneError(err) {
 /**
  * Map Nova Post shipment status string → Mate order status.
  * ReadyToShip = waiting for sender to drop off; Delivered* = done; else in transit.
+ * Arrived-at-point (postomat/PUDO/branch) stays in transit until the recipient collects.
  */
 export function mapNovaPostStatusToOrderStatus(npStatus) {
   const raw = String(npStatus || '').trim();
@@ -314,6 +332,10 @@ export function mapNovaPostStatusToOrderStatus(npStatus) {
 
   if (s === 'readytoship' || s === 'created' || s === 'draft' || s === 'new') {
     return 'waiting_from_you';
+  }
+  // Still waiting for the recipient at a locker/PUDO/branch — not fully delivered yet.
+  if (isArrivedAtPickupPointStatus(raw)) {
+    return 'submitted';
   }
   if (
     s.includes('delivered')
@@ -332,6 +354,69 @@ export function mapNovaPostStatusToOrderStatus(npStatus) {
   }
   // In transit / picked up / on the way / etc.
   return 'submitted';
+}
+
+/**
+ * True when NP says the parcel is waiting at a Postomat / PUDO / branch for the recipient.
+ * Heuristic over status strings — PIN/cell is not available via API.
+ */
+export function isArrivedAtPickupPointStatus(npStatus) {
+  const raw = String(npStatus || '').trim();
+  if (!raw) return false;
+  const s = raw.toLowerCase().replace(/[\s_-]+/g, '');
+
+  // Already collected by the recipient — use the regular delivered email.
+  if (
+    s.includes('pickedupbyrecipient')
+    || s.includes('receivedbyrecipient')
+    || s.includes('collectedbyrecipient')
+    || s.includes('handedover')
+    || s === 'completed'
+  ) {
+    return false;
+  }
+
+  const atPoint = (
+    s.includes('postomat')
+    || s.includes('pudo')
+    || s.includes('locker')
+    || s.includes('pickuppoint')
+    || s.includes('parcelpoint')
+  );
+  if (atPoint) {
+    if (
+      s.includes('arriv')
+      || s.includes('deliveredto')
+      || s.includes('atpostomat')
+      || s.includes('atpudo')
+      || s.includes('inpostomat')
+      || s.includes('inpudo')
+      || s.includes('ready')
+      || s.includes('waiting')
+      || s.includes('stored')
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    (s.includes('arriv') || s.includes('deliveredto') || s.includes('readyfor'))
+    && (s.includes('branch') || s.includes('division') || s.includes('office') || s.includes('depot'))
+  ) {
+    return true;
+  }
+
+  if (
+    s === 'readyforpickup'
+    || s === 'awaitingrecipient'
+    || s === 'waitingforpickup'
+    || s === 'awaitingpickup'
+    || s === 'storedatdestination'
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function extractNovaPostStatus(response) {

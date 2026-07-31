@@ -5,6 +5,7 @@ import {
   deleteInternationalShipment,
   fetchInternationalShipmentStatus,
   mapNovaPostStatusToOrderStatus,
+  isArrivedAtPickupPointStatus,
 } from './novapost/shipment.mjs';
 import { validateCheckoutBody } from './shipping-validate.mjs';
 import { normalizeMailLocale } from './mail-i18n.mjs';
@@ -29,6 +30,8 @@ import {
   createB2CCheckoutSession,
   stripeEnabled,
   getStripeCheckoutPaymentDetails,
+  formatStripeCheckoutError,
+  assertStripePayableAmount,
 } from './stripe.mjs';
 import {
   getSettings,
@@ -43,7 +46,8 @@ import { MATE_BRANCHES, FALLBACK_LOCKERS, filterCatalogPoints } from './points-c
 import { isNovaPostMock } from './novapost/client.mjs';
 import { resolveUserMonthlyShipments } from './loyalty.mjs';
 import { resolveWelcomeDiscountPercent, consumeWelcomeDiscount } from './welcome-discount.mjs';
-import { sendOrderCreatedEmail } from './mail.mjs';
+import { resolvePromoDiscount, consumePromoCode } from './promo-codes.mjs';
+import { sendOrderCreatedEmail, sendArrivedAtPointEmail } from './mail.mjs';
 import { geocodeAddressSuggestions } from './geocode.mjs';
 import { buildWaybillPdf, waybillFilename } from './waybill-pdf.mjs';
 
@@ -51,7 +55,9 @@ function buildSideCoverage({ country, city, npCounts, useFallback }) {
   const mateBranches = filterCatalogPoints(MATE_BRANCHES, country, city);
   const fallbackLockers = filterCatalogPoints(FALLBACK_LOCKERS, country, city);
 
-  let lockerCount = (npCounts?.postomat || 0) + (npCounts?.pudo || 0);
+  // Postomat and PUDO stay separate — mixing them made EU users pick a shop as a "locker".
+  let lockerCount = npCounts?.postomat || 0;
+  let pudoCount = npCounts?.pudo || 0;
   // Quote/checkout need numeric Nova Post division IDs — catalog mate_*
   // placeholders must not enable branch mode in the UI.
   let branchCount = npCounts?.postBranch || 0;
@@ -67,6 +73,7 @@ function buildSideCoverage({ country, city, npCounts, useFallback }) {
   return {
     home: { available: true, count: null },
     locker: { available: lockerCount > 0, count: lockerCount },
+    pudo: { available: pudoCount > 0, count: pudoCount },
     branch: { available: branchCount > 0, count: branchCount },
     counts: {
       postomat: npCounts?.postomat || 0,
@@ -146,6 +153,8 @@ function mapDeliveryMode(type) {
   const t = String(type || '').toLowerCase();
   if (t === 'branch' || t === 'office') return 'branch';
   if (t === 'home' || t === 'address' || t === 'courier') return 'address';
+  // PUDO prices like Postomat in the Mate matrix; NP still quotes the real division.
+  if (t === 'pudo' || t === 'locker' || t === 'postomat') return 'locker';
   return 'locker';
 }
 
@@ -176,6 +185,16 @@ export async function resolveCheckoutAmount(body, userId = null) {
   );
   const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(userId || body.userId);
 
+  let promo = null;
+  const rawPromo = body.promoCode || body.promo?.code || tariff.promoCode;
+  if (rawPromo) {
+    const resolved = await resolvePromoDiscount(rawPromo);
+    if (!resolved.ok) {
+      throw new Error(resolved.error || 'Промокод недействителен');
+    }
+    promo = resolved.promo;
+  }
+
   const reconciled = await reconcileParcelPrice({
     fromCountry,
     toCountry,
@@ -188,6 +207,7 @@ export async function resolveCheckoutAmount(body, userId = null) {
     boxSize: parcel.boxSize,
     monthlyShipments: Number(body.monthlyShipments) || 1,
     welcomeDiscountPercent,
+    promo,
     pickupLocation: tariff.pickupLocation,
     deliveryLocation: tariff.deliveryLocation,
     payerType: tariff.payerType,
@@ -249,6 +269,11 @@ export async function resolveCheckoutAmount(body, userId = null) {
     log,
   };
 
+  // Fail early with a clear message (e.g. 99% promo → 120 HUF < Stripe min 175).
+  if (promo) {
+    assertStripePayableAmount(total, currency);
+  }
+
   return { total, currency, priceSource, breakdown };
 }
 
@@ -259,9 +284,45 @@ async function maybeConsumeWelcomeDiscount(order) {
   await consumeWelcomeDiscount(order.userId);
 }
 
+async function maybeConsumePromoCode(order) {
+  const promoId = order?.priceBreakdown?.promoId;
+  if (!promoId) return;
+  await consumePromoCode(promoId);
+}
+
 const NP_STATUS_CACHE = new Map();
 const NP_STATUS_TTL_MS = Number(process.env.NOVAPOST_STATUS_TTL_MS ?? 90_000);
 const SYNCABLE_STATUSES = new Set(['waiting_from_you', 'submitted', 'paid']);
+
+function deliveryModeFromOrder(order) {
+  const tariff = order?.payload?.tariff || {};
+  return String(tariff.deliveryMode || tariff.deliveryType || '').toLowerCase();
+}
+
+async function maybeNotifyArrivedAtPoint(order, npStatus) {
+  if (!order || !isArrivedAtPickupPointStatus(npStatus)) return order;
+  const mode = deliveryModeFromOrder(order);
+  if (!['locker', 'pudo', 'branch'].includes(mode)) return order;
+
+  const snap = (order.npSnapshot && typeof order.npSnapshot === 'object')
+    ? { ...order.npSnapshot }
+    : {};
+  if (snap.arrivedAtPointMailSentAt) return order;
+
+  try {
+    await sendArrivedAtPointEmail(order);
+    return (await updateOrder(order.id, {
+      npSnapshot: {
+        ...snap,
+        arrivedAtPointMailSentAt: new Date().toISOString(),
+        arrivedAtPointNpStatus: String(npStatus || ''),
+      },
+    }, { notify: false })) || order;
+  } catch (err) {
+    console.error(`[mail] arrived-at-point failed (${order.orderNumber}):`, err?.message || err);
+    return order;
+  }
+}
 
 /** Best-effort refresh of order.status from Nova Post (cached). */
 async function syncOrderStatusFromNovaPost(order) {
@@ -275,25 +336,32 @@ async function syncOrderStatusFromNovaPost(order) {
 
   const cacheKey = String(order.npRef);
   const cached = NP_STATUS_CACHE.get(cacheKey);
+  let npStatus = cached?.npStatus || null;
+  let current = order;
+
   if (cached && cached.expiresAt > Date.now()) {
-    if (cached.orderStatus && cached.orderStatus !== order.status) {
-      return updateOrder(order.id, { status: cached.orderStatus }, { notify: false }) || order;
+    if (cached.orderStatus && cached.orderStatus !== current.status) {
+      current = (await updateOrder(current.id, { status: cached.orderStatus }, { notify: false })) || current;
     }
-    return order;
+    return maybeNotifyArrivedAtPoint(current, npStatus);
   }
 
   try {
     const result = await fetchInternationalShipmentStatus(order.npRef);
+    npStatus = result.npStatus;
     NP_STATUS_CACHE.set(cacheKey, {
       orderStatus: result.orderStatus,
       npStatus: result.npStatus,
       expiresAt: Date.now() + Math.max(15_000, NP_STATUS_TTL_MS),
     });
-    if (!result.orderStatus || result.orderStatus === order.status) return order;
-
-    const patch = { status: result.orderStatus };
-    if (result.number && !order.npTtn) patch.npTtn = String(result.number);
-    return (await updateOrder(order.id, patch)) || order;
+    if (result.orderStatus && result.orderStatus !== current.status) {
+      const patch = { status: result.orderStatus };
+      if (result.number && !current.npTtn) patch.npTtn = String(result.number);
+      current = (await updateOrder(current.id, patch)) || current;
+    } else if (result.number && !current.npTtn) {
+      current = (await updateOrder(current.id, { npTtn: String(result.number) }, { notify: false })) || current;
+    }
+    return maybeNotifyArrivedAtPoint(current, npStatus);
   } catch (err) {
     console.warn(`[shipping] NP status sync failed for ${order.orderNumber}:`, err?.message || err);
     NP_STATUS_CACHE.set(cacheKey, {
@@ -301,7 +369,7 @@ async function syncOrderStatusFromNovaPost(order) {
       npStatus: null,
       expiresAt: Date.now() + 30_000,
     });
-    return order;
+    return current;
   }
 }
 
@@ -363,8 +431,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       if (!country || !city) {
         return res.status(400).json({ error: 'Укажите страну и город' });
       }
-      if (kind !== 'locker' && kind !== 'branch') {
-        return res.status(400).json({ error: 'kind: locker или branch' });
+      if (kind !== 'locker' && kind !== 'branch' && kind !== 'pudo') {
+        return res.status(400).json({ error: 'kind: locker, pudo или branch' });
       }
 
       const matchesCity = (it) => {
@@ -424,28 +492,33 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         });
       }
 
-      // locker = Postomat + PUDO from Nova Post
+      // locker = Postomat only; pudo = PUDO only (never merge — EU partners are not lockers)
+      const npCategory = kind === 'pudo' ? 'PUDO' : 'Postomat';
       let points = [];
       let source = 'novapost';
       if (!isNovaPostMock()) {
-        const [postomats, pudos] = await Promise.all([
-          fetchNovaPostDivisions({ countryCode: country, city, categories: ['Postomat'], limit: 40 }),
-          fetchNovaPostDivisions({ countryCode: country, city, categories: ['PUDO'], limit: 40 }),
-        ]);
-        const mapped = [...postomats.items, ...pudos.items]
-          .filter(matchesCity)
-          .map(mapDivisionToPoint)
-          .filter((p) => p.lat && p.lng);
+        const divisions = await fetchNovaPostDivisions({
+          countryCode: country,
+          city,
+          categories: [npCategory],
+          limit: 40,
+        });
+        points = dedupeById(
+          divisions.items
+            .filter(matchesCity)
+            .map(mapDivisionToPoint)
+            .filter((p) => p.lat && p.lng && /^\d+$/.test(String(p.id))),
+        );
 
-        points = dedupeById(mapped);
-
-        if (postomats.source === 'error' && pudos.source === 'error') {
-          source = 'fallback';
-          points = filterCatalogPoints(FALLBACK_LOCKERS, country, city);
+        if (divisions.source === 'error' || divisions.source === 'mock') {
+          source = kind === 'locker' ? 'fallback' : 'novapost';
+          if (kind === 'locker') {
+            points = filterCatalogPoints(FALLBACK_LOCKERS, country, city);
+          }
         } else {
           source = 'novapost';
         }
-      } else {
+      } else if (kind === 'locker') {
         source = 'fallback';
         points = filterCatalogPoints(FALLBACK_LOCKERS, country, city);
       }
@@ -620,6 +693,31 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     }
   });
 
+  /** Preview full checkout total with optional promo (fragile/insurance included). */
+  router.post('/promo/preview', optionalAuth, async (req, res) => {
+    try {
+      const body = req.body || {};
+      if (!body.parcel) {
+        return res.status(400).json({ error: 'Укажите параметры посылки' });
+      }
+      const monthlyShipments = Number(body.monthlyShipments)
+        || await resolveUserMonthlyShipments(req.userId);
+      const pricing = await resolveCheckoutAmount({ ...body, monthlyShipments }, req.userId);
+      res.json({
+        data: {
+          total: pricing.total,
+          currency: pricing.currency,
+          priceSource: pricing.priceSource,
+          breakdown: pricing.breakdown,
+        },
+      });
+    } catch (err) {
+      const msg = err?.message || 'Не удалось применить промокод';
+      const bad = /промокод|promo/i.test(msg);
+      res.status(bad ? 400 : 500).json({ error: msg });
+    }
+  });
+
   /** Final price: Nova Post + markup + VAT — for steps 7–8 and checkout */
   router.post('/calculate-final', optionalAuth, async (req, res) => {
     try {
@@ -633,6 +731,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         pickupLocation,
         deliveryLocation,
         payerType,
+        promoCode,
       } = req.body;
       if (!toCountry || !parcel) {
         return res.status(400).json({ error: 'Укажите направление и параметры посылки' });
@@ -640,6 +739,14 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const monthlyShipments = Number(req.body.monthlyShipments)
         || await resolveUserMonthlyShipments(req.userId);
       const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(req.userId);
+      let promo = null;
+      if (promoCode) {
+        const resolved = await resolvePromoDiscount(promoCode);
+        if (!resolved.ok) {
+          return res.status(400).json({ error: resolved.error });
+        }
+        promo = resolved.promo;
+      }
       const result = await reconcileParcelPrice({
         fromCountry: fromCountry || 'HU',
         toCountry,
@@ -652,6 +759,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         boxSize: parcel.boxSize,
         monthlyShipments,
         welcomeDiscountPercent,
+        promo,
         pickupLocation,
         deliveryLocation,
         payerType,
@@ -839,7 +947,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         } catch (stripeErr) {
           console.error('[shipping] stripe checkout failed:', stripeErr);
           return res.status(502).json({
-            error: 'Не удалось открыть страницу оплаты Stripe. Проверьте STRIPE_SECRET_KEY.',
+            error: formatStripeCheckoutError(stripeErr),
           });
         }
       }
@@ -925,6 +1033,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
         }) || order;
         await maybeConsumeWelcomeDiscount(paidOrder);
+        await maybeConsumePromoCode(paidOrder);
       }
 
       // Legacy: shipment already created before payment — just mark waiting.

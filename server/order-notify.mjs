@@ -21,7 +21,10 @@ export async function notifyOrderUpdated(before, after) {
 
   if (statusChanged) {
     await sendOrderStatusEmail(after, before.status);
-  } else if (ttnChanged && after.status !== 'pending_payment') {
+  }
+  // Also send when TTN appears together with status→waiting_from_you (same update).
+  // Previously `else if` skipped tracking, so the recipient only saw «Оплачено» without TTN.
+  if (ttnChanged && after.status !== 'pending_payment') {
     await sendOrderTrackingEmail(after);
   }
 }

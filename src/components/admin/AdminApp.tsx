@@ -22,11 +22,16 @@ import {
   updateAdminOrder,
   updateAdminUser,
   retryAdminOrderNp,
+  fetchAdminPromos,
+  createAdminPromo,
+  setAdminPromoActive,
+  deleteAdminPromo,
   type AdminPricing,
   type AdminSettings,
+  type AdminPromo,
 } from '../../api/admin';
 
-type Tab = 'dashboard' | 'orders' | 'users' | 'pricing' | 'settings';
+type Tab = 'dashboard' | 'orders' | 'users' | 'pricing' | 'settings' | 'promos';
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -40,6 +45,7 @@ const NAV_ITEMS: { id: Tab; label: string; short: string }[] = [
   { id: 'users', label: 'Пользователи', short: 'Люди' },
   { id: 'pricing', label: 'Цены', short: 'Цены' },
   { id: 'settings', label: 'Настройки', short: 'Настр.' },
+  { id: 'promos', label: 'Промокоды', short: 'Промо' },
 ];
 
 function TabIcon({ id }: { id: Tab }) {
@@ -95,6 +101,13 @@ function TabIcon({ id }: { id: Tab }) {
           <path d="M12 3.5v2.2M12 18.3v2.2M4.9 6.5l1.6 1.5M17.5 16l1.6 1.5M3.5 12h2.2M18.3 12h2.2M4.9 17.5l1.6-1.5M17.5 8l1.6-1.5" />
         </svg>
       );
+    case 'promos':
+      return (
+        <svg {...common}>
+          <path d="M20.6 12.8 12.8 20.6a2 2 0 0 1-2.8 0L3.4 14a2 2 0 0 1 0-2.8l7.8-7.8a2 2 0 0 1 1.4-.6H19a2 2 0 0 1 2 2v6.4a2 2 0 0 1-.6 1.4Z" />
+          <circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -103,6 +116,7 @@ function TabIcon({ id }: { id: Tab }) {
 const MODE_LABELS: Record<string, string> = {
   branch: 'В филиал',
   locker: 'В постамат',
+  pudo: 'В пункт выдачи',
   address: 'На адрес',
 };
 
@@ -332,6 +346,7 @@ export function AdminApp({ onExit }: Props) {
     users: 'Пользователи',
     pricing: 'Цены',
     settings: 'Настройки',
+    promos: 'Промокоды',
   };
 
   return (
@@ -413,6 +428,7 @@ export function AdminApp({ onExit }: Props) {
         {tab === 'users' && <UsersTab />}
         {tab === 'pricing' && <PricingTab />}
         {tab === 'settings' && <SettingsTab />}
+        {tab === 'promos' && <PromosTab />}
       </main>
 
       <nav className="admin-dock" aria-label="Основная навигация">
@@ -1609,6 +1625,238 @@ function SettingsTab() {
       <button className="btn btn-lime" type="button" disabled={saving} onClick={save}>
         {saving ? 'Сохраняем…' : 'Сохранить настройки'}
       </button>
+    </div>
+  );
+}
+
+function PromosTab() {
+  const [promos, setPromos] = useState<AdminPromo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    code: '',
+    type: 'percent' as 'percent' | 'fixed',
+    value: '',
+    maxUses: '',
+    expiresAt: '',
+    note: '',
+    active: true,
+  });
+
+  const reload = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetchAdminPromos();
+      setPromos(res.promos || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const create = async () => {
+    setSaving(true);
+    setMsg('');
+    setError('');
+    try {
+      await createAdminPromo({
+        code: form.code,
+        type: form.type,
+        value: Number(form.value),
+        active: form.active,
+        maxUses: form.maxUses.trim() ? Number(form.maxUses) : null,
+        expiresAt: form.expiresAt.trim() || null,
+        note: form.note,
+      });
+      setForm({
+        code: '',
+        type: 'percent',
+        value: '',
+        maxUses: '',
+        expiresAt: '',
+        note: '',
+        active: true,
+      });
+      setMsg('Промокод создан');
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось создать');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggle = async (promo: AdminPromo) => {
+    setError('');
+    try {
+      await setAdminPromoActive(promo.id, !promo.active);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось обновить');
+    }
+  };
+
+  const remove = async (promo: AdminPromo) => {
+    if (!window.confirm(`Удалить промокод ${promo.code}?`)) return;
+    setError('');
+    try {
+      await deleteAdminPromo(promo.id);
+      setMsg(`Удалён ${promo.code}`);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось удалить');
+    }
+  };
+
+  const formatPromoValue = (p: AdminPromo) => (
+    p.type === 'fixed'
+      ? `−${Math.round(Number(p.value)).toLocaleString('ru-RU')} HUF`
+      : `−${Number(p.value)}%`
+  );
+
+  return (
+    <div className="admin-section admin-section--animate">
+      <header className="admin-section__head">
+        <h1>Промокоды</h1>
+        <p>Скидка процентом или фиксированной суммой на шаге оплаты</p>
+      </header>
+      {error && <div className="admin-alert">{error}</div>}
+      {msg && <div className="admin-ok">{msg}</div>}
+
+      <section className="card admin-panel admin-settings">
+        <h2>Новый промокод</h2>
+        <div className="admin-fields-row">
+          <label className="admin-field admin-field--md">
+            <span>Код</span>
+            <input
+              value={form.code}
+              placeholder="MATE20"
+              onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+            />
+          </label>
+          <label className="admin-field admin-field--sm">
+            <span>Тип</span>
+            <select
+              value={form.type}
+              onChange={(e) => setForm({ ...form, type: e.target.value as 'percent' | 'fixed' })}
+            >
+              <option value="percent">Процент %</option>
+              <option value="fixed">Сумма (HUF)</option>
+            </select>
+          </label>
+          <label className="admin-field admin-field--sm">
+            <span>{form.type === 'fixed' ? 'Сумма' : 'Процент'}</span>
+            <input
+              type="number"
+              min={0}
+              step={form.type === 'fixed' ? 10 : 1}
+              value={form.value}
+              onChange={(e) => setForm({ ...form, value: e.target.value })}
+            />
+          </label>
+        </div>
+        <div className="admin-fields-row">
+          <label className="admin-field admin-field--sm">
+            <span>Макс. использований</span>
+            <input
+              type="number"
+              min={1}
+              placeholder="∞"
+              value={form.maxUses}
+              onChange={(e) => setForm({ ...form, maxUses: e.target.value })}
+            />
+          </label>
+          <label className="admin-field admin-field--md">
+            <span>Действует до</span>
+            <input
+              type="datetime-local"
+              value={form.expiresAt}
+              onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
+            />
+          </label>
+          <label className="admin-field admin-field--md">
+            <span>Заметка</span>
+            <input
+              value={form.note}
+              placeholder="Для Instagram"
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+            />
+          </label>
+        </div>
+        <label className="admin-switch">
+          <input
+            type="checkbox"
+            checked={form.active}
+            onChange={(e) => setForm({ ...form, active: e.target.checked })}
+          />
+          <span>Активен сразу после создания</span>
+        </label>
+        <button className="btn btn-lime" type="button" disabled={saving} onClick={create}>
+          {saving ? 'Создаём…' : 'Добавить промокод'}
+        </button>
+      </section>
+
+      <section className="card admin-panel">
+        <h2>Список</h2>
+        {loading ? (
+          <p className="admin-muted">Загрузка…</p>
+        ) : promos.length === 0 ? (
+          <p className="admin-muted">Пока нет промокодов</p>
+        ) : (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Код</th>
+                  <th>Скидка</th>
+                  <th>Использовано</th>
+                  <th>До</th>
+                  <th>Статус</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {promos.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <b>{p.code}</b>
+                      {p.note ? <><br /><small>{p.note}</small></> : null}
+                    </td>
+                    <td>{formatPromoValue(p)}</td>
+                    <td>
+                      {p.usedCount}
+                      {p.maxUses != null ? ` / ${p.maxUses}` : ''}
+                    </td>
+                    <td>{p.expiresAt ? formatDate(p.expiresAt) : '—'}</td>
+                    <td>
+                      <span className={`admin-status${p.active ? ' admin-status--ok' : ''}`}>
+                        {p.active ? 'Активен' : 'Выключен'}
+                      </span>
+                    </td>
+                    <td className="admin-table__actions">
+                      <button type="button" className="btn btn-outline btn-sm" onClick={() => toggle(p)}>
+                        {p.active ? 'Выкл.' : 'Вкл.'}
+                      </button>
+                      {' '}
+                      <button type="button" className="btn admin-btn--danger btn-sm" onClick={() => remove(p)}>
+                        Удалить
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -52,6 +52,8 @@ export function deliveryServiceLabel(mode: string | null | undefined, t: TFn) {
       return { title: t('orderSuccess.serviceHomeTitle'), hint: t('orderSuccess.serviceHomeHint') };
     case 'locker':
       return { title: t('orderSuccess.serviceLockerTitle'), hint: t('orderSuccess.serviceLockerHint') };
+    case 'pudo':
+      return { title: t('orderSuccess.servicePudoTitle'), hint: t('orderSuccess.servicePudoHint') };
     case 'branch':
       return { title: t('orderSuccess.serviceBranchTitle'), hint: t('orderSuccess.serviceBranchHint') };
     default:

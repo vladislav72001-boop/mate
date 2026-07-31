@@ -73,6 +73,8 @@ export function normalizeMode(value) {
   const raw = String(value || '').toLowerCase().trim();
   if (raw === 'home' || raw === 'address' || raw === 'courier') return 'home';
   if (raw === 'branch' || raw === 'office') return 'branch';
+  // PUDO drop-off has no locker PIN — reuse branch waiting copy.
+  if (raw === 'pudo') return 'branch';
   return 'locker';
 }
 

@@ -7,7 +7,7 @@ function splitPersonName(full: string): { first: string; last: string } {
 
 export { splitPersonName };
 
-export type CalcDraftDeliveryMode = 'home' | 'branch' | 'locker';
+export type CalcDraftDeliveryMode = 'home' | 'branch' | 'locker' | 'pudo';
 export type CalcDraftContentKey = 'documents' | 'clothing' | 'shoes' | 'cosmetics' | 'electronics' | 'gift' | 'other';
 export type CalcDraftValueKey = 'under100' | 'mid' | 'high' | 'over';
 export type CalcDraftSizeKey = 'envelope' | 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'custom';
@@ -94,7 +94,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 function isDeliveryMode(v: unknown): v is CalcDraftDeliveryMode {
-  return v === 'home' || v === 'branch' || v === 'locker';
+  return v === 'home' || v === 'branch' || v === 'locker' || v === 'pudo';
 }
 
 function parseDraft(raw: unknown, maxAgeMs: number): CalcDraft | null {

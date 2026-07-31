@@ -1,7 +1,62 @@
 let client = null;
 
+/** Stripe charge minimums in major currency units (https://docs.stripe.com/currencies). */
+const STRIPE_MIN_MAJOR = {
+  HUF: 175,
+  EUR: 0.5,
+  USD: 0.5,
+  PLN: 2,
+  CZK: 15,
+  RON: 2,
+  GBP: 0.3,
+};
+
 export function stripeEnabled() {
   return Boolean(process.env.STRIPE_SECRET_KEY?.trim());
+}
+
+export function stripeMinAmount(currency = 'HUF') {
+  const code = String(currency || 'HUF').toUpperCase();
+  return STRIPE_MIN_MAJOR[code] ?? 0.5;
+}
+
+/** Checkout unit_amount — HUF is charged as two-decimal in Checkout/PaymentIntent. */
+export function toStripeUnitAmount(amount) {
+  return Math.round((Number(amount) || 0) * 100);
+}
+
+export function assertStripePayableAmount(amount, currency = 'HUF') {
+  const min = stripeMinAmount(currency);
+  const n = Number(amount) || 0;
+  const code = String(currency || 'HUF').toUpperCase();
+  if (n <= 0) {
+    const err = new Error('Сумма оплаты должна быть больше нуля');
+    err.code = 'amount_invalid';
+    throw err;
+  }
+  if (n < min) {
+    const err = new Error(
+      `Сумма ${Math.round(n)} ${code} меньше минимума Stripe (${min} ${code}). Уменьшите скидку промокода.`,
+    );
+    err.code = 'amount_too_small';
+    throw err;
+  }
+}
+
+export function formatStripeCheckoutError(err) {
+  const raw = String(err?.message || err || '');
+  if (err?.code === 'amount_too_small' || /amount_too_small|минимум Stripe|меньше минимума/i.test(raw)) {
+    return raw;
+  }
+  if (/STRIPE_SECRET_KEY is not configured/i.test(raw)) {
+    return 'Оплата временно недоступна: не настроен Stripe.';
+  }
+  if (/No such|Invalid API Key|invalid_api_key/i.test(raw)) {
+    return 'Ошибка ключа Stripe. Проверьте STRIPE_SECRET_KEY в настройках сервера.';
+  }
+  const stripeMsg = err?.raw?.message || err?.message;
+  if (stripeMsg && String(stripeMsg).length < 220) return String(stripeMsg);
+  return 'Не удалось открыть страницу оплаты Stripe. Попробуйте ещё раз или напишите в поддержку.';
 }
 
 export async function getStripe() {
@@ -33,6 +88,8 @@ export function buildStripeReturnUrls(publicToken) {
 export async function createB2CCheckoutSession({ order, amount, currency, customerEmail }) {
   const stripe = await getStripe();
   const { successUrl, cancelUrl } = buildStripeReturnUrls(order.publicToken);
+  const cur = String(currency || 'HUF').toUpperCase();
+  assertStripePayableAmount(amount, cur);
 
   return stripe.checkout.sessions.create({
     mode: 'payment',
@@ -40,9 +97,9 @@ export async function createB2CCheckoutSession({ order, amount, currency, custom
     customer_email: customerEmail,
     line_items: [{
       price_data: {
-        currency: currency.toLowerCase(),
+        currency: cur.toLowerCase(),
         product_data: { name: `MATE доставка ${order.orderNumber}` },
-        unit_amount: Math.round(amount * 100),
+        unit_amount: toStripeUnitAmount(amount),
       },
       quantity: 1,
     }],
@@ -81,7 +138,6 @@ export async function getStripeCheckoutPaymentDetails(sessionId) {
     if (card?.last4) {
       return { last4: String(card.last4), brand: card.brand || null };
     }
-    // Fallback: charge list
     const piId = typeof session.payment_intent === 'string'
       ? session.payment_intent
       : session.payment_intent?.id;

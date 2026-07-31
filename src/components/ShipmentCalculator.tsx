@@ -6,6 +6,7 @@ import {
   checkout,
   confirmPayment,
   computeClientExtras,
+  previewPromoCheckout,
   fetchAddresses,
   fetchCoverage,
   fetchOrderStatus,
@@ -28,6 +29,9 @@ import {
   PICKUP_COUNTRY,
   PICKUP_TIMES,
   SIZE_ALLOWED_MODES,
+  coerceCourierPickupDate,
+  isCourierPickupWeekend,
+  nextCourierPickupDateIso,
   formatQuoteMoney,
   composePhone,
   validateEmail,
@@ -84,10 +88,22 @@ type FormProps = {
   startFromStep1?: boolean;
 };
 
-type DeliveryMode = 'home' | 'branch' | 'locker';
+type DeliveryMode = 'home' | 'branch' | 'locker' | 'pudo';
 type ContentKey = 'documents' | 'clothing' | 'shoes' | 'cosmetics' | 'electronics' | 'gift' | 'other';
 type ValueKey = 'under100' | 'mid' | 'high' | 'over';
 type SizeKey = 'envelope' | ParcelKey | 'XXL' | 'custom';
+
+function isPointPickupMode(mode: DeliveryMode): mode is 'locker' | 'pudo' | 'branch' {
+  return mode === 'locker' || mode === 'pudo' || mode === 'branch';
+}
+
+function isLockerLikeMode(mode: DeliveryMode): mode is 'locker' | 'pudo' {
+  return mode === 'locker' || mode === 'pudo';
+}
+
+function pointsKindForMode(mode: 'locker' | 'pudo' | 'branch'): 'locker' | 'pudo' | 'branch' {
+  return mode;
+}
 
 const PARCEL_KEYS: ParcelKey[] = ['XS', 'S', 'M', 'L'];
 /** Live quotes for all selectable parcel sizes. */
@@ -263,7 +279,7 @@ function sanitizeDivisionId(id: string | null | undefined): string {
 async function fetchFirstDivisionLocation(
   country: string,
   city: string,
-  kind: 'locker' | 'branch',
+  kind: 'locker' | 'pudo' | 'branch',
   side: 'pickup' | 'delivery',
 ): Promise<QuoteLocation | undefined> {
   if (!city.trim()) return undefined;
@@ -296,7 +312,7 @@ async function resolvePreliminaryQuoteLocations(
   const firstInCity = async (
     country: string,
     city: string,
-    kind: 'locker' | 'branch',
+    kind: 'locker' | 'pudo' | 'branch',
     side: 'pickup' | 'delivery',
   ) => fetchFirstDivisionLocation(country, city, kind, side);
 
@@ -309,12 +325,21 @@ async function resolvePreliminaryQuoteLocations(
     if (mode === 'home') {
       return placeholderAddressQuoteLocation(country, city);
     }
-    const primary = await firstInCity(country, city, mode === 'branch' ? 'branch' : 'locker', side);
+    const preferredKind = pointsKindForMode(mode);
+    const primary = await firstInCity(country, city, preferredKind, side);
     if (primary) return primary;
     // Soft fallback only for preliminary catalog quotes when the preferred
     // point type is missing in a city (exact selected points never use this path).
-    const fallbackKind = mode === 'branch' ? 'locker' : 'branch';
-    return firstInCity(country, city, fallbackKind, side);
+    const fallbackKinds: Array<'locker' | 'pudo' | 'branch'> = preferredKind === 'branch'
+      ? ['locker', 'pudo']
+      : preferredKind === 'locker'
+        ? ['pudo', 'branch']
+        : ['locker', 'branch'];
+    for (const kind of fallbackKinds) {
+      const hit = await firstInCity(country, city, kind, side);
+      if (hit) return hit;
+    }
+    return undefined;
   };
 
   const [pickup, delivery] = await Promise.all([
@@ -324,7 +349,18 @@ async function resolvePreliminaryQuoteLocations(
   return { pickup, delivery };
 }
 const VALUE_KEYS: ValueKey[] = ['under100', 'mid', 'high', 'over'];
-const DELIVERY_MODE_KEYS: DeliveryMode[] = ['home', 'branch', 'locker'];
+const DELIVERY_MODE_KEYS: DeliveryMode[] = ['locker', 'pudo', 'branch', 'home'];
+
+const DELIVERY_MODE_ICONS: Record<DeliveryMode, string> = {
+  home: '🏠',
+  branch: '🏢',
+  locker: '📦',
+  pudo: '🏪',
+};
+
+const MODE_ORDER: DeliveryMode[] = ['locker', 'pudo', 'branch', 'home'];
+/** Prefer branch/home for pickup while locker drop-off is coming soon. */
+const PICKUP_MODE_ORDER: DeliveryMode[] = ['branch', 'home', 'pudo', 'locker'];
 
 /** Pickup from locker is not live yet — show the option disabled with "Soon". */
 const PICKUP_FROM_LOCKER_COMING_SOON = true;
@@ -338,16 +374,6 @@ const CONTENT_ICONS: Record<ContentKey, string> = {
   gift: '🎁',
   other: '📦',
 };
-
-const DELIVERY_MODE_ICONS: Record<DeliveryMode, string> = {
-  home: '🏠',
-  branch: '🏢',
-  locker: '📦',
-};
-
-const MODE_ORDER: DeliveryMode[] = ['locker', 'branch', 'home'];
-/** Prefer branch/home for pickup while locker drop-off is coming soon. */
-const PICKUP_MODE_ORDER: DeliveryMode[] = ['branch', 'home', 'locker'];
 
 function firstAvailableMode(
   side: CoverageSide | null | undefined,
@@ -382,9 +408,7 @@ const VALUE_TO_EUR: Record<ValueKey, number> = {
 };
 
 function tomorrowIso() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return nextCourierPickupDateIso();
 }
 
 /** Tier limits — keep in sync with server/novapost/parcel.mjs */
@@ -507,6 +531,7 @@ function presetToEditableSize(preset: { lengthCm: number; widthCm: number; heigh
 
 function deliveryModeToApi(mode: DeliveryMode): 'locker' | 'branch' | 'address' {
   if (mode === 'home') return 'address';
+  if (mode === 'pudo') return 'locker';
   return mode;
 }
 
@@ -554,7 +579,7 @@ function OptionGrid<T extends string>({
   options: Array<{ key: T; label: string; icon?: string }>;
   value: T;
   onChange: (v: T) => void;
-  columns?: 2 | 3;
+  columns?: 2 | 3 | 4;
   disabledKeys?: Partial<Record<T, boolean>>;
   comingSoonKeys?: Partial<Record<T, boolean>>;
   hints?: Partial<Record<T, string | undefined>>;
@@ -657,7 +682,9 @@ export function CalcForm({
   const [geoPickupCity, setGeoPickupCity] = useState(saved?.geoPickupCity ?? '');
   const [pickupCityFromGeo, setPickupCityFromGeo] = useState(saved?.pickupCityFromGeo ?? false);
   const [pickupCityTouched, setPickupCityTouched] = useState(saved?.pickupCityTouched ?? false);
-  const [pickupDate, setPickupDate] = useState(saved?.pickupDate || tomorrowIso());
+  const [pickupDate, setPickupDate] = useState(
+    coerceCourierPickupDate(saved?.pickupDate || nextCourierPickupDateIso()),
+  );
   const [pickupTime, setPickupTime] = useState(saved?.pickupTime ?? PICKUP_TIMES[0]);
   const [pickupLocker, setPickupLocker] = useState(sanitizeDivisionId(saved?.pickupLocker));
   const [pickupBranch, setPickupBranch] = useState(sanitizeDivisionId(saved?.pickupBranch));
@@ -687,6 +714,13 @@ export function CalcForm({
   const [customQuote, setCustomQuote] = useState<number | null>(null);
   const [quoteRefreshing, setQuoteRefreshing] = useState(false);
   const [welcomeDiscountPercent, setWelcomeDiscountPercent] = useState<number | null>(null);
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoInput, setPromoInput] = useState('');
+  const [promoCode, setPromoCode] = useState<string | null>(null);
+  const [promoHint, setPromoHint] = useState<string | null>(null);
+  const [promoTotal, setPromoTotal] = useState<number | null>(null);
+  const [promoApplying, setPromoApplying] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
   const [showQuoteWait, setShowQuoteWait] = useState(false);
   const [quotesFromNp, setQuotesFromNp] = useState(false);
   const [currency, setCurrency] = useState(DEFAULT_QUOTE_CURRENCY);
@@ -973,12 +1007,18 @@ export function CalcForm({
   const pickupQuoteLocation = useMemo(() => (
     pickupType === 'home'
       ? addressQuoteLocation(PICKUP_COUNTRY, pickupCity, pickupStreet, pickupPostal)
-      : divisionQuoteLocation(PICKUP_COUNTRY, pickupType === 'locker' ? pickupLocker : pickupBranch)
+      : divisionQuoteLocation(
+        PICKUP_COUNTRY,
+        isLockerLikeMode(pickupType) ? pickupLocker : pickupBranch,
+      )
   ), [pickupType, pickupCity, pickupStreet, pickupPostal, pickupLocker, pickupBranch]);
   const deliveryQuoteLocation = useMemo(() => (
     deliveryType === 'home'
       ? addressQuoteLocation(toCountry, destCity, destStreet, destPostal)
-      : divisionQuoteLocation(toCountry, deliveryType === 'locker' ? destLocker : destBranch)
+      : divisionQuoteLocation(
+        toCountry,
+        isLockerLikeMode(deliveryType) ? destLocker : destBranch,
+      )
   ), [deliveryType, toCountry, destCity, destStreet, destPostal, destLocker, destBranch]);
   const quoteLocationsReady = Boolean(pickupQuoteLocation && deliveryQuoteLocation);
   // MATE's Nova Post contract is the carrier payer; the UI payer choice is
@@ -1480,8 +1520,96 @@ export function CalcForm({
     return computeClientExtras(basePrice, { fragile, insurance }, quoteSettings);
   }, [basePrice, fragile, insurance, quoteSettings]);
 
-  const totalPrice = extras.total;
+  const totalPrice = promoTotal ?? extras.total;
   const formatMoney = (n: number) => formatQuoteMoney(n, currency);
+
+  const clearPromo = useCallback(() => {
+    setPromoCode(null);
+    setPromoHint(null);
+    setPromoTotal(null);
+    setPromoError(null);
+  }, []);
+
+  // Quotes/options changed — drop applied promo so amount stays consistent.
+  useEffect(() => {
+    clearPromo();
+  }, [
+    clearPromo,
+    basePrice,
+    fragile,
+    insurance,
+    sizeKey,
+    toCountry,
+    pickupType,
+    deliveryType,
+    pickupCity,
+    destCity,
+  ]);
+
+  const buildPromoPreviewBody = useCallback(() => {
+    const preset = sizeToPreset(sizeKey, customSize);
+    const boxSize = sizeToApiKey(sizeKey, customSize);
+    const declaredForNp = Math.max(insurance ? declaredValue : 100, 50);
+    return {
+      promoCode: promoInput.trim(),
+      parcel: {
+        boxSize: sizeKey === 'custom' ? 'custom' : boxSize,
+        ...preset,
+        declaredValue: declaredForNp,
+        fragile,
+        insurance,
+      },
+      tariff: {
+        fromCountry: PICKUP_COUNTRY,
+        toCountry,
+        pickupMode: pickupType,
+        deliveryMode: deliveryType,
+        pickupType,
+        deliveryType,
+        pickupLocation: pickupQuoteLocation,
+        deliveryLocation: deliveryQuoteLocation,
+        payerType: quotePayerType,
+      },
+      receiver: { country: toCountry },
+      sender: { country: PICKUP_COUNTRY },
+    };
+  }, [
+    promoInput, sizeKey, customSize, insurance, declaredValue, fragile,
+    toCountry, pickupType, deliveryType, pickupQuoteLocation, deliveryQuoteLocation, quotePayerType,
+  ]);
+
+  const applyPromo = async () => {
+    if (!promoInput.trim() || promoApplying) return;
+    setPromoApplying(true);
+    setPromoError(null);
+    try {
+      const data = await previewPromoCheckout(buildPromoPreviewBody());
+      const code = String(data.breakdown?.promoCode || promoInput.trim()).toUpperCase();
+      const amount = data.breakdown?.promoDiscountAmount;
+      const type = data.breakdown?.promoType;
+      const value = data.breakdown?.promoValue;
+      let hint = t('calc.promoApplied');
+      if (type === 'percent' && value != null) {
+        hint = t('calc.promoAppliedPercent', { percent: value });
+      } else if (type === 'fixed' && amount != null) {
+        hint = t('calc.promoAppliedFixed', { amount: formatMoney(amount) });
+      } else if (amount != null) {
+        hint = t('calc.promoAppliedFixed', { amount: formatMoney(amount) });
+      }
+      setPromoCode(code);
+      setPromoHint(hint);
+      setPromoTotal(data.total);
+      setCurrency((data.currency || currency).toUpperCase());
+      if (data.breakdown?.welcomeDiscountPercent) {
+        setWelcomeDiscountPercent(data.breakdown.welcomeDiscountPercent);
+      }
+    } catch (e) {
+      clearPromo();
+      setPromoError(e instanceof Error ? e.message : t('calc.promoInvalid'));
+    } finally {
+      setPromoApplying(false);
+    }
+  };
   const fragileFeeLabel = formatMoney(extras.fragileFee || (
     quoteSettings
       ? computeClientExtras(0, { fragile: true }, quoteSettings).fragileFee
@@ -1620,17 +1748,17 @@ export function CalcForm({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const needPickupPoints = step >= 5 && (pickupType === 'locker' || pickupType === 'branch');
-      const needDeliveryPoints = step >= 6 && (deliveryType === 'locker' || deliveryType === 'branch');
+      const needPickupPoints = step >= 5 && isPointPickupMode(pickupType);
+      const needDeliveryPoints = step >= 6 && isPointPickupMode(deliveryType);
       if (!needPickupPoints && !needDeliveryPoints) return;
 
-      if (needPickupPoints && pickupType === 'locker' && pickupCity.trim()) {
+      if (needPickupPoints && isLockerLikeMode(pickupType) && pickupCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
             country: PICKUP_COUNTRY,
             city: pickupCity.trim(),
-            kind: 'locker',
+            kind: pointsKindForMode(pickupType),
             side: 'pickup',
           });
           if (!cancelled) {
@@ -1668,13 +1796,13 @@ export function CalcForm({
           if (!cancelled) setPointsLoading(false);
         }
       }
-      if (needDeliveryPoints && deliveryType === 'locker' && destCity.trim()) {
+      if (needDeliveryPoints && isLockerLikeMode(deliveryType) && destCity.trim()) {
         setPointsLoading(true);
         try {
           const res = await fetchShippingPoints({
             country: toCountry,
             city: destCity.trim(),
-            kind: 'locker',
+            kind: pointsKindForMode(deliveryType),
             side: 'delivery',
           });
           if (!cancelled) {
@@ -1803,24 +1931,24 @@ export function CalcForm({
 
   const pickupLocationObj = pickupType === 'branch'
     ? pickupBranchesForCity.find((l) => l.id === pickupBranch) || null
-    : pickupType === 'locker'
+    : isLockerLikeMode(pickupType)
       ? pickupLockersForCity.find((l) => l.id === pickupLocker) || null
       : null;
   const destLocationObj = deliveryType === 'branch'
     ? destBranchesForCity.find((l) => l.id === destBranch) || null
-    : deliveryType === 'locker'
+    : isLockerLikeMode(deliveryType)
       ? destLockersForCity.find((l) => l.id === destLocker) || null
       : null;
 
   const buildPickupLine = () => {
-    if (pickupType === 'locker' || pickupType === 'branch') {
+    if (isPointPickupMode(pickupType)) {
       return `${countryLabel(PICKUP_COUNTRY, locale)}, ${pickupLocationObj?.address || t('calc.pointFallback')}`;
     }
     return `${countryLabel(PICKUP_COUNTRY, locale)}, ${pickupStreet}, ${pickupCity} ${pickupPostal}`.trim();
   };
 
   const buildDestLine = () => {
-    if (deliveryType === 'locker' || deliveryType === 'branch') {
+    if (isPointPickupMode(deliveryType)) {
       return `${countryLabel(toCountry, locale)}, ${destLocationObj?.address || t('calc.pointFallback')}`;
     }
     return `${countryLabel(toCountry, locale)}, ${destStreet}, ${destCity} ${destPostal}`.trim();
@@ -1836,6 +1964,7 @@ export function CalcForm({
       home: t('calc.modeHomeShort'),
       branch: t('calc.modeBranchShort'),
       locker: t('calc.modeLockerShort'),
+      pudo: t('calc.modePudoShort'),
     };
     return `${labels[pickup]} → ${labels[delivery]}`;
   }, [t]);
@@ -1943,12 +2072,16 @@ export function CalcForm({
       if (pickupType === 'home') {
         if (!pickupAddressReady) return t('calc.valSelectAddressHint');
         if (!pickupStreet || !pickupCity || !pickupPostal) return t('calc.valPickupAddress');
+        if (!pickupDate || isCourierPickupWeekend(pickupDate)) return t('calc.valPickupWeekday');
+        if (pickupDate < nextCourierPickupDateIso()) return t('calc.valPickupWeekday');
       }
       // Locker address is optional — it only helps filter nearby points.
       if (pickupType === 'branch' && pickupNeedsAddressRefinement && !pickupAddressReady) {
         return t('calc.valSelectAddressHint');
       }
-      if (pickupType === 'locker' && !pickupLocker) return t('calc.valSelectPickupLocker');
+      if (isLockerLikeMode(pickupType) && !pickupLocker) {
+        return pickupType === 'pudo' ? t('calc.valSelectPickupPudo') : t('calc.valSelectPickupLocker');
+      }
       if (pickupType === 'branch' && !pickupBranch) return t('calc.valSelectPickupBranch');
       if (!pickupQuoteLocation) {
         return pickupType === 'home' ? t('calc.valPickupAddress') : t('calc.valSelectPickupPointNp');
@@ -1966,8 +2099,10 @@ export function CalcForm({
         if (!destAddressReady) return t('calc.valSelectAddressHint');
         if (!destStreet || !destCity || !destPostal) return t('calc.valDeliveryAddress');
       }
-      // Locker/branch address is optional when a point is already chosen.
-      if (deliveryType === 'locker' && !destLocker) return t('calc.valSelectDestLocker');
+      // Locker/PUDO/branch address is optional when a point is already chosen.
+      if (isLockerLikeMode(deliveryType) && !destLocker) {
+        return deliveryType === 'pudo' ? t('calc.valSelectDestPudo') : t('calc.valSelectDestLocker');
+      }
       if (deliveryType === 'branch' && !destBranch) return t('calc.valSelectDestBranch');
       if (!deliveryQuoteLocation) {
         return deliveryType === 'home' ? t('calc.valDeliveryAddress') : t('calc.valSelectDeliveryPointNp');
@@ -2003,7 +2138,7 @@ export function CalcForm({
   }, [
     t, step, toCountry, pickupType, deliveryType, sizeKey, customSize, contents, contentsNote, contentValue, payer,
     senderFirst, senderLast, senderEmail, senderDial, senderPhone, pickupStreet, pickupCity, pickupPostal, pickupLocker, pickupBranch,
-    pickupNeedsAddressRefinement, pickupAddressReady,
+    pickupNeedsAddressRefinement, pickupAddressReady, pickupDate,
     receiverFirst, receiverLast, receiverEmail, receiverDial, receiverPhone, destStreet, destCity, destPostal, destLocker, destBranch,
     destAddressReady, termsAccepted, totalPrice, coverage, pickupQuoteLocation, deliveryQuoteLocation,
   ]);
@@ -2070,6 +2205,7 @@ export function CalcForm({
         amount: payAmount,
         currency: payCurrency,
         locale,
+        ...(promoCode ? { promoCode } : {}),
         sender: {
           country: PICKUP_COUNTRY,
           line: pickupLabel,
@@ -2113,14 +2249,14 @@ export function CalcForm({
             ? pickupQuoteLocation
             : divisionQuoteLocation(
               PICKUP_COUNTRY,
-              pickupType === 'locker' ? pickupLocker : pickupBranch,
+              isLockerLikeMode(pickupType) ? pickupLocker : pickupBranch,
               pointMeta(pickupLocationObj),
             ),
           deliveryLocation: deliveryType === 'home'
             ? deliveryQuoteLocation
             : divisionQuoteLocation(
               toCountry,
-              deliveryType === 'locker' ? destLocker : destBranch,
+              isLockerLikeMode(deliveryType) ? destLocker : destBranch,
               pointMeta(destLocationObj),
             ),
         },
@@ -2212,7 +2348,8 @@ export function CalcForm({
       pricePending={quoteRefreshing && totalPrice == null}
       priceIsMinimum={priceIsMinimum}
       welcomeDiscountPercent={welcomeDiscountPercent}
-      deliveryAmount={basePrice}
+      promoHint={promoHint}
+      deliveryAmount={promoTotal == null ? basePrice : extras.base}
       fragileFee={extras.fragileFee}
       insuranceFee={extras.insuranceFee}
       insurancePercent={extras.insurancePercent}
@@ -2238,12 +2375,12 @@ export function CalcForm({
 
   const deliveryModes = useMemo(() => DELIVERY_MODE_KEYS.map((key) => ({
     key,
-    label: t(`calc.mode${key === 'home' ? 'Home' : key === 'branch' ? 'Branch' : 'Locker'}`),
+    label: t(`calc.mode${key === 'home' ? 'Home' : key === 'branch' ? 'Branch' : key === 'pudo' ? 'Pudo' : 'Locker'}`),
     icon: DELIVERY_MODE_ICONS[key],
   })), [t]);
 
   const modeChipLabel = useCallback((key: DeliveryMode) => (
-    t(`calc.mode${key === 'home' ? 'HomeShort' : key === 'branch' ? 'BranchShort' : 'LockerShort'}`)
+    t(`calc.mode${key === 'home' ? 'HomeShort' : key === 'branch' ? 'BranchShort' : key === 'pudo' ? 'PudoShort' : 'LockerShort'}`)
   ), [t]);
 
   const sizeOptions = useMemo(() => (
@@ -2283,6 +2420,7 @@ export function CalcForm({
     if (!sizeAllowedModes.includes(key)) return t('calc.sizeModeUnavailable');
     if (!side || side[key]?.available) return undefined;
     if (key === 'locker') return t('calc.noLockers');
+    if (key === 'pudo') return t('calc.noPudo');
     if (key === 'branch') return t('calc.noBranch');
     return t('calc.unavailable');
   }, [t, sizeAllowedModes]);
@@ -2389,10 +2527,13 @@ export function CalcForm({
                 options={deliveryModes}
                 value={pickupType}
                 onChange={setPickupType}
+                columns={2}
                 disabledKeys={{
                   locker: PICKUP_FROM_LOCKER_COMING_SOON
                     || !sizeAllowedModes.includes('locker')
                     || (coverage ? !coverage.pickup.locker.available : false),
+                  pudo: !sizeAllowedModes.includes('pudo')
+                    || (coverage ? !coverage.pickup.pudo?.available : false),
                   branch: !sizeAllowedModes.includes('branch') || (coverage ? !coverage.pickup.branch.available : false),
                   home: !sizeAllowedModes.includes('home'),
                 }}
@@ -2403,6 +2544,7 @@ export function CalcForm({
                   locker: PICKUP_FROM_LOCKER_COMING_SOON
                     ? t('calc.pickupLockerSoonHint')
                     : modeHint(coverage?.pickup, 'locker'),
+                  pudo: modeHint(coverage?.pickup, 'pudo'),
                   branch: modeHint(coverage?.pickup, 'branch'),
                   home: modeHint(coverage?.pickup, 'home'),
                 }}
@@ -2412,13 +2554,16 @@ export function CalcForm({
                 options={deliveryModes}
                 value={deliveryType}
                 onChange={setDeliveryType}
+                columns={2}
                 disabledKeys={{
                   locker: !sizeAllowedModes.includes('locker') || (coverage ? !coverage.delivery.locker.available : false),
+                  pudo: !sizeAllowedModes.includes('pudo') || (coverage ? !coverage.delivery.pudo?.available : false),
                   branch: !sizeAllowedModes.includes('branch') || (coverage ? !coverage.delivery.branch.available : false),
                   home: !sizeAllowedModes.includes('home'),
                 }}
                 hints={{
                   locker: modeHint(coverage?.delivery, 'locker'),
+                  pudo: modeHint(coverage?.delivery, 'pudo'),
                   branch: modeHint(coverage?.delivery, 'branch'),
                   home: modeHint(coverage?.delivery, 'home'),
                 }}
@@ -2733,9 +2878,11 @@ export function CalcForm({
                 subtitle={
                   pickupType === 'locker'
                     ? t('calc.senderSubLocker')
-                    : pickupType === 'branch'
-                      ? t('calc.senderSubBranch')
-                      : t('calc.senderSubHome')
+                    : pickupType === 'pudo'
+                      ? t('calc.senderSubPudo')
+                      : pickupType === 'branch'
+                        ? t('calc.senderSubBranch')
+                        : t('calc.senderSubHome')
                 }
               />
               {quoteRefreshing && (
@@ -2788,7 +2935,7 @@ export function CalcForm({
                 />
               </div>
 
-              {pickupType === 'locker' && (
+              {isLockerLikeMode(pickupType) && (
                 <>
                   <AddressSuggest
                     label={t('calc.senderAddress')}
@@ -2798,11 +2945,13 @@ export function CalcForm({
                     country={PICKUP_COUNTRY}
                     city={pickupCity}
                     placeholder={addressPlaceholder(PICKUP_COUNTRY, pickupCity)}
-                    hint={t('calc.addressHintLockers')}
+                    hint={pickupType === 'pudo' ? t('calc.addressHintPudo') : t('calc.addressHintLockers')}
                     name="sender_address_locker"
                     bookAddresses={bookAddresses}
                   />
-                  <p className="calc-form__group-label">{t('calc.pickupLockersLabel')}</p>
+                  <p className="calc-form__group-label">
+                    {pickupType === 'pudo' ? t('calc.pickupPudoLabel') : t('calc.pickupLockersLabel')}
+                  </p>
                   {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
                   <LockerPicker
                     lockers={pickupLockersForCity}
@@ -2880,12 +3029,23 @@ export function CalcForm({
                   <div className="calc-form__grid">
                     <div className="field-block">
                       <label>{t('calc.pickupDate')}</label>
-                      <input type="date" value={pickupDate} min={tomorrowIso()} onChange={(e) => setPickupDate(e.target.value)} />
+                      <input
+                        type="date"
+                        value={pickupDate}
+                        min={nextCourierPickupDateIso()}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const next = coerceCourierPickupDate(raw);
+                          setPickupDate(next);
+                        }}
+                        onBlur={() => setPickupDate((prev) => coerceCourierPickupDate(prev))}
+                      />
+                      <p className="calc-form__hint calc-form__hint--inline">{t('calc.pickupWeekdaysHint')}</p>
                     </div>
                     <div className="field-block">
                       <label>{t('calc.pickupTime')}</label>
                       <select value={pickupTime} onChange={(e) => setPickupTime(e.target.value)}>
-                        {PICKUP_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
+                        {PICKUP_TIMES.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
                       </select>
                     </div>
                   </div>
@@ -2902,9 +3062,11 @@ export function CalcForm({
                 subtitle={
                   deliveryType === 'locker'
                     ? t('calc.receiverSubLocker')
-                    : deliveryType === 'branch'
-                      ? t('calc.receiverSubBranch')
-                      : t('calc.receiverSubHome')
+                    : deliveryType === 'pudo'
+                      ? t('calc.receiverSubPudo')
+                      : deliveryType === 'branch'
+                        ? t('calc.receiverSubBranch')
+                        : t('calc.receiverSubHome')
                 }
               />
               {quoteRefreshing && (
@@ -2955,7 +3117,7 @@ export function CalcForm({
                 />
               </div>
 
-              {deliveryType === 'locker' && (
+              {isLockerLikeMode(deliveryType) && (
                 <>
                   <AddressSuggest
                     label={t('calc.receiverAddress')}
@@ -2965,11 +3127,13 @@ export function CalcForm({
                     country={toCountry}
                     city={destCity}
                     placeholder={addressPlaceholder(toCountry, destCity)}
-                    hint={t('calc.addressHintLockers')}
+                    hint={deliveryType === 'pudo' ? t('calc.addressHintPudo') : t('calc.addressHintLockers')}
                     name="receiver_address"
                     bookAddresses={bookAddresses}
                   />
-                  <p className="calc-form__group-label">{t('calc.pickupLockersLabel')}</p>
+                  <p className="calc-form__group-label">
+                    {deliveryType === 'pudo' ? t('calc.pickupPudoLabel') : t('calc.pickupLockersLabel')}
+                  </p>
                   {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
                   <LockerPicker
                     lockers={destLockersForCity}
@@ -3078,6 +3242,65 @@ export function CalcForm({
                   <b>{payer === 'sender' ? t('calc.payerSender') : t('calc.payerReceiver')}</b>
                 </div>
               </div>
+
+              <div className="calc-form__promo">
+                {!promoOpen && !promoCode ? (
+                  <button
+                    type="button"
+                    className="calc-form__promo-toggle"
+                    onClick={() => setPromoOpen(true)}
+                  >
+                    {t('calc.promoAsk')}
+                  </button>
+                ) : (
+                  <div className="calc-form__promo-box">
+                    <label className="calc-form__promo-label" htmlFor="calc-promo-input">
+                      {t('calc.promoLabel')}
+                    </label>
+                    <div className="calc-form__promo-row">
+                      <input
+                        id="calc-promo-input"
+                        className="calc-form__promo-input"
+                        value={promoInput}
+                        placeholder={t('calc.promoPlaceholder')}
+                        autoCapitalize="characters"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        disabled={promoApplying}
+                        onChange={(e) => {
+                          setPromoInput(e.target.value.toUpperCase());
+                          setPromoError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void applyPromo();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-lime calc-form__promo-apply"
+                        disabled={promoApplying || !promoInput.trim()}
+                        onClick={() => void applyPromo()}
+                      >
+                        {promoApplying ? t('calc.promoApplying') : t('calc.promoApply')}
+                      </button>
+                    </div>
+                    {promoCode && promoHint && (
+                      <p className="calc-form__promo-ok">
+                        {promoHint}
+                        {' · '}
+                        <button type="button" className="text-link" onClick={() => { clearPromo(); setPromoInput(''); setPromoOpen(false); }}>
+                          {t('calc.promoClear')}
+                        </button>
+                      </p>
+                    )}
+                    {promoError && <p className="calc-form__promo-err">{promoError}</p>}
+                  </div>
+                )}
+              </div>
+
               <label className="calc-form__check calc-form__terms">
                 <input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} />
                 <span>{t('calc.terms')}</span>

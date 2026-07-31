@@ -969,6 +969,67 @@ export async function sendOrderTrackingEmail(order) {
   });
 }
 
+function deliveryPointContext(order) {
+  const tariff = order?.payload?.tariff || {};
+  const receiver = order?.payload?.receiver || {};
+  const loc = tariff.deliveryLocation || {};
+  const mode = String(tariff.deliveryMode || tariff.deliveryType || 'locker').toLowerCase();
+  const placeTypeKey = mode === 'pudo'
+    ? 'arrivedPlacePudo'
+    : mode === 'branch'
+      ? 'arrivedPlaceBranch'
+      : 'arrivedPlaceLocker';
+  const name = String(loc.name || loc.provider || '').trim();
+  const address = String(loc.address || receiver.destinationLine || '').trim();
+  return { mode, placeTypeKey, name, address };
+}
+
+/** Parcel waiting at Postomat / PUDO / branch — no PIN (NP sends that separately). */
+export async function sendArrivedAtPointEmail(order) {
+  const locale = localeFromOrder(order);
+  const t = (key, vars) => mailT(locale, key, vars);
+  const { placeTypeKey, name, address } = deliveryPointContext(order);
+  const placeType = t(placeTypeKey);
+  const ttn = String(order.npTtn || '').trim() || '—';
+  const placeLine = [name, address].filter(Boolean).join(' · ') || placeType;
+
+  const extraRows = [
+    detailRow(t('arrivedPlaceLabel'), escapeHtml(placeType), { strong: true, dark: true }),
+    name ? detailRow(t('arrivedPointName'), escapeHtml(name), { dark: true }) : '',
+    address
+      ? detailRow(t('arrivedAddress'), escapeHtml(address), { last: true, dark: true })
+      : detailRow(t('status'), escapeHtml(t('arrivedBanner')), { strong: true, last: true, dark: true }),
+  ].join('');
+
+  const html = baseTemplate({
+    title: t('arrivedTitle', { place: placeType }),
+    preheader: t('arrivedPre', { place: placeType, ttn, orderNumber: order.orderNumber }),
+    banner: t('arrivedBanner'),
+    headerRight: order.npTtn || order.orderNumber,
+    locale,
+    bodyHtml: `
+      <p style="margin:0 0 4px;font-family:${FONT.body};font-size:15px;line-height:1.65;color:${BRAND.muted};">
+        ${escapeHtml(t('arrivedIntro', { place: placeType }))}
+      </p>
+      <p style="margin:10px 0 4px;font-family:${FONT.body};font-size:14px;line-height:1.6;color:${BRAND.muted};">
+        ${escapeHtml(t('arrivedCodeNote'))}
+      </p>
+      ${orderSummaryBlock(order, extraRows, locale)}
+      <p style="margin:0 0 14px;font-family:${FONT.body};font-size:13px;line-height:1.55;color:${BRAND.muted};">
+        ${escapeHtml(t('arrivedPickupHint', { place: placeLine }))}
+      </p>
+      ${ctaButton(appUrl(), t('trackParcel'))}
+    `,
+  });
+
+  return deliverOrderMail({
+    order,
+    subject: t('arrivedSubject', { orderNumber: order.orderNumber, place: placeType }),
+    html,
+    outboxName: `order-arrived-${order.id}-${Date.now()}.html`,
+  });
+}
+
 /** Warm asset cache / validate brand files exist (optional startup check). */
 export async function assertMailAssets() {
   const required = ['logo-mark.png'];

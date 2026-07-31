@@ -819,6 +819,7 @@ export function finalizeNovaPostClientPrice({
   weightKg = 0,
   monthlyShipments = 1,
   welcomeDiscountPercent = 0,
+  promo = null,
   source = 'novapost',
   deliveryMode,
   npServices = null,
@@ -842,6 +843,35 @@ export function finalizeNovaPostClientPrice({
   if (appliedWelcomePercent > 0) {
     welcomeDiscountAmount = beforeVat * (appliedWelcomePercent / 100);
     beforeVat -= welcomeDiscountAmount;
+  }
+
+  let promoDiscountAmount = 0;
+  let appliedPromo = null;
+  const promoType = promo?.type === 'fixed' ? 'fixed' : (promo?.type === 'percent' ? 'percent' : null);
+  const promoValue = Number(promo?.value) || 0;
+  const promoCode = String(promo?.code || '').trim().toUpperCase();
+  if (promoType && promoValue > 0 && promoCode) {
+    if (promoType === 'percent') {
+      const pct = Math.min(100, promoValue);
+      promoDiscountAmount = beforeVat * (pct / 100);
+      appliedPromo = {
+        id: promo.id || null,
+        code: promoCode,
+        type: 'percent',
+        value: pct,
+        amount: Math.round(promoDiscountAmount * 100) / 100,
+      };
+    } else {
+      promoDiscountAmount = Math.min(beforeVat, promoValue);
+      appliedPromo = {
+        id: promo.id || null,
+        code: promoCode,
+        type: 'fixed',
+        value: promoValue,
+        amount: Math.round(promoDiscountAmount * 100) / 100,
+      };
+    }
+    beforeVat -= promoDiscountAmount;
   }
 
   const afterVat = applyVat(beforeVat, settings);
@@ -877,6 +907,17 @@ export function finalizeNovaPostClientPrice({
       title: `Скидка новичка −${appliedWelcomePercent}%`,
       detail: 'одноразовая',
       value: -Math.round(welcomeDiscountAmount * 100) / 100,
+    });
+  }
+  if (appliedPromo) {
+    const title = appliedPromo.type === 'percent'
+      ? `Промокод ${appliedPromo.code} −${appliedPromo.value}%`
+      : `Промокод ${appliedPromo.code} −${appliedPromo.value} ${currency}`;
+    log.push({
+      step: log.length + 1,
+      title,
+      detail: 'промокод',
+      value: -Math.round(promoDiscountAmount * 100) / 100,
     });
   }
   if (settings?.vatEnabled) {
@@ -917,6 +958,13 @@ export function finalizeNovaPostClientPrice({
       welcomeDiscountPercent: appliedWelcomePercent || null,
       welcomeDiscountAmount: appliedWelcomePercent > 0
         ? Math.round(welcomeDiscountAmount * 100) / 100
+        : null,
+      promoCode: appliedPromo?.code || null,
+      promoId: appliedPromo?.id || null,
+      promoType: appliedPromo?.type || null,
+      promoValue: appliedPromo?.value || null,
+      promoDiscountAmount: appliedPromo
+        ? Math.round(promoDiscountAmount * 100) / 100
         : null,
       beforeVat: Math.round(beforeVat * 100) / 100,
       afterVat: Math.round(afterVat * 100) / 100,
