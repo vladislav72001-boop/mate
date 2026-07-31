@@ -4,6 +4,7 @@
  */
 
 import { localeFromOrder, mailT, intlLocale } from './mail-i18n.mjs';
+import { barcodeImageUrls } from './barcode.mjs';
 
 const BRAND = {
   lime: '#D2E84D',
@@ -333,17 +334,9 @@ function mapBlock({ pinLabel, distanceLabel, fromLabel, nested = false }) {
 }
 
 function barcodeBlock({ title, track }) {
-  let qrHtml = '';
-  const seed = String(track || 'MATE');
-  for (let y = 0; y < 9; y += 1) {
-    qrHtml += '<tr>';
-    for (let x = 0; x < 9; x += 1) {
-      const corner = (x < 3 && y < 3) || (x > 5 && y < 3) || (x < 3 && y > 5);
-      const on = corner || ((x * 3 + y * 5 + seed.charCodeAt(0)) % 4) !== 0;
-      qrHtml += `<td style="width:4px;height:4px;background:${on ? BRAND.black : BRAND.white};font-size:0;line-height:0;">&nbsp;</td>`;
-    }
-    qrHtml += '</tr>';
-  }
+  const urls = barcodeImageUrls(track, appUrl());
+  const display = formatTrackDisplay(track);
+  if (!urls.value) return '';
 
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;border:1px dashed ${BRAND.line};border-radius:14px;background:${BRAND.white};">
@@ -354,7 +347,7 @@ function barcodeBlock({ title, track }) {
       </tr>
       <tr>
         <td style="padding:0 16px 10px;font-family:${FONT.display};font-size:26px;font-weight:700;letter-spacing:.06em;color:${BRAND.ink};">
-          ${escapeHtml(track)}
+          ${escapeHtml(display)}
         </td>
       </tr>
       <tr>
@@ -362,12 +355,22 @@ function barcodeBlock({ title, track }) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td style="vertical-align:middle;padding-right:12px;">
-                <div style="height:46px;border-radius:4px;background:repeating-linear-gradient(90deg,#111 0 2px,#fff 2px 3px,#111 3px 5px,#fff 5px 7px,#111 7px 8px,#fff 8px 10px);"></div>
+                <img
+                  src="${escapeHtml(urls.code128)}"
+                  alt="${escapeHtml(urls.value)}"
+                  width="280"
+                  height="56"
+                  style="display:block;width:100%;max-width:280px;height:auto;border:0;outline:none;text-decoration:none;"
+                />
               </td>
-              <td width="52" style="vertical-align:middle;">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${BRAND.black};padding:3px;">
-                  ${qrHtml}
-                </table>
+              <td width="72" style="vertical-align:middle;">
+                <img
+                  src="${escapeHtml(urls.qr)}"
+                  alt="QR ${escapeHtml(urls.value)}"
+                  width="64"
+                  height="64"
+                  style="display:block;width:64px;height:64px;border:0;outline:none;text-decoration:none;"
+                />
               </td>
             </tr>
           </table>

@@ -12,6 +12,7 @@ import {
   hasFinalizedCourierPickup,
   orderNeedsCourierPickup,
 } from './novapost/pickup.mjs';
+import { code128Png, qrPng, isSafeBarcodeValue } from './barcode.mjs';
 import { validateCheckoutBody } from './shipping-validate.mjs';
 import { normalizeMailLocale } from './mail-i18n.mjs';
 import {
@@ -1257,6 +1258,33 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     } catch (err) {
       console.error('[shipping] status:', err);
       res.status(500).json({ error: 'Не удалось получить статус' });
+    }
+  });
+
+  /** Public TTN barcodes for transactional emails (Code128 + QR). */
+  router.get('/barcode/:kind/:value', async (req, res) => {
+    try {
+      const kind = String(req.params.kind || '').toLowerCase();
+      let value = String(req.params.value || '');
+      if (value.toLowerCase().endsWith('.png')) value = value.slice(0, -4);
+      try {
+        value = decodeURIComponent(value);
+      } catch {
+        /* keep raw */
+      }
+      if (kind !== 'code128' && kind !== 'qr') {
+        return res.status(404).json({ error: 'Unknown barcode kind' });
+      }
+      if (!isSafeBarcodeValue(value)) {
+        return res.status(400).json({ error: 'Invalid barcode value' });
+      }
+      const png = kind === 'qr' ? await qrPng(value) : await code128Png(value);
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      res.send(png);
+    } catch (err) {
+      console.error('[shipping] barcode:', err);
+      res.status(500).json({ error: err?.message || 'Barcode failed' });
     }
   });
 

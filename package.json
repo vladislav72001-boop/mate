@@ -23,6 +23,7 @@
     "@prisma/client": "^6.19.0",
     "@react-oauth/google": "^0.13.5",
     "bcryptjs": "^3.0.2",
+    "bwip-js": "^4.11.2",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.1.0",
