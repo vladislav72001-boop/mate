@@ -222,7 +222,13 @@ function addressQuoteLocation(
   return {
     kind: 'address',
     countryCode,
-    addressParts: { city: city.trim(), street, building, postCode: postCode.trim() },
+    addressParts: {
+      city: city.trim(),
+      region: city.trim(),
+      street,
+      building,
+      postCode: postCode.trim(),
+    },
   };
 }
 
@@ -831,18 +837,26 @@ export function CalcForm({
 
   const skipInitialDestCitySync = useRef(Boolean(saved?.destCity?.trim()));
 
+  // Only when destination country changes — never fight free-text typing in the city field.
+  // Previously deps included destCity, so every partial keystroke (Ber… / Берл…) reset back
+  // to the default city and looked like a constant page refresh on mobile.
   useEffect(() => {
     const cities = citiesForCountry(toCountry);
     if (!cities.length) return;
-    const destOk = destCity.trim() && cities.some((c) => c.toLowerCase() === destCity.trim().toLowerCase());
+
     if (skipInitialDestCitySync.current) {
       skipInitialDestCitySync.current = false;
-      if (destOk) return;
+      return;
     }
-    if (!destOk) {
-      setDestCity(defaultCityValueForCountry(toCountry));
-    }
-  }, [toCountry, destCity]);
+
+    setDestCity((prev) => {
+      const ok = Boolean(
+        prev.trim()
+        && cities.some((c) => c.toLowerCase() === prev.trim().toLowerCase()),
+      );
+      return ok ? prev : defaultCityValueForCountry(toCountry);
+    });
+  }, [toCountry]);
 
   useEffect(() => {
     if (!user) return;
