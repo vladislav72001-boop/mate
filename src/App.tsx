@@ -7,6 +7,7 @@ import {
   loadActiveCalcDraft,
   clearAllCalcDrafts,
   mergeGuestDraftIntoCart,
+  suppressCalcDraftWrites,
   CALC_DRAFT_EVENT,
 } from './components/calc/calcDraft';
 import { CalcDraftCart } from './components/calc/CalcDraftCart';
@@ -379,6 +380,7 @@ function App() {
 
   const showDraftCart = Boolean(
     activeDraft
+    && !paymentNotice
     && page !== 'admin'
     && !calcOpen
     && !(page === 'home' && heroCalcStep > 1),
@@ -394,6 +396,7 @@ function App() {
   }, [activeDraft?.step]);
 
   const handleContinueDraft = useCallback(() => {
+    suppressCalcDraftWrites(false);
     if (page === 'home') {
       resumeDraftStep();
       return;
@@ -405,6 +408,7 @@ function App() {
   }, [page, resumeDraftStep]);
 
   const openCalcFresh = useCallback(() => {
+    suppressCalcDraftWrites(false);
     setCalcModalResume(false);
     setCalcOpen(true);
   }, []);
@@ -506,10 +510,15 @@ function App() {
   }, [page]);
 
   useEffect(() => {
+    const bootParams = new URLSearchParams(window.location.search);
+    const paymentReturn = bootParams.get('payment') === 'success'
+      || bootParams.get('payment') === 'cancel'
+      || Boolean(bootParams.get('pay'));
     const token = getStoredToken();
     if (!token) {
       setSessionReady(true);
-      if (normalizePath() === '/cabinet') {
+      // Don't bounce payment-return guests off /cabinet while success UI is resolving.
+      if (normalizePath() === '/cabinet' && !paymentReturn) {
         setPage('home');
         window.history.replaceState({}, '', '/');
         setClientAuthMode('login');
@@ -526,7 +535,7 @@ function App() {
       })
       .catch(() => {
         clearSession();
-        if (normalizePath() === '/cabinet') {
+        if (normalizePath() === '/cabinet' && !paymentReturn) {
           setPage('home');
           window.history.replaceState({}, '', '/');
           setClientAuthMode('login');
@@ -559,6 +568,8 @@ function App() {
       resumeCheckout(payToken)
         .then((result) => {
           if (result.checkoutUrl) {
+            suppressCalcDraftWrites(true);
+            clearAllCalcDrafts();
             window.location.assign(result.checkoutUrl);
             return;
           }
@@ -591,8 +602,12 @@ function App() {
     }
 
     if (payment === 'success' && token) {
+      // Paid shipment is done — never show unfinished draft cart on return.
+      suppressCalcDraftWrites(true);
+      clearAllCalcDrafts();
       resumePaymentFromUrl(token)
         .then(async (order) => {
+          clearAllCalcDrafts();
           setPaymentNotice({ type: 'success', order });
           setOrdersRefresh((n) => n + 1);
           const sessionToken = getStoredToken();
@@ -600,17 +615,22 @@ function App() {
             try {
               const { user: me } = await fetchMe(sessionToken);
               setUser(me);
+              clearAllCalcDrafts(me.id);
+              setPage(me.type === 'corp' ? 'dashboard' : 'client-dashboard');
             } catch {
-              /* loyalty/orders refresh still updates discount visibility */
+              /* Guest / expired session: keep success screen on home, do not bounce. */
+              setPage('home');
             }
+          } else {
+            setPage('home');
           }
-          setPage('client-dashboard');
         })
         .catch((err) => {
           const captured = Boolean((err as { paymentCaptured?: boolean })?.paymentCaptured)
             || (err as { code?: string })?.code === 'NP_AFTER_PAYMENT_FAILED';
           const order = (err as { data?: ShippingOrder })?.data;
           if (captured) {
+            clearAllCalcDrafts();
             setPaymentNotice({
               type: 'paid_np_pending',
               order,
@@ -626,7 +646,8 @@ function App() {
           });
         })
         .finally(() => {
-          window.history.replaceState({}, '', '/cabinet');
+          const stayCabinet = Boolean(getStoredToken());
+          window.history.replaceState({}, '', stayCabinet ? '/cabinet' : '/');
         });
     } else if (payment === 'cancel') {
       setPaymentNotice({ type: 'cancel', message: t('payment.cancelMsg') });
@@ -1302,6 +1323,7 @@ function App() {
           }}
           onCreateAnother={() => {
             setPaymentNotice(null);
+            suppressCalcDraftWrites(false);
             clearAllCalcDrafts(user?.id);
             goPage('home');
             openCalcFresh();

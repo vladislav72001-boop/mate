@@ -18,14 +18,12 @@ export function useCalcDraftPersistence(
 
   const flush = useCallback(() => {
     if (!enabled) return;
-    if (skipFlushRef?.current) {
-      skipFlushRef.current = false;
-      return;
-    }
+    // Sticky skip: checkout/reset sets this so pagehide + effect cleanup do not re-save.
+    if (skipFlushRef?.current) return;
     const data = snapshotRef.current();
     if (data.step < MIN_DRAFT_BANNER_STEP) return;
     saveCalcDraft(inModalRef.current, data, userIdRef.current);
-  }, [enabled]);
+  }, [enabled, skipFlushRef]);
 
   useEffect(() => {
     const onHide = () => {

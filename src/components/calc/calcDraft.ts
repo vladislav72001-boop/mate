@@ -266,12 +266,20 @@ function mergeDraftStep(
   return incoming;
 }
 
+/** Blocks saveCalcDraft (pagehide/unmount flush after checkout must not revive the cart). */
+let calcDraftWritesSuppressed = false;
+
+export function suppressCalcDraftWrites(suppressed = true) {
+  calcDraftWritesSuppressed = suppressed;
+}
+
 export function saveCalcDraft(
   inModal: boolean,
   draft: Omit<CalcDraft, 'v' | 'savedAt'>,
   userId?: string | null,
 ) {
   try {
+    if (calcDraftWritesSuppressed) return;
     if (draft.step < MIN_DRAFT_BANNER_STEP) return;
     const payload = mergeDraftStep(draft, inModal, userId);
     if (userId) {
@@ -304,6 +312,16 @@ export function clearCalcDraft(inModal: boolean, userId?: string | null) {
 export function clearAllCalcDrafts(userId?: string | null) {
   clearCalcDraft(true, userId);
   clearCalcDraft(false, userId);
+  // Payment return often clears before user id is known — wipe every cart key.
+  try {
+    const prefix = 'mate-calc-cart-';
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(prefix)) localStorage.removeItem(key);
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Merge guest session draft into user cart after login (keeps newest). */

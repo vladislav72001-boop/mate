@@ -63,7 +63,12 @@ import {
   formatRoute,
   type SummaryRow,
 } from './calc/OrderSummary';
-import { loadCalcDraft, clearCalcDraft, splitPersonName } from './calc/calcDraft';
+import {
+  loadCalcDraft,
+  clearAllCalcDrafts,
+  suppressCalcDraftWrites,
+  splitPersonName,
+} from './calc/calcDraft';
 import { useCalcDraftPersistence } from './calc/useCalcDraft';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
@@ -2277,7 +2282,10 @@ export function CalcForm({
       });
 
       if (result.awaitingRecipientPayment) {
-        clearCalcDraft(inModal, user?.id);
+        // Stop pagehide/unmount from re-writing the draft after we clear it.
+        skipDraftFlushRef.current = true;
+        suppressCalcDraftWrites(true);
+        clearAllCalcDrafts(user?.id);
         onAwaitingRecipientPayment?.({
           orderNumber: result.orderNumber,
           publicToken: result.publicToken,
@@ -2290,7 +2298,10 @@ export function CalcForm({
       }
 
       if (result.checkoutUrl) {
-        clearCalcDraft(inModal, user?.id);
+        // Clear before Stripe redirect; suppress saves so pagehide cannot revive the cart.
+        skipDraftFlushRef.current = true;
+        suppressCalcDraftWrites(true);
+        clearAllCalcDrafts(user?.id);
         window.location.assign(result.checkoutUrl);
         return;
       }
