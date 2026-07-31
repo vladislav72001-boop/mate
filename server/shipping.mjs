@@ -7,6 +7,11 @@ import {
   mapNovaPostStatusToOrderStatus,
   isArrivedAtPickupPointStatus,
 } from './novapost/shipment.mjs';
+import {
+  createCourierPickupForShipment,
+  hasFinalizedCourierPickup,
+  orderNeedsCourierPickup,
+} from './novapost/pickup.mjs';
 import { validateCheckoutBody } from './shipping-validate.mjs';
 import { normalizeMailLocale } from './mail-i18n.mjs';
 import {
@@ -990,9 +995,19 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const order = await findByPublicToken(req.params.publicToken);
       if (!order) return res.status(404).json({ error: 'Заказ не найден' });
 
+      const bodyForCheck = order.payload || {};
+      const needsPickup = orderNeedsCourierPickup(bodyForCheck);
+      const pickupDone = hasFinalizedCourierPickup(order);
+
       // Already fully registered in Nova Post — idempotent OK.
-      if (['submitted', 'waiting_from_you', 'delivered'].includes(order.status)
-        || (order.status === 'paid' && order.npRef && order.npTtn && !isMockNpOrder(order))) {
+      // Home/courier still needs a finalized NP pickup even if shipment exists.
+      if (['submitted', 'delivered'].includes(order.status)) {
+        return res.json({ data: publicOrder(order) });
+      }
+      if (
+        (order.status === 'waiting_from_you' || (order.status === 'paid' && order.npRef && order.npTtn && !isMockNpOrder(order)))
+        && (!needsPickup || pickupDone)
+      ) {
         return res.json({ data: publicOrder(order) });
       }
 
@@ -1003,7 +1018,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           const status = payErr.status || 402;
           return res.status(status).json({ error: payErr.message || 'Оплата не завершена' });
         }
-      } else if (order.paymentMode === 'stripe' && order.status !== 'paid') {
+      } else if (order.paymentMode === 'stripe' && order.status !== 'paid' && order.status !== 'waiting_from_you') {
         return res.status(402).json({ error: 'Сначала завершите оплату на странице Stripe' });
       }
       // mock payment mode — skip Stripe verification
@@ -1036,11 +1051,42 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         await maybeConsumePromoCode(paidOrder);
       }
 
-      // Legacy: shipment already created before payment — just mark waiting.
+      // Shipment already exists — optionally create missing courier pickup, then mark waiting.
       if (paidOrder.npRef && paidOrder.npTtn && !isMockNpOrder(paidOrder)) {
+        let snap = (paidOrder.npSnapshot && typeof paidOrder.npSnapshot === 'object')
+          ? { ...paidOrder.npSnapshot }
+          : {};
+        if (orderNeedsCourierPickup(nextPayload) && !hasFinalizedCourierPickup(paidOrder)) {
+          try {
+            const pickup = await createCourierPickupForShipment(
+              { ...nextPayload, clientOrder: paidOrder.orderNumber },
+              { npRef: paidOrder.npRef, npTtn: paidOrder.npTtn },
+            );
+            snap = { ...snap, pickup, pickupError: null };
+          } catch (pickupErr) {
+            const msg = pickupErr instanceof Error ? pickupErr.message : String(pickupErr);
+            console.error('[shipping] NP pickup after existing shipment failed:', msg);
+            const failedOrder = await updateOrder(paidOrder.id, {
+              status: 'paid',
+              paidAt: paidOrder.paidAt || paidAt,
+              npSnapshot: {
+                ...snap,
+                pickupError: { error: msg, at: new Date().toISOString() },
+              },
+              ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
+            }) || paidOrder;
+            return res.status(502).json({
+              error: msg,
+              code: 'NP_PICKUP_FAILED',
+              paymentCaptured: true,
+              data: publicOrder(failedOrder),
+            });
+          }
+        }
         const updated = await updateOrder(paidOrder.id, {
           status: 'waiting_from_you',
           paidAt: paidOrder.paidAt || paidAt,
+          npSnapshot: snap,
           ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
         });
         return res.json({ data: publicOrder(updated) });
@@ -1050,11 +1096,43 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         const shipment = await createInternationalShipment(body, paidOrder.orderNumber);
         npRef = shipment.npRef;
 
+        let snapshot = { ...shipment.snapshot };
+        if (orderNeedsCourierPickup(body)) {
+          try {
+            const pickup = await createCourierPickupForShipment(
+              { ...body, clientOrder: paidOrder.orderNumber },
+              shipment,
+            );
+            snapshot = { ...snapshot, pickup };
+          } catch (pickupErr) {
+            // Keep shipment — payment is captured; retry confirm-payment creates pickup only.
+            const msg = pickupErr instanceof Error ? pickupErr.message : String(pickupErr);
+            console.error('[shipping] NP pickup after payment failed:', msg);
+            const failedOrder = await updateOrder(paidOrder.id, {
+              status: 'paid',
+              paidAt: paidOrder.paidAt || paidAt,
+              npRef: shipment.npRef,
+              npTtn: shipment.npTtn,
+              npSnapshot: {
+                ...snapshot,
+                pickupError: { error: msg, at: new Date().toISOString() },
+              },
+              payload: nextPayload,
+            }) || paidOrder;
+            return res.status(502).json({
+              error: msg,
+              code: 'NP_PICKUP_FAILED',
+              paymentCaptured: true,
+              data: publicOrder(failedOrder),
+            });
+          }
+        }
+
         const updated = await updateOrder(paidOrder.id, {
           status: 'waiting_from_you',
           npRef: shipment.npRef,
           npTtn: shipment.npTtn,
-          npSnapshot: shipment.snapshot,
+          npSnapshot: snapshot,
           paidAt: paidOrder.paidAt || paidAt,
           payload: nextPayload,
         });

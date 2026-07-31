@@ -31,6 +31,11 @@ import {
   publicOrder,
 } from './orders.mjs';
 import { resolveCheckoutAmount } from './shipping.mjs';
+import {
+  createCourierPickupForShipment,
+  hasFinalizedCourierPickup,
+  orderNeedsCourierPickup,
+} from './novapost/pickup.mjs';
 import { sendPasswordChangedEmail, sendProfileUpdatedEmail, sendOrderStatusEmail, sendOrderTrackingEmail, sendArrivedAtPointEmail } from './mail.mjs';
 import { localeFromRequest } from './mail-i18n.mjs';
 
@@ -538,6 +543,48 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
     } catch (err) {
       console.error('[admin] resend waiting:', err);
       res.status(500).json({ error: err?.message || 'Не удалось отправить письмо' });
+    }
+  });
+
+  /** Create / finalize Nova Post courier pickup for home/address orders missing it. */
+  router.post('/orders/:id/ensure-courier-pickup', async (req, res) => {
+    try {
+      const order = await findOrderById(req.params.id);
+      if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      if (!orderNeedsCourierPickup(order)) {
+        return res.status(400).json({ error: 'Заказ не с адресным забором курьером' });
+      }
+      if (!order.npRef || !order.npTtn || String(order.npRef).startsWith('mock-')) {
+        return res.status(400).json({ error: 'Сначала нужно создать shipment (TTN) в Nova Post' });
+      }
+      if (hasFinalizedCourierPickup(order) && !req.body?.force) {
+        return res.json({
+          ok: true,
+          already: true,
+          pickup: order.npSnapshot?.pickup || null,
+          order: publicOrder(order),
+        });
+      }
+
+      const pickup = await createCourierPickupForShipment(
+        { ...(order.payload || {}), clientOrder: order.orderNumber },
+        { npRef: order.npRef, npTtn: order.npTtn },
+      );
+      const snap = (order.npSnapshot && typeof order.npSnapshot === 'object')
+        ? { ...order.npSnapshot }
+        : {};
+      const updated = await updateOrder(order.id, {
+        status: order.status === 'paid' ? 'waiting_from_you' : order.status,
+        npSnapshot: { ...snap, pickup, pickupError: null },
+      });
+      res.json({
+        ok: true,
+        pickup,
+        order: publicOrder(updated),
+      });
+    } catch (err) {
+      console.error('[admin] ensure-courier-pickup:', err);
+      res.status(502).json({ error: err?.message || 'Не удалось создать пикап в Nova Post' });
     }
   });
 
