@@ -656,4 +656,16 @@ if (existsSync(distDir)) {
 
 app.listen(PORT, () => {
   console.log(`MATE API running on http://localhost:${PORT}`);
+  if (String(process.env.RUN_CALC_QA_ON_BOOT || '').toLowerCase() === '1') {
+    const delayMs = Number(process.env.CALC_QA_BOOT_DELAY_MS || 8000);
+    setTimeout(() => {
+      import('./scripts/calc-qa-on-boot.mjs')
+        .then(({ runCalcQa }) => runCalcQa(`http://127.0.0.1:${PORT}`))
+        .then((report) => {
+          if (report?.fail) console.error(`[calc-qa] finished with ${report.fail} failure(s)`);
+          else console.log('[calc-qa] finished OK');
+        })
+        .catch((err) => console.error('[calc-qa] boot run failed:', err?.message || err));
+    }, delayMs);
+  }
 });
