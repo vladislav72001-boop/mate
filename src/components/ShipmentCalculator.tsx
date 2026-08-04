@@ -511,7 +511,8 @@ function sizeToApiKey(
 
 function normalizeSizeKey(sizeKey: SizeKey): SizeKey {
   if (sizeKey === 'envelope') return 'XS';
-  if (sizeKey === 'XXL') return 'XL';
+  // XL is not a size tile (custom slider covers 30 kg) — restore as custom, not M.
+  if (sizeKey === 'XXL' || sizeKey === 'XL') return 'custom';
   if (SIZE_OPTION_KEYS.includes(sizeKey as ParcelKey | 'custom')) return sizeKey;
   return 'M';
 }
@@ -667,10 +668,12 @@ export function CalcForm({
   const [sizeKey, setSizeKey] = useState<SizeKey>(() => (
     normalizeSizeKey((saved?.sizeKey as SizeKey) ?? 'M')
   ));
-  const [customSize, setCustomSize] = useState(
-    saved?.customSize
-    ?? presetToEditableSize(sizeToPreset(normalizeSizeKey((saved?.sizeKey as SizeKey) ?? 'M'), buildCustomSizeFromWeight(2))),
-  );
+  const [customSize, setCustomSize] = useState(() => {
+    if (saved?.customSize) return saved.customSize;
+    const raw = (saved?.sizeKey as SizeKey) ?? 'M';
+    if (raw === 'XL' || raw === 'XXL') return presetToEditableSize(PARCEL_PRESETS.XL);
+    return presetToEditableSize(sizeToPreset(normalizeSizeKey(raw), buildCustomSizeFromWeight(2)));
+  });
   const [contents, setContents] = useState<ContentKey>(saved?.contents ?? 'gift');
   const [contentsNote, setContentsNote] = useState(saved?.contentsNote ?? '');
   const [contentValue, setContentValue] = useState<ValueKey>(saved?.contentValue ?? 'under100');
@@ -828,10 +831,16 @@ export function CalcForm({
     if (resetToStep1Signal == null) return;
     if (prevResetSignal.current === resetToStep1Signal) return;
     prevResetSignal.current = resetToStep1Signal;
+    // Skip one flush cycle so reset/dismiss does not re-save the old high-step draft.
+    // Must clear afterwards — sticky true killed draft saves for the rest of the session.
     skipDraftFlushRef.current = true;
     setStep(1);
     onStepChange?.(1);
     setError(null);
+    const t = window.setTimeout(() => {
+      skipDraftFlushRef.current = false;
+    }, 450);
+    return () => window.clearTimeout(t);
   }, [resetToStep1Signal, onStepChange]);
 
   useEffect(() => {
@@ -2135,6 +2144,7 @@ export function CalcForm({
     if (step === 9) {
       if (!termsAccepted) return t('calc.valAcceptTerms');
       if (totalPrice == null) return t('calc.valWaitQuote');
+      if (!(Number(totalPrice) > 0)) return t('calc.valWaitQuote');
       if (!pickupQuoteLocation) {
         return pickupType === 'home' ? t('calc.valPickupAddress') : t('calc.valSelectPickupPointNp');
       }
@@ -2188,7 +2198,7 @@ export function CalcForm({
       setError(stepErr);
       return;
     }
-    if (totalPrice == null || payInFlight.current || submitting) return;
+    if (totalPrice == null || !(Number(totalPrice) > 0) || payInFlight.current || submitting) return;
     const payEmail = senderEmail.trim().toLowerCase();
     const emailErr = validateEmail(payEmail, t('calc.fieldSenderEmail'));
     if (emailErr) {
@@ -2344,12 +2354,12 @@ export function CalcForm({
         <button
           type="button"
           className="btn btn-lime"
-          disabled={submitting || totalPrice == null || quoteRefreshing}
+          disabled={submitting || totalPrice == null || !(Number(totalPrice) > 0) || quoteRefreshing}
           onClick={handlePay}
         >
           {submitting
             ? (payer === 'receiver' ? t('calc.sendingPayLink') : t('calc.paying'))
-            : (totalPrice == null || quoteRefreshing)
+            : (totalPrice == null || !(Number(totalPrice) > 0) || quoteRefreshing)
               ? t('calc.summaryCalculating')
               : payer === 'receiver'
                 ? t('calc.sendPayLink', { amount: formatMoney(totalPrice) })

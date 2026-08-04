@@ -53,8 +53,8 @@ export async function runCalcQa(baseUrl) {
         json = await res.json().catch(() => ({}));
       } else {
         const buf = await res.arrayBuffer();
-        text = Buffer.from(buf).toString('utf8').slice(0, 500);
-        json = { bytes: buf.byteLength, contentType: ct, textSnippet: text.slice(0, 120) };
+        text = Buffer.from(buf).toString('utf8').slice(0, 4000);
+        json = { bytes: buf.byteLength, contentType: ct, textSnippet: text.slice(0, 1500) };
       }
       return { status: res.status, json, contentType: ct, headers: res.headers };
     } catch (e) {
@@ -87,7 +87,7 @@ export async function runCalcQa(baseUrl) {
     const r = await get(path, { expectJson: false, accept: 'text/html' });
     ok(r.status === 200, `page ${path} HTTP ${r.status}`);
     if (path === '/') {
-      soft(/mate|Mate|MATE/i.test(r.json?.textSnippet || ''), 'home HTML mentions Mate');
+      soft(/mate|Mate|MATE/i.test(String(r.json?.textSnippet || '') + String(JSON.stringify(r.json || '')).slice(0, 800)), 'home HTML mentions Mate');
       soft((r.json?.contentType || '').includes('text/html'), 'home content-type html');
     }
   }

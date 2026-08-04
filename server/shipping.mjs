@@ -174,6 +174,21 @@ function resolvePricingMode(pickupRaw, deliveryRaw) {
   return rank[pickup] >= rank[delivery] ? pickup : delivery;
 }
 
+/** Countries exposed in the B2C calculator UI (ISO2). */
+const QUOTE_COUNTRY_CODES = new Set([
+  'HU', 'PL', 'DE', 'FR', 'ES', 'IT', 'CZ', 'SK', 'AT', 'RO', 'UA',
+  'LT', 'LV', 'EE', 'NL', 'BE', 'GB', 'MD',
+]);
+
+function assertQuoteCountries(fromCountry, toCountry) {
+  const from = String(fromCountry || '').toUpperCase();
+  const to = String(toCountry || '').toUpperCase();
+  if (!QUOTE_COUNTRY_CODES.has(from) || !QUOTE_COUNTRY_CODES.has(to)) {
+    return `Неподдерживаемое направление: ${from || '?'} → ${to || '?'}`;
+  }
+  return null;
+}
+
 export async function resolveCheckoutAmount(body, userId = null) {
   const parcel = body.parcel || {};
   const tariff = body.tariff || {};
@@ -602,6 +617,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       if (!fromCountry || !toCountry || !Array.isArray(sizes) || !sizes.length) {
         return res.status(400).json({ error: 'Укажите страны и размеры посылки' });
       }
+      const badRoute = assertQuoteCountries(fromCountry, toCountry);
+      if (badRoute) return res.status(400).json({ error: badRoute });
       const monthlyShipments = Number(req.body.monthlyShipments)
         || await resolveUserMonthlyShipments(req.userId);
       const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(req.userId);
@@ -782,6 +799,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       if (!toCountry || !parcel) {
         return res.status(400).json({ error: 'Укажите направление и параметры посылки' });
       }
+      const badRoute = assertQuoteCountries(fromCountry || 'HU', toCountry);
+      if (badRoute) return res.status(400).json({ error: badRoute });
       const monthlyShipments = Number(req.body.monthlyShipments)
         || await resolveUserMonthlyShipments(req.userId);
       const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(req.userId);
