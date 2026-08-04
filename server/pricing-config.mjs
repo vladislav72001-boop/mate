@@ -7,6 +7,8 @@ const DATA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data')
 const PRICING_JSON_PATH = path.join(DATA_DIR, 'pricing.json');
 /** Known bad seed that inflated B2C ~×2.8 — one-shot replace with pricing.json markups. */
 const LEGACY_MARKUP_PERCENT = 181;
+/** Previous uniform B2C markup — bump to pricing.json when DB is still all this %. */
+const PREV_UNIFORM_MARKUP_PERCENT = 20;
 
 export const DESTINATIONS = [
   'DOM', 'DE', 'CZ', 'SK', 'AT', 'LT', 'LV', 'EE',
@@ -254,6 +256,22 @@ function needsLegacyMarkupFix(pricing, jsonPricing) {
   return !jsonAllLegacy;
 }
 
+/**
+ * One-shot: DB still on uniform 20% → take new uniform markups from pricing.json (30%).
+ * Skips mixed/admin-customized markup tables.
+ */
+function needsUniformMarkupBump(pricing, jsonPricing) {
+  if (!jsonPricing?.weightMarkups?.length) return false;
+  const markups = pricing?.weightMarkups || [];
+  if (!markups.length) return false;
+  const allPrev = markups.every((m) => Number(m.percent) === PREV_UNIFORM_MARKUP_PERCENT);
+  if (!allPrev) return false;
+  const jsonPcts = jsonPricing.weightMarkups.map((m) => Number(m.percent));
+  if (!jsonPcts.length) return false;
+  const jsonUniform = jsonPcts.every((p) => p === jsonPcts[0]);
+  return jsonUniform && jsonPcts[0] !== PREV_UNIFORM_MARKUP_PERCENT;
+}
+
 /** Best-effort mirror of DB pricing into seed file (local / persistent disk). */
 async function persistPricingJson(pricing) {
   try {
@@ -422,6 +440,15 @@ export async function syncPricingFromJsonIfNeeded() {
       data: { weightMarkups: seed.weightMarkups },
     });
     console.log(`[pricing] replaced legacy ${LEGACY_MARKUP_PERCENT}% markups from JSON`);
+    current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
+  } else if (needsUniformMarkupBump(current, seed)) {
+    const fromPct = PREV_UNIFORM_MARKUP_PERCENT;
+    const toPct = Number(seed.weightMarkups[0]?.percent);
+    await prisma.pricingConfig.update({
+      where: { id: 1 },
+      data: { weightMarkups: seed.weightMarkups },
+    });
+    console.log(`[pricing] bumped uniform markups ${fromPct}% → ${toPct}% from JSON`);
     current = mapPricingRow(await prisma.pricingConfig.findUnique({ where: { id: 1 } }));
   } else if (needsHighWeightMerge({ costPrices: raw?.costPrices || {} })) {
     const mergedCosts = fillMissingWeightCosts(raw?.costPrices || {}, seed.costPrices);
