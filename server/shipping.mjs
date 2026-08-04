@@ -55,7 +55,7 @@ import { isNovaPostMock } from './novapost/client.mjs';
 import { resolveUserMonthlyShipments } from './loyalty.mjs';
 import { resolveWelcomeDiscountPercent, consumeWelcomeDiscount } from './welcome-discount.mjs';
 import { resolvePromoDiscount, consumePromoCode } from './promo-codes.mjs';
-import { sendOrderCreatedEmail, sendArrivedAtPointEmail } from './mail.mjs';
+import { sendArrivedAtPointEmail } from './mail.mjs';
 import { geocodeAddressSuggestions } from './geocode.mjs';
 import { buildWaybillPdf, waybillFilename } from './waybill-pdf.mjs';
 
@@ -93,19 +93,12 @@ function buildSideCoverage({ country, city, npCounts, useFallback }) {
   };
 }
 
-async function sendCheckoutEmail(order, checkoutUrl) {
-  if (!order?.customerEmail && !order?.payload?.receiver?.email) return;
-  const payUrl = order?.publicToken
-    ? `${String(process.env.APP_URL || 'http://localhost:5011').replace(/\/$/, '')}/?pay=${encodeURIComponent(order.publicToken)}`
-    : checkoutUrl;
-  // Never block Stripe redirect on SMTP
-  void sendOrderCreatedEmail(order, { checkoutUrl, payUrl })
-    .then(() => {
-      console.log(`[mail] checkout email sent (${order.orderNumber}) payer=${order.payload?.tariff?.payer || 'sender'}`);
-    })
-    .catch((err) => {
-      console.error('[mail] checkout email failed:', err);
-    });
+async function sendCheckoutEmail(order, _checkoutUrl) {
+  // No pre-payment emails — instructions go out only after payment
+  // (status → waiting_from_you via order-notify).
+  if (order?.orderNumber) {
+    console.log(`[mail] skip checkout email (${order.orderNumber}) — wait for payment`);
+  }
 }
 
 function isRecipientPayer(source) {
