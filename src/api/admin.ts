@@ -270,6 +270,34 @@ export async function deleteAdminPromo(id: string) {
   });
 }
 
+export type AdminAnalyticsDaySlice = {
+  total: number;
+  pendingPayment: number;
+  paidOrSubmitted: number;
+  cancelled: number;
+  revenue: number;
+  withTtn: number;
+  withUser: number;
+  guests: number;
+  fragile: number;
+  insurance: number;
+  conversionPct: number;
+  avgCheck: number;
+  medianCheck: number;
+  minCheck: number;
+  maxCheck: number;
+  byStatus: Array<{ name: string; count: number; pct: number }>;
+  topDestCountries: Array<{ name: string; count: number }>;
+  topCityRoutes: Array<{ name: string; count: number }>;
+  topOrderSizes: Array<{ name: string; count: number }>;
+  topPickupModes: Array<{ name: string; count: number }>;
+  topDeliveryModes: Array<{ name: string; count: number }>;
+  topModePairs: Array<{ name: string; count: number }>;
+  topPayers: Array<{ name: string; count: number }>;
+  byWeekday: Array<{ name: string; count: number }>;
+  byHour: Array<{ name: string; count: number }>;
+};
+
 export type AdminAnalyticsReport = {
   days: number;
   from: string;
@@ -319,6 +347,7 @@ export type AdminAnalyticsReport = {
   byHour: Array<{ name: string; count: number }>;
   daily: Array<{ date: string; orders: number; revenue: number }>;
   peakDay: { date: string; orders: number; revenue: number } | null;
+  daySlices?: Record<string, AdminAnalyticsDaySlice>;
 };
 
 export async function fetchAdminAnalytics(days: 7 | 30 | 90 = 30) {

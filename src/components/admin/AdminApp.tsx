@@ -591,10 +591,13 @@ function AnalyticsTab() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [hoverDay, setHoverDay] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setError('');
+    setSelectedDay(null);
+    setHoverDay(null);
     fetchAdminAnalytics(days)
       .then(setData)
       .catch((e) => setError(e.message || 'Ошибка загрузки'))
@@ -616,12 +619,24 @@ function AnalyticsTab() {
     );
   }
 
+  const slice = selectedDay ? data.daySlices?.[selectedDay] : null;
+  const byStatus = slice?.byStatus ?? data.byStatus;
+  const topCityRoutes = slice?.topCityRoutes ?? data.topCityRoutes;
+  const topDestCountries = slice?.topDestCountries ?? data.topDestCountries;
+  const topOrderSizes = slice?.topOrderSizes ?? data.topOrderSizes;
+  const topModePairs = slice?.topModePairs ?? data.topModePairs;
+  const topPayers = slice?.topPayers ?? data.topPayers;
+  const byWeekday = slice?.byWeekday ?? data.byWeekday;
+  const byHour = slice?.byHour ?? data.byHour;
+
   const maxReached = Math.max(1, ...data.funnel.map((f) => f.reached), 1);
   const maxDaily = Math.max(1, ...data.daily.map((d) => d.orders), 1);
-  const maxStatus = Math.max(1, ...data.byStatus.map((s) => s.count), 1);
-  const maxHour = Math.max(1, ...data.byHour.map((h) => h.count), 1);
+  const maxStatus = Math.max(1, ...byStatus.map((s) => s.count), 1);
+  const maxHour = Math.max(1, ...byHour.map((h) => h.count), 1);
   const o = data.orders;
-  const hovered = data.daily.find((d) => d.date === hoverDay) || data.peakDay;
+  const tipDay = hoverDay || selectedDay;
+  const hovered = data.daily.find((d) => d.date === tipDay)
+    || (!selectedDay ? data.peakDay : null);
 
   const statusTone = (name: string) => {
     if (name === 'cancelled') return 'danger';
@@ -629,6 +644,11 @@ function AnalyticsTab() {
     if (name === 'waiting_from_you' || name === 'paid') return 'info';
     if (name === 'submitted' || name === 'delivered') return 'ok';
     return 'neutral';
+  };
+
+  const toggleDay = (date: string, orders: number) => {
+    if (!orders) return;
+    setSelectedDay((prev) => (prev === date ? null : date));
   };
 
   const RankList = ({
@@ -650,7 +670,7 @@ function AnalyticsTab() {
           {items.map((r, idx) => (
             <li key={r.name} className="ax-rank__item" style={{ '--i': idx } as React.CSSProperties}>
               <div className="ax-rank__head">
-                <span className="ax-rank__name">{r.name}</span>
+                <span className="ax-rank__name" title={r.name}>{r.name}</span>
                 <b className="ax-rank__count">{r.count}</b>
               </div>
               <div className="ax-rank__track">
@@ -685,6 +705,10 @@ function AnalyticsTab() {
     { label: 'Хрупкое · страховка', value: `${o.fragile} · ${o.insurance}`, tone: 'warn' },
     { label: 'Сессии калькулятора', value: data.sessions, hint: data.pageViews ? `${data.pageViews} просмотров` : undefined, tone: 'ink' },
   ];
+
+  const filterHint = selectedDay
+    ? `Срез за ${selectedDay} · ${slice?.total ?? 0} зак.`
+    : 'Динамика за выбранный период · кликните день';
 
   return (
     <div className="ax admin-section admin-section--animate admin-section--fluid">
@@ -747,29 +771,40 @@ function AnalyticsTab() {
           <div className="ax-panel__head">
             <div>
               <h2>Заказы по дням</h2>
-              <p>Динамика за выбранный период</p>
+              <p>{filterHint}</p>
             </div>
-            {hovered && hovered.orders > 0 && (
-              <div className="ax-tooltip">
-                <b>{hovered.date}</b>
-                <span>{hovered.orders} зак. · {formatMoney(hovered.revenue, o.currency)}</span>
-              </div>
-            )}
+            <div className="ax-panel__actions">
+              {selectedDay && (
+                <button type="button" className="ax-filter-chip" onClick={() => setSelectedDay(null)}>
+                  Сбросить день
+                </button>
+              )}
+              {hovered && hovered.orders > 0 && (
+                <div className="ax-tooltip">
+                  <b>{hovered.date}</b>
+                  <span>{hovered.orders} зак. · {formatMoney(hovered.revenue, o.currency)}</span>
+                </div>
+              )}
+            </div>
           </div>
           <div className="ax-chart">
             {data.daily.map((d, i) => {
               const h = d.orders ? Math.max(8, (d.orders / maxDaily) * 100) : 3;
-              const active = hoverDay === d.date || (!hoverDay && data.peakDay?.date === d.date && d.orders > 0);
+              const active = selectedDay
+                ? selectedDay === d.date
+                : hoverDay === d.date || (data.peakDay?.date === d.date && d.orders > 0);
               return (
                 <button
                   key={d.date}
                   type="button"
-                  className={`ax-chart__col${d.orders ? ' has-data' : ''}${active ? ' is-active' : ''}`}
+                  className={`ax-chart__col${d.orders ? ' has-data' : ''}${active ? ' is-active' : ''}${selectedDay === d.date ? ' is-selected' : ''}`}
                   style={{ '--i': i, '--h': `${h}%` } as React.CSSProperties}
                   onMouseEnter={() => setHoverDay(d.date)}
                   onMouseLeave={() => setHoverDay(null)}
                   onFocus={() => setHoverDay(d.date)}
                   onBlur={() => setHoverDay(null)}
+                  onClick={() => toggleDay(d.date, d.orders)}
+                  aria-pressed={selectedDay === d.date}
                   aria-label={`${d.date}: ${d.orders} заказов`}
                 >
                   <span className="ax-chart__bar" />
@@ -779,8 +814,8 @@ function AnalyticsTab() {
             })}
           </div>
           <div className="ax-mini">
-            <div><span>Мин. чек</span><b>{formatMoney(o.minCheck, o.currency)}</b></div>
-            <div><span>Макс. чек</span><b>{formatMoney(o.maxCheck, o.currency)}</b></div>
+            <div><span>Мин. чек</span><b>{formatMoney(slice?.minCheck ?? o.minCheck, o.currency)}</b></div>
+            <div><span>Макс. чек</span><b>{formatMoney(slice?.maxCheck ?? o.maxCheck, o.currency)}</b></div>
             <div><span>Просмотры</span><b>{data.pageViews}</b></div>
             <div><span>Checkout из кальк.</span><b>{data.calcConversionPct == null ? '—' : `${data.calcConversionPct}%`}</b></div>
           </div>
@@ -790,11 +825,11 @@ function AnalyticsTab() {
           <div className="ax-panel__head">
             <div>
               <h2>Статусы заказов</h2>
-              <p>Где сейчас находится поток</p>
+              <p>{selectedDay ? `Только ${selectedDay}` : 'Где сейчас находится поток'}</p>
             </div>
           </div>
           <div className="ax-status">
-            {data.byStatus.map((row, i) => (
+            {byStatus.map((row, i) => (
               <div
                 key={row.name}
                 className={`ax-status__row ax-status__row--${statusTone(row.name)}`}
@@ -813,26 +848,26 @@ function AnalyticsTab() {
                 <strong className="ax-status__n">{row.count}</strong>
               </div>
             ))}
-            {data.byStatus.length === 0 && <p className="admin-muted">Нет заказов за период</p>}
+            {byStatus.length === 0 && <p className="admin-muted">Нет заказов за период</p>}
           </div>
         </section>
       </div>
 
-      <div className="ax-grid-3">
+      <div className={`ax-grid-3${selectedDay ? ' ax-grid-3--filtered' : ''}`}>
         <section className="ax-panel card">
-          <RankList title="Топ маршрутов" items={data.topCityRoutes} accent="lime" />
-          <RankList title="Страны назначения" items={data.topDestCountries} accent="teal" />
+          <RankList title="Топ маршрутов" items={topCityRoutes} accent="lime" />
+          <RankList title="Страны назначения" items={topDestCountries} accent="teal" />
         </section>
         <section className="ax-panel card">
-          <RankList title="Размеры посылок" items={data.topOrderSizes} accent="ink" />
-          <RankList title="Связки режимов" items={data.topModePairs} accent="teal" />
-          <RankList title="Кто платит" items={data.topPayers} accent="lime" />
+          <RankList title="Размеры посылок" items={topOrderSizes} accent="ink" />
+          <RankList title="Связки режимов" items={topModePairs} accent="teal" />
+          <RankList title="Кто платит" items={topPayers} accent="lime" />
         </section>
         <section className="ax-panel card">
-          <RankList title="Дни недели" items={data.byWeekday} accent="ink" />
+          <RankList title="Дни недели" items={byWeekday} accent="ink" />
           <h3 className="ax-rank__title">Часы активности</h3>
           <div className="ax-hours">
-            {data.byHour.map((h, i) => (
+            {byHour.map((h, i) => (
               <div
                 key={h.name}
                 className="ax-hours__col"
@@ -843,7 +878,7 @@ function AnalyticsTab() {
                 <span className="ax-hours__label">{h.name.slice(0, 2)}</span>
               </div>
             ))}
-            {data.byHour.length === 0 && <p className="admin-muted">Нет данных</p>}
+            {byHour.length === 0 && <p className="admin-muted">Нет данных</p>}
           </div>
         </section>
       </div>

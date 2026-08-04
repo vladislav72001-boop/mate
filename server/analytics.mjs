@@ -132,10 +132,22 @@ function orderMeta(order) {
   const parcel = p.parcel || {};
   const sender = p.sender || {};
   const receiver = p.receiver || {};
+  const pickupLoc = tariff.pickupLocation || p.pickupLocation || {};
+  const deliveryLoc = tariff.deliveryLocation || p.deliveryLocation || {};
   const fromCountry = String(tariff.fromCountry || sender.country || 'HU').toUpperCase();
   const toCountry = String(tariff.toCountry || receiver.country || '').toUpperCase();
-  const fromCity = String(tariff.fromCity || sender.city || sender.line || '').trim() || null;
-  const toCity = String(tariff.toCity || receiver.city || '').trim() || null;
+  const fromCity = String(
+    tariff.fromCity
+    || pickupLoc.addressParts?.city
+    || pickupLoc.city
+    || '',
+  ).trim() || null;
+  const toCity = String(
+    tariff.toCity
+    || deliveryLoc.addressParts?.city
+    || deliveryLoc.city
+    || '',
+  ).trim() || null;
   const pickupMode = String(tariff.pickupMode || tariff.pickupType || '').toLowerCase() || null;
   const deliveryMode = String(tariff.deliveryMode || tariff.deliveryType || '').toLowerCase() || null;
   const sizeKey = String(parcel.boxSize || tariff.boxSize || '').toUpperCase() || null;
@@ -179,6 +191,113 @@ function buildDailySeries(from, days, orders) {
     orders: counts.get(date) || 0,
     revenue: Math.round(revenue.get(date) || 0),
   }));
+}
+
+const STATUS_ORDER = [
+  'pending_payment', 'paid', 'waiting_from_you', 'submitted', 'delivered', 'cancelled',
+];
+
+/** Aggregate order breakdowns for a set of orders (period or single day). */
+function aggregateOrderBreakdown(orders) {
+  const statusCounts = new Map();
+  const destCountries = new Map();
+  const cityRoutes = new Map();
+  const sizes = new Map();
+  const pickupModes = new Map();
+  const deliveryModes = new Map();
+  const modePairs = new Map();
+  const payers = new Map();
+  const weekdays = new Map();
+  const hours = new Map();
+  const amounts = [];
+  let withTtn = 0;
+  let withUser = 0;
+  let fragileCount = 0;
+  let insuranceCount = 0;
+  let paidLike = 0;
+  let revenue = 0;
+  let cancelled = 0;
+  let pendingPayment = 0;
+
+  for (const o of orders) {
+    bump(statusCounts, o.status || 'unknown');
+    const meta = orderMeta(o);
+    if (meta.toCountry) bump(destCountries, meta.toCountry);
+    if (meta.fromCity || meta.toCountry) {
+      const route = `${meta.fromCity || meta.fromCountry || 'HU'} → ${meta.toCountry || '?'}${meta.toCity ? ` / ${meta.toCity}` : ''}`;
+      bump(cityRoutes, route);
+    }
+    if (meta.sizeKey) bump(sizes, meta.sizeKey);
+    if (meta.pickupMode) bump(pickupModes, meta.pickupMode);
+    if (meta.deliveryMode) bump(deliveryModes, meta.deliveryMode);
+    if (meta.pickupMode || meta.deliveryMode) {
+      bump(modePairs, `${meta.pickupMode || '?'} → ${meta.deliveryMode || '?'}`);
+    }
+    bump(payers, meta.payer === 'receiver' ? 'Получатель' : 'Отправитель');
+    const wd = weekdayLabel(o.createdAt);
+    if (wd) bump(weekdays, wd);
+    const hr = hourBucket(o.createdAt);
+    if (hr) bump(hours, hr);
+
+    const amount = Number(o.amount) || 0;
+    if (amount > 0) amounts.push(amount);
+
+    if (o.npTtn) withTtn += 1;
+    if (o.userId) withUser += 1;
+    if (meta.fragile) fragileCount += 1;
+    if (meta.insurance) insuranceCount += 1;
+    if (o.status === 'cancelled') cancelled += 1;
+    if (o.status === 'pending_payment') pendingPayment += 1;
+    if (['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(o.status) || o.paidAt) {
+      paidLike += 1;
+      revenue += amount;
+    }
+  }
+
+  const byStatus = STATUS_ORDER
+    .filter((id) => statusCounts.has(id))
+    .map((id) => ({
+      name: id,
+      count: statusCounts.get(id) || 0,
+      pct: pct(statusCounts.get(id) || 0, orders.length),
+    }));
+  for (const [name, count] of statusCounts.entries()) {
+    if (!STATUS_ORDER.includes(name)) {
+      byStatus.push({ name, count, pct: pct(count, orders.length) });
+    }
+  }
+
+  return {
+    total: orders.length,
+    pendingPayment,
+    paidOrSubmitted: paidLike,
+    cancelled,
+    revenue: Math.round(revenue),
+    withTtn,
+    withUser,
+    guests: orders.length - withUser,
+    fragile: fragileCount,
+    insurance: insuranceCount,
+    conversionPct: pct(paidLike, orders.length),
+    avgCheck: amounts.length
+      ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length)
+      : 0,
+    medianCheck: Math.round(median(amounts)),
+    minCheck: amounts.length ? Math.round(Math.min(...amounts)) : 0,
+    maxCheck: amounts.length ? Math.round(Math.max(...amounts)) : 0,
+    byStatus,
+    topDestCountries: topMap(destCountries, 12),
+    topCityRoutes: topMap(cityRoutes, 12),
+    topOrderSizes: topMap(sizes, 10),
+    topPickupModes: topMap(pickupModes, 8),
+    topDeliveryModes: topMap(deliveryModes, 8),
+    topModePairs: topMap(modePairs, 10),
+    topPayers: topMap(payers, 4),
+    byWeekday: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+      .filter((d) => weekdays.has(d))
+      .map((name) => ({ name, count: weekdays.get(name) || 0 })),
+    byHour: topMap(hours, 24).sort((a, b) => a.name.localeCompare(b.name)),
+  };
 }
 
 export async function buildAnalyticsReport({ days = 30 } = {}) {
@@ -277,74 +396,23 @@ export async function buildAnalyticsReport({ days = 30 } = {}) {
     return t >= from.getTime();
   });
 
-  const statusCounts = new Map();
-  const destCountries = new Map();
-  const cityRoutes = new Map();
-  const sizes = new Map();
-  const pickupModes = new Map();
-  const deliveryModes = new Map();
-  const modePairs = new Map();
-  const payers = new Map();
-  const weekdays = new Map();
-  const hours = new Map();
-  const amounts = [];
-  let withTtn = 0;
-  let withUser = 0;
-  let fragileCount = 0;
-  let insuranceCount = 0;
-  let paidLike = 0;
-  let revenue = 0;
-  let cancelled = 0;
-  let pendingPayment = 0;
-
-  for (const o of recentOrders) {
-    bump(statusCounts, o.status || 'unknown');
-    const meta = orderMeta(o);
-    if (meta.toCountry) bump(destCountries, meta.toCountry);
-    if (meta.fromCity || meta.toCountry) {
-      const route = `${meta.fromCity || meta.fromCountry || 'HU'} → ${meta.toCountry || '?'}${meta.toCity ? ` / ${meta.toCity}` : ''}`;
-      bump(cityRoutes, route);
-    }
-    if (meta.sizeKey) bump(sizes, meta.sizeKey);
-    if (meta.pickupMode) bump(pickupModes, meta.pickupMode);
-    if (meta.deliveryMode) bump(deliveryModes, meta.deliveryMode);
-    if (meta.pickupMode || meta.deliveryMode) {
-      bump(modePairs, `${meta.pickupMode || '?'} → ${meta.deliveryMode || '?'}`);
-    }
-    bump(payers, meta.payer === 'receiver' ? 'Получатель' : 'Отправитель');
-    const wd = weekdayLabel(o.createdAt);
-    if (wd) bump(weekdays, wd);
-    const hr = hourBucket(o.createdAt);
-    if (hr) bump(hours, hr);
-
-    const amount = Number(o.amount) || 0;
-    if (amount > 0) amounts.push(amount);
-
-    if (o.npTtn) withTtn += 1;
-    if (o.userId) withUser += 1;
-    if (meta.fragile) fragileCount += 1;
-    if (meta.insurance) insuranceCount += 1;
-    if (o.status === 'cancelled') cancelled += 1;
-    if (o.status === 'pending_payment') pendingPayment += 1;
-    if (['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(o.status) || o.paidAt) {
-      paidLike += 1;
-      revenue += amount;
-    }
-  }
-
-  const avgCheck = amounts.length
-    ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length)
-    : 0;
-  const medCheck = Math.round(median(amounts));
-  const minCheck = amounts.length ? Math.round(Math.min(...amounts)) : 0;
-  const maxCheck = amounts.length ? Math.round(Math.max(...amounts)) : 0;
-
+  const breakdown = aggregateOrderBreakdown(recentOrders);
   const daily = buildDailySeries(from, periodDays, recentOrders);
   const peakDay = [...daily].sort((a, b) => b.orders - a.orders)[0] || null;
 
-  // Conversion: orders created → paid-like
-  const orderConversion = pct(paidLike, recentOrders.length);
-  const unpaidStuck = pendingPayment;
+  const ordersByDay = new Map();
+  for (const o of recentOrders) {
+    const key = dayKey(o.createdAt);
+    if (!key) continue;
+    if (!ordersByDay.has(key)) ordersByDay.set(key, []);
+    ordersByDay.get(key).push(o);
+  }
+  const daySlices = {};
+  for (const [date, list] of ordersByDay.entries()) {
+    daySlices[date] = aggregateOrderBreakdown(list);
+  }
+
+  const unpaidStuck = breakdown.pendingPayment;
   const calcToCheckout = totalSessions ? pct(checkouts, totalSessions) : null;
 
   let worstDrop = { step: null, drop: 0 };
@@ -353,13 +421,13 @@ export async function buildAnalyticsReport({ days = 30 } = {}) {
     if (drop > worstDrop.drop) worstDrop = { step: funnel[i].step, drop };
   }
 
-  const topOrderRoute = topMap(cityRoutes, 1)[0];
-  const topDest = topMap(destCountries, 1)[0];
+  const topOrderRoute = breakdown.topCityRoutes[0];
+  const topDest = breakdown.topDestCountries[0];
 
   const insightParts = [];
   if (recentOrders.length) {
-    insightParts.push(`За ${periodDays} дн. заказов: ${recentOrders.length}, оплаченных/в работе: ${paidLike} (${orderConversion}%).`);
-    insightParts.push(`Выручка ${Math.round(revenue).toLocaleString('ru-RU')} ${currency}, средний чек ~${avgCheck.toLocaleString('ru-RU')} ${currency}.`);
+    insightParts.push(`За ${periodDays} дн. заказов: ${recentOrders.length}, оплаченных/в работе: ${breakdown.paidOrSubmitted} (${breakdown.conversionPct}%).`);
+    insightParts.push(`Выручка ${breakdown.revenue.toLocaleString('ru-RU')} ${currency}, средний чек ~${breakdown.avgCheck.toLocaleString('ru-RU')} ${currency}.`);
     if (topDest) insightParts.push(`Топ страна назначения: ${topDest.name} (${topDest.count}).`);
     if (topOrderRoute) insightParts.push(`Частый маршрут: ${topOrderRoute.name}.`);
     if (unpaidStuck) insightParts.push(`Застряли на оплате: ${unpaidStuck}.`);
@@ -373,16 +441,6 @@ export async function buildAnalyticsReport({ days = 30 } = {}) {
     if (worstDrop.step && worstDrop.drop > 0) {
       insightParts.push(`Сильный отвал перед шагом ${worstDrop.step} (−${worstDrop.drop}).`);
     }
-  }
-
-  const statusOrder = [
-    'pending_payment', 'paid', 'waiting_from_you', 'submitted', 'delivered', 'cancelled',
-  ];
-  const byStatus = statusOrder
-    .filter((id) => statusCounts.has(id))
-    .map((id) => ({ name: id, count: statusCounts.get(id) || 0, pct: pct(statusCounts.get(id) || 0, recentOrders.length) }));
-  for (const [name, count] of statusCounts.entries()) {
-    if (!statusOrder.includes(name)) byStatus.push({ name, count, pct: pct(count, recentOrders.length) });
   }
 
   return {
@@ -405,42 +463,41 @@ export async function buildAnalyticsReport({ days = 30 } = {}) {
     topPages: topMap(eventPages, 10),
     topLocales: topMap(eventLocales, 8),
 
-    // Back-compat aliases used by previous UI
-    topRoutes: topMap(cityRoutes, 12),
-    topSizes: topMap(sizes, 10),
-    topPickupModes: topMap(pickupModes, 8),
-    topDeliveryModes: topMap(deliveryModes, 8),
+    // Back-compat aliases
+    topRoutes: breakdown.topCityRoutes,
+    topSizes: breakdown.topOrderSizes,
+    topPickupModes: breakdown.topPickupModes,
+    topDeliveryModes: breakdown.topDeliveryModes,
 
     // Orders deep dive
     orders: {
-      total: recentOrders.length,
-      pendingPayment,
-      paidOrSubmitted: paidLike,
-      cancelled,
-      revenue: Math.round(revenue),
+      total: breakdown.total,
+      pendingPayment: breakdown.pendingPayment,
+      paidOrSubmitted: breakdown.paidOrSubmitted,
+      cancelled: breakdown.cancelled,
+      revenue: breakdown.revenue,
       currency,
-      withTtn,
-      withUser,
-      guests: recentOrders.length - withUser,
-      fragile: fragileCount,
-      insurance: insuranceCount,
-      conversionPct: orderConversion,
-      avgCheck,
-      medianCheck: medCheck,
-      minCheck,
-      maxCheck,
+      withTtn: breakdown.withTtn,
+      withUser: breakdown.withUser,
+      guests: breakdown.guests,
+      fragile: breakdown.fragile,
+      insurance: breakdown.insurance,
+      conversionPct: breakdown.conversionPct,
+      avgCheck: breakdown.avgCheck,
+      medianCheck: breakdown.medianCheck,
+      minCheck: breakdown.minCheck,
+      maxCheck: breakdown.maxCheck,
     },
-    byStatus,
-    topDestCountries: topMap(destCountries, 12),
-    topCityRoutes: topMap(cityRoutes, 12),
-    topOrderSizes: topMap(sizes, 10),
-    topModePairs: topMap(modePairs, 10),
-    topPayers: topMap(payers, 4),
-    byWeekday: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-      .filter((d) => weekdays.has(d))
-      .map((name) => ({ name, count: weekdays.get(name) || 0 })),
-    byHour: topMap(hours, 24).sort((a, b) => a.name.localeCompare(b.name)),
+    byStatus: breakdown.byStatus,
+    topDestCountries: breakdown.topDestCountries,
+    topCityRoutes: breakdown.topCityRoutes,
+    topOrderSizes: breakdown.topOrderSizes,
+    topModePairs: breakdown.topModePairs,
+    topPayers: breakdown.topPayers,
+    byWeekday: breakdown.byWeekday,
+    byHour: breakdown.byHour,
     daily,
     peakDay,
+    daySlices,
   };
 }
