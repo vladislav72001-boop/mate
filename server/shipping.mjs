@@ -45,6 +45,8 @@ import {
   finalizeNovaPostClientPrice,
   computeOrderExtras,
   chargeableWeightKg,
+  matrixCostNet,
+  preferMateMatrixPricing,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
 import { countNovaPostCoverage, fetchNovaPostDivisions, mapDivisionToPoint } from './novapost/divisions.mjs';
@@ -620,6 +622,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       let priceSource = result.priceSource;
       let usedNova = 0;
       let usedEstimate = 0;
+      let usedMate = 0;
+      const useMate = preferMateMatrixPricing();
 
       for (const size of sizes) {
         const key = size.boxSize;
@@ -637,7 +641,42 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           size.boxSize,
         );
 
-        // Carrier quote + markup + VAT + rounding. Matrix never participates.
+        // B2C: Excel/Mate matrix first (aligned with public tables). Live NP company
+        // JWT quotes are higher and already include VAT — only used as fallback.
+        if (useMate) {
+          const matrixNet = matrixCostNet(pricing, {
+            toCountry,
+            weightKg,
+            deliveryMode: mode,
+          });
+          if (matrixNet != null) {
+            const finalized = finalizeNovaPostClientPrice({
+              npTotal: matrixNet,
+              quoteCurrency: settings.currency || 'HUF',
+              settings,
+              weightMarkups: pricing.weightMarkups,
+              tiers: pricing.tiers,
+              weightKg,
+              monthlyShipments,
+              welcomeDiscountPercent,
+              source: 'mate',
+              deliveryMode: mode,
+              costIncludesVat: false,
+            });
+            currency = { code: finalized.currency, symbol: finalized.currency };
+            quotes[key] = {
+              ...(typeof raw === 'object' && raw ? raw : {}),
+              total: finalized.amount,
+              currency: finalized.currency,
+              priceSource: 'mate',
+              breakdown: finalized.breakdown,
+            };
+            usedMate += 1;
+            continue;
+          }
+        }
+
+        // Carrier quote + markup. NP cost is VAT-inclusive for company contract.
         if (
           npTotal != null
           && Number.isFinite(Number(npTotal))
@@ -670,7 +709,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         }
       }
 
-      if (usedNova) priceSource = 'novapost';
+      if (usedMate) priceSource = 'mate';
+      else if (usedNova) priceSource = 'novapost';
       else if (usedEstimate) priceSource = 'estimate';
 
       res.json({
@@ -724,7 +764,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     }
   });
 
-  /** Final price: Nova Post + markup + VAT — for steps 7–8 and checkout */
+  /** Final price: Mate matrix (preferred) or Nova Post + markup — for steps 7–8 and checkout */
   router.post('/calculate-final', optionalAuth, async (req, res) => {
     try {
       const {

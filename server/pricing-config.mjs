@@ -615,6 +615,25 @@ export function destCodeFromCountry(toCountry) {
   return code;
 }
 
+/** Raw matrix cell (net, without client markup/VAT) or null if missing. */
+export function matrixCostNet(pricing, {
+  toCountry,
+  weightKg,
+  deliveryMode = 'locker',
+}) {
+  const mode = DELIVERY_MODES.includes(deliveryMode) ? deliveryMode : 'locker';
+  const dest = destCodeFromCountry(toCountry);
+  const wKey = weightKeyForKg(weightKg);
+  const cost = pricing?.costPrices?.[mode]?.[wKey]?.[dest];
+  if (cost == null || !Number.isFinite(Number(cost))) return null;
+  return Number(cost);
+}
+
+/** Prefer Excel/Mate matrix for B2C unless PRICING_PREFER=novapost. */
+export function preferMateMatrixPricing() {
+  return String(process.env.PRICING_PREFER || 'mate').toLowerCase().trim() !== 'novapost';
+}
+
 export function roundAmount(amount, settings) {
   const n = Number(amount) || 0;
   if (!settings?.roundingEnabled) {
@@ -807,8 +826,11 @@ export function finalizeExternalQuote(total, quoteCurrency, settings, source = '
 }
 
 /**
- * Nova Post net → (+ weight markup) → (− tier discount) → (− welcome) → VAT → rounding.
- * No Excel matrix — client price follows the live carrier quote for the chosen endpoints.
+ * Nova Post / matrix net → (+ weight markup) → (− tier discount) → (− welcome) → VAT → rounding.
+ * No Excel matrix inside this helper — pass matrix cell as npTotal with source='mate'.
+ *
+ * Nova Post B2C/company UI shows tariffs **with VAT**. Our API JWT is the company contract,
+ * so live `services[].cost` is treated as VAT-inclusive unless NOVAPOST_COST_INCLUDES_VAT=false.
  */
 export function finalizeNovaPostClientPrice({
   npTotal,
@@ -823,6 +845,7 @@ export function finalizeNovaPostClientPrice({
   source = 'novapost',
   deliveryMode,
   npServices = null,
+  costIncludesVat = null,
 }) {
   const currency = String(settings?.currency || 'HUF').toUpperCase();
   const npNet = Math.round(
@@ -874,13 +897,24 @@ export function finalizeNovaPostClientPrice({
     beforeVat -= promoDiscountAmount;
   }
 
-  const afterVat = applyVat(beforeVat, settings);
+  const vatAlreadyInQuote = costIncludesVat == null
+    ? (source === 'novapost' || source === 'estimate')
+      && String(process.env.NOVAPOST_COST_INCLUDES_VAT || 'true').toLowerCase() !== 'false'
+    : Boolean(costIncludesVat);
+  const afterVat = (settings?.vatEnabled && !vatAlreadyInQuote)
+    ? applyVat(beforeVat, settings)
+    : beforeVat;
   const amount = roundAmount(afterVat, settings);
 
+  const sourceTitle = source === 'mate'
+    ? 'Цена из матрицы (без НДС)'
+    : source === 'novapost'
+      ? (vatAlreadyInQuote ? 'Тариф Nova Post (с НДС)' : 'Тариф Nova Post')
+      : 'Оценка Nova Post';
   const log = [
     {
       step: 1,
-      title: source === 'novapost' ? 'Тариф Nova Post' : 'Оценка Nova Post',
+      title: sourceTitle,
       detail: `${Math.round(Number(npTotal) * 100) / 100} ${String(quoteCurrency || 'EUR').toUpperCase()}`,
       value: npNet,
     },
@@ -920,7 +954,14 @@ export function finalizeNovaPostClientPrice({
       value: -Math.round(promoDiscountAmount * 100) / 100,
     });
   }
-  if (settings?.vatEnabled) {
+  if (settings?.vatEnabled && vatAlreadyInQuote) {
+    log.push({
+      step: log.length + 1,
+      title: 'НДС',
+      detail: 'уже включён в тариф Nova Post — не добавляем повторно',
+      value: Math.round(beforeVat * 100) / 100,
+    });
+  } else if (settings?.vatEnabled) {
     log.push({
       step: log.length + 1,
       title: `НДС +${settings.vatPercent}%`,
@@ -949,7 +990,7 @@ export function finalizeNovaPostClientPrice({
     priceSource: source,
     breakdown: {
       npNet,
-      matrixNet: null,
+      matrixNet: source === 'mate' ? npNet : null,
       chosenNet: Math.round(afterDiscount * 100) / 100,
       markupPercent: markupPct,
       tierId: tier.id,
@@ -968,6 +1009,7 @@ export function finalizeNovaPostClientPrice({
         : null,
       beforeVat: Math.round(beforeVat * 100) / 100,
       afterVat: Math.round(afterVat * 100) / 100,
+      vatIncludedInCarrier: vatAlreadyInQuote,
       total: amount,
       currency,
       source,

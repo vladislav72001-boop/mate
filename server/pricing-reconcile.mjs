@@ -4,12 +4,14 @@ import {
   getPricing,
   chargeableWeightKg,
   finalizeNovaPostClientPrice,
+  matrixCostNet,
+  preferMateMatrixPricing,
 } from './pricing-config.mjs';
 
 /**
- * Client delivery price from live Nova Post + markup + VAT + rounding.
- * No Excel matrix participates in the calculation. If NP is temporarily
- * unavailable, its clearly-labelled estimate follows the same formula.
+ * Client delivery price:
+ * 1) Prefer Mate matrix (Excel / B2C table) when PRICING_PREFER!=novapost
+ * 2) Else live Nova Post — treated as VAT-inclusive company tariff + Mate markup
  */
 export async function reconcileParcelPrice({
   fromCountry = 'HU',
@@ -31,6 +33,31 @@ export async function reconcileParcelPrice({
   const [settings, pricing] = await Promise.all([getSettings(), getPricing()]);
   const currency = String(settings.currency || 'HUF').toUpperCase();
   const billableKg = chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm, boxSize);
+  const mode = deliveryMode || 'locker';
+
+  if (preferMateMatrixPricing()) {
+    const matrixNet = matrixCostNet(pricing, {
+      toCountry,
+      weightKg: billableKg,
+      deliveryMode: mode,
+    });
+    if (matrixNet != null) {
+      return finalizeNovaPostClientPrice({
+        npTotal: matrixNet,
+        quoteCurrency: currency,
+        settings,
+        weightMarkups: pricing.weightMarkups,
+        tiers: pricing.tiers,
+        weightKg: billableKg,
+        monthlyShipments,
+        welcomeDiscountPercent,
+        promo,
+        source: 'mate',
+        deliveryMode: mode,
+        costIncludesVat: false,
+      });
+    }
+  }
 
   let npQuote = null;
   try {
@@ -68,7 +95,7 @@ export async function reconcileParcelPrice({
       welcomeDiscountPercent,
       promo,
       source,
-      deliveryMode,
+      deliveryMode: mode,
       npServices: npQuote.breakdown || null,
     });
   }
