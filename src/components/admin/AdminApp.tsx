@@ -26,12 +26,14 @@ import {
   createAdminPromo,
   setAdminPromoActive,
   deleteAdminPromo,
+  fetchAdminAnalytics,
   type AdminPricing,
   type AdminSettings,
   type AdminPromo,
+  type AdminAnalyticsReport,
 } from '../../api/admin';
 
-type Tab = 'dashboard' | 'orders' | 'users' | 'pricing' | 'settings' | 'promos';
+type Tab = 'dashboard' | 'orders' | 'users' | 'pricing' | 'settings' | 'promos' | 'analytics';
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -41,6 +43,7 @@ function isEditableTarget(target: EventTarget | null) {
 
 const NAV_ITEMS: { id: Tab; label: string; short: string }[] = [
   { id: 'dashboard', label: 'Дашборд', short: 'Главная' },
+  { id: 'analytics', label: 'Аналитика', short: 'Воронка' },
   { id: 'orders', label: 'Заказы', short: 'Заказы' },
   { id: 'users', label: 'Пользователи', short: 'Люди' },
   { id: 'pricing', label: 'Цены', short: 'Цены' },
@@ -48,6 +51,17 @@ const NAV_ITEMS: { id: Tab; label: string; short: string }[] = [
   { id: 'promos', label: 'Промокоды', short: 'Промо' },
 ];
 
+const CALC_STEP_LABELS: Record<number, string> = {
+  1: 'Страна',
+  2: 'Города',
+  3: 'Размер',
+  4: 'Способ',
+  5: 'Отправитель',
+  6: 'Получатель',
+  7: 'Содержимое',
+  8: 'Оплата',
+  9: 'Подтверждение',
+};
 function TabIcon({ id }: { id: Tab }) {
   const common = {
     width: 22,
@@ -106,6 +120,16 @@ function TabIcon({ id }: { id: Tab }) {
         <svg {...common}>
           <path d="M20.6 12.8 12.8 20.6a2 2 0 0 1-2.8 0L3.4 14a2 2 0 0 1 0-2.8l7.8-7.8a2 2 0 0 1 1.4-.6H19a2 2 0 0 1 2 2v6.4a2 2 0 0 1-.6 1.4Z" />
           <circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'analytics':
+      return (
+        <svg {...common}>
+          <path d="M4 19V5" />
+          <path d="M4 19h16" />
+          <rect x="7" y="11" width="3" height="5" rx="0.5" />
+          <rect x="12" y="8" width="3" height="8" rx="0.5" />
+          <rect x="17" y="5" width="3" height="11" rx="0.5" />
         </svg>
       );
     default:
@@ -342,6 +366,7 @@ export function AdminApp({ onExit }: Props) {
 
   const tabLabels: Record<Tab, string> = {
     dashboard: 'Дашборд',
+    analytics: 'Аналитика',
     orders: 'Заказы',
     users: 'Пользователи',
     pricing: 'Цены',
@@ -424,6 +449,7 @@ export function AdminApp({ onExit }: Props) {
 
       <main className="admin-main" key={tab}>
         {tab === 'dashboard' && <DashboardTab />}
+        {tab === 'analytics' && <AnalyticsTab />}
         {tab === 'orders' && <OrdersTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'pricing' && <PricingTab />}
@@ -552,6 +578,147 @@ function DashboardTab() {
               </li>
             ))}
             {recentUsers.length === 0 && <li className="admin-muted">Пока нет пользователей</li>}
+          </ul>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsTab() {
+  const [days, setDays] = useState<7 | 30 | 90>(30);
+  const [data, setData] = useState<AdminAnalyticsReport | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    fetchAdminAnalytics(days)
+      .then(setData)
+      .catch((e) => setError(e.message || 'Ошибка загрузки'))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  if (error) return <div className="admin-alert">{error}</div>;
+  if (loading || !data) return <p className="admin-muted">Загрузка аналитики…</p>;
+
+  const maxReached = Math.max(1, ...data.funnel.map((f) => f.reached));
+  const cards = [
+    { label: 'Сессии калькулятора', value: data.sessions, tone: 'ink' },
+    { label: 'Клики «Оплатить»', value: data.payClicks, tone: 'amber' },
+    { label: 'Успешный checkout', value: data.checkouts, tone: 'green' },
+    { label: 'Заказы за период', value: data.orders.total, tone: 'teal' },
+    { label: 'Ожидают оплаты', value: data.orders.pendingPayment, tone: 'mute' },
+    {
+      label: 'Выручка',
+      value: formatMoney(data.orders.revenue, data.orders.currency),
+      tone: 'lime',
+      featured: true,
+    },
+  ];
+
+  return (
+    <div className="admin-section admin-section--animate">
+      <header className="admin-section__head admin-section__head--row">
+        <div>
+          <h1>Аналитика</h1>
+          <p>Воронка калькулятора и популярные маршруты</p>
+        </div>
+        <div className="admin-period-chips" role="tablist" aria-label="Период">
+          {([7, 30, 90] as const).map((d) => (
+            <button
+              key={d}
+              type="button"
+              role="tab"
+              aria-selected={days === d}
+              className={`admin-chip${days === d ? ' is-active' : ''}`}
+              onClick={() => setDays(d)}
+            >
+              {d} дн.
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <p className="admin-insight card">{data.insight}</p>
+
+      <div className="admin-stats">
+        {cards.map((c, i) => (
+          <div
+            key={c.label}
+            className={`admin-stat card admin-stat--${c.tone}${c.featured ? ' admin-stat--featured' : ''}`}
+            style={{ '--delay': `${i * 45}ms` } as React.CSSProperties}
+          >
+            <span>{c.label}</span>
+            <b>{c.value}</b>
+          </div>
+        ))}
+      </div>
+
+      <div className="admin-grid-2">
+        <section className="card admin-panel admin-panel--rise">
+          <h2>Воронка шагов калькулятора</h2>
+          <div className="admin-funnel">
+            {data.funnel.map((row) => (
+              <div key={row.step} className="admin-funnel__row">
+                <div className="admin-funnel__meta">
+                  <b>Шаг {row.step}</b>
+                  <span>{CALC_STEP_LABELS[row.step] || `Step ${row.step}`}</span>
+                </div>
+                <div className="admin-funnel__bar-wrap" title={`${row.reached} сессий`}>
+                  <div
+                    className="admin-funnel__bar"
+                    style={{ width: `${Math.max(4, (row.reached / maxReached) * 100)}%` }}
+                  />
+                </div>
+                <div className="admin-funnel__nums">
+                  <strong>{row.reached}</strong>
+                  <small>{row.pctOfSessions}%</small>
+                  {row.step > 1 && row.dropOffPct > 0 && (
+                    <small className="admin-funnel__drop">−{row.dropOffPct}%</small>
+                  )}
+                </div>
+              </div>
+            ))}
+            {data.sessions === 0 && (
+              <p className="admin-muted">Пока нет данных — откройте калькулятор на сайте.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="card admin-panel admin-panel--rise">
+          <h2>Топ направлений</h2>
+          <ul className="admin-rank-list">
+            {data.topRoutes.map((r) => (
+              <li key={r.name}>
+                <span>{r.name}</span>
+                <b>{r.count}</b>
+              </li>
+            ))}
+            {data.topRoutes.length === 0 && <li className="admin-muted">Нет данных</li>}
+          </ul>
+
+          <h2 className="admin-panel__sub">Размеры</h2>
+          <ul className="admin-rank-list">
+            {data.topSizes.map((r) => (
+              <li key={r.name}>
+                <span>{r.name}</span>
+                <b>{r.count}</b>
+              </li>
+            ))}
+            {data.topSizes.length === 0 && <li className="admin-muted">Нет данных</li>}
+          </ul>
+
+          <h2 className="admin-panel__sub">Страницы</h2>
+          <ul className="admin-rank-list">
+            {data.topPages.map((r) => (
+              <li key={r.name}>
+                <span>{r.name}</span>
+                <b>{r.count}</b>
+              </li>
+            ))}
+            {data.topPages.length === 0 && <li className="admin-muted">Нет данных</li>}
           </ul>
         </section>
       </div>

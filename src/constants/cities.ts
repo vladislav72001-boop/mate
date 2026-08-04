@@ -13,6 +13,13 @@ function cities(...entries: [label: string, value: string][]): CityOption[] {
 export const CITIES_BY_COUNTRY: Record<string, CityOption[]> = {
   HU: cities(
     ['Будапешт', 'Budapest'],
+    ['Эрд', 'Érd'],
+    ['Дунакеси', 'Dunakeszi'],
+    ['Сентендре', 'Szentendre'],
+    ['Вац', 'Vác'],
+    ['Гёдёллё', 'Gödöllő'],
+    ['Монор', 'Monor'],
+    ['Цеглед', 'Cegléd'],
     ['Дебрецен', 'Debrecen'],
     ['Сегед', 'Szeged'],
     ['Печ', 'Pécs'],
@@ -323,6 +330,13 @@ export function citiesForCountry(country: string): string[] {
 const CITY_LABEL_BY_LOCALE: Partial<Record<Locale, Record<string, string>>> = {
   hu: {
     Budapest: 'Budapest',
+    'Érd': 'Érd',
+    Dunakeszi: 'Dunakeszi',
+    Szentendre: 'Szentendre',
+    'Vác': 'Vác',
+    'Gödöllő': 'Gödöllő',
+    Monor: 'Monor',
+    'Cegléd': 'Cegléd',
     Debrecen: 'Debrecen',
     Szeged: 'Szeged',
     'Pécs': 'Pécs',
@@ -355,6 +369,13 @@ const CITY_LABEL_BY_LOCALE: Partial<Record<Locale, Record<string, string>>> = {
   },
   uk: {
     Budapest: 'Будапешт',
+    'Érd': 'Ерд',
+    Dunakeszi: 'Дунакесі',
+    Szentendre: 'Сентендре',
+    'Vác': 'Вац',
+    'Gödöllő': 'Геделле',
+    Monor: 'Монор',
+    'Cegléd': 'Цеглед',
     Warsaw: 'Варшава',
     Berlin: 'Берлін',
     Hamburg: 'Гамбург',

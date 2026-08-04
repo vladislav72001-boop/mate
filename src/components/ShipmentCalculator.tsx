@@ -70,6 +70,7 @@ import {
   splitPersonName,
 } from './calc/calcDraft';
 import { useCalcDraftPersistence } from './calc/useCalcDraft';
+import { trackAnalytics } from '../utils/analytics';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
 
@@ -825,6 +826,20 @@ export function CalcForm({
   useEffect(() => {
     onStepChange?.(step);
   }, []);
+
+  useEffect(() => {
+    trackAnalytics({
+      event: 'calc_step',
+      step,
+      toCountry,
+      fromCity: pickupCity,
+      toCity: destCity,
+      sizeKey: String(sizeKey),
+      pickupMode: pickupType,
+      deliveryMode: deliveryType,
+      locale,
+    });
+  }, [step]);
 
   const prevResetSignal = useRef(resetToStep1Signal);
   useEffect(() => {
@@ -2199,6 +2214,17 @@ export function CalcForm({
       return;
     }
     if (totalPrice == null || !(Number(totalPrice) > 0) || payInFlight.current || submitting) return;
+    trackAnalytics({
+      event: 'calc_pay_click',
+      step: 9,
+      toCountry,
+      fromCity: pickupCity,
+      toCity: destCity,
+      sizeKey: String(sizeKey),
+      pickupMode: pickupType,
+      deliveryMode: deliveryType,
+      locale,
+    });
     const payEmail = senderEmail.trim().toLowerCase();
     const emailErr = validateEmail(payEmail, t('calc.fieldSenderEmail'));
     if (emailErr) {
@@ -2292,6 +2318,17 @@ export function CalcForm({
       });
 
       if (result.awaitingRecipientPayment) {
+        trackAnalytics({
+          event: 'calc_checkout_ok',
+          step: 9,
+          toCountry,
+          fromCity: pickupCity,
+          toCity: destCity,
+          sizeKey: String(sizeKey),
+          pickupMode: pickupType,
+          deliveryMode: deliveryType,
+          locale,
+        });
         // Stop pagehide/unmount from re-writing the draft after we clear it.
         skipDraftFlushRef.current = true;
         suppressCalcDraftWrites(true);
@@ -2308,6 +2345,17 @@ export function CalcForm({
       }
 
       if (result.checkoutUrl) {
+        trackAnalytics({
+          event: 'calc_checkout_ok',
+          step: 9,
+          toCountry,
+          fromCity: pickupCity,
+          toCity: destCity,
+          sizeKey: String(sizeKey),
+          pickupMode: pickupType,
+          deliveryMode: deliveryType,
+          locale,
+        });
         // Clear before Stripe redirect; suppress saves so pagehide cannot revive the cart.
         skipDraftFlushRef.current = true;
         suppressCalcDraftWrites(true);

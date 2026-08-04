@@ -792,6 +792,148 @@
   margin-bottom: 18px;
 }
 
+.admin-insight {
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--admin-text);
+  background: #fff;
+}
+
+.admin-period-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-chip {
+  border: 1px solid var(--admin-line);
+  background: #fff;
+  color: var(--admin-muted);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-chip.is-active {
+  background: var(--admin-lime);
+  color: var(--admin-ink);
+  border-color: transparent;
+}
+
+.admin-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-funnel__row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 72px;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-funnel__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-funnel__meta b {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.admin-funnel__meta span {
+  font-size: 11px;
+  color: var(--admin-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-funnel__bar-wrap {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--admin-surface-2);
+  overflow: hidden;
+}
+
+.admin-funnel__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c8e600, var(--admin-lime));
+  min-width: 4px;
+}
+
+.admin-funnel__nums {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-funnel__nums strong {
+  font-size: 14px;
+}
+
+.admin-funnel__nums small {
+  font-size: 11px;
+  color: var(--admin-muted);
+}
+
+.admin-funnel__drop {
+  color: #b45309 !important;
+}
+
+.admin-rank-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-rank-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--admin-surface);
+}
+
+.admin-rank-list li span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-panel__sub {
+  margin-top: 8px !important;
+}
+
+@media (max-width: 720px) {
+  .admin-funnel__row {
+    grid-template-columns: 1fr 56px;
+    grid-template-areas:
+      "meta nums"
+      "bar nums";
+  }
+  .admin-funnel__meta { grid-area: meta; }
+  .admin-funnel__bar-wrap { grid-area: bar; }
+  .admin-funnel__nums { grid-area: nums; }
+}
+
 .admin-stat {
   padding: 16px 18px;
   display: flex;

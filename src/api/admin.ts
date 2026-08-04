@@ -269,3 +269,30 @@ export async function deleteAdminPromo(id: string) {
     method: 'DELETE',
   });
 }
+
+export type AdminAnalyticsReport = {
+  days: number;
+  from: string;
+  sessions: number;
+  funnel: Array<{ step: number; reached: number; pctOfSessions: number; dropOffPct: number }>;
+  payClicks: number;
+  checkouts: number;
+  topRoutes: Array<{ name: string; count: number }>;
+  topSizes: Array<{ name: string; count: number }>;
+  topPickupModes: Array<{ name: string; count: number }>;
+  topDeliveryModes: Array<{ name: string; count: number }>;
+  topPages: Array<{ name: string; count: number }>;
+  orders: {
+    total: number;
+    pendingPayment: number;
+    paidOrSubmitted: number;
+    cancelled: number;
+    revenue: number;
+    currency: string;
+  };
+  insight: string;
+};
+
+export async function fetchAdminAnalytics(days: 7 | 30 | 90 = 30) {
+  return adminRequest<AdminAnalyticsReport>(`/api/admin/analytics?days=${days}`);
+}

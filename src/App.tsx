@@ -29,6 +29,7 @@ import {
   storeSession,
   type AuthUser,
 } from './api/auth';
+import { trackAnalytics } from './utils/analytics';
 
 type TopPage = 'home' | 'services' | 'about' | 'dashboard' | 'client-dashboard' | 'admin';
 
@@ -336,7 +337,7 @@ function PartnersSection({ about = false }: { about?: boolean }) {
 }
 
 function App() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const mailTo = useCallback((subjectKey: string) => (
     `mailto:info@matedelivery.com?subject=${encodeURIComponent(t(subjectKey))}`
   ), [t]);
@@ -508,6 +509,12 @@ function App() {
     }
     window.history.pushState({}, '', target);
   }, [page]);
+
+  useEffect(() => {
+    if (page === 'home' || page === 'services' || page === 'about') {
+      trackAnalytics({ event: 'page_view', page, locale });
+    }
+  }, [page, locale]);
 
   useEffect(() => {
     const bootParams = new URLSearchParams(window.location.search);

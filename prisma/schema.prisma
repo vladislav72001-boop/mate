@@ -131,3 +131,25 @@ model PromoCode {
   @@index([active])
   @@map("promo_codes")
 }
+
+/// Anonymous calculator / page funnel events (no PII).
+model AnalyticsEvent {
+  id           String   @id @default(uuid())
+  sessionId    String
+  event        String
+  step         Int?
+  toCountry    String?
+  fromCity     String?
+  toCity       String?
+  sizeKey      String?
+  pickupMode   String?
+  deliveryMode String?
+  locale       String?
+  page         String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sessionId])
+  @@index([event])
+  @@map("analytics_events")
+}

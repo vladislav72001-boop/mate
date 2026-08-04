@@ -2,6 +2,13 @@
 const CITY_ENTRIES = {
   HU: [
     { value: 'Budapest', labels: ['Будапешт', 'Budapest'] },
+    { value: 'Érd', labels: ['Эрд', 'Érd', 'Erd'] },
+    { value: 'Dunakeszi', labels: ['Дунакеси', 'Dunakeszi'] },
+    { value: 'Szentendre', labels: ['Сентендре', 'Szentendre'] },
+    { value: 'Vác', labels: ['Вац', 'Vác', 'Vac'] },
+    { value: 'Gödöllő', labels: ['Гёдёллё', 'Gödöllő', 'Godollo'] },
+    { value: 'Monor', labels: ['Монор', 'Monor'] },
+    { value: 'Cegléd', labels: ['Цеглед', 'Cegléd', 'Cegled'] },
     { value: 'Debrecen', labels: ['Дебрецен', 'Debrecen'] },
     { value: 'Szeged', labels: ['Сегед', 'Szeged'] },
     { value: 'Pécs', labels: ['Печ', 'Pécs', 'Pecs'] },
@@ -87,6 +94,13 @@ const CITY_COORDS = {
   Paris: { lat: 48.8566, lng: 2.3522, country: 'FR' },
   Vienna: { lat: 48.2082, lng: 16.3738, country: 'AT' },
   Debrecen: { lat: 47.5316, lng: 21.6273, country: 'HU' },
+  Monor: { lat: 47.3513, lng: 19.4494, country: 'HU' },
+  'Érd': { lat: 47.3918, lng: 18.9136, country: 'HU' },
+  Szentendre: { lat: 47.6694, lng: 19.0756, country: 'HU' },
+  'Vác': { lat: 47.775, lng: 19.1361, country: 'HU' },
+  'Gödöllő': { lat: 47.6008, lng: 19.3555, country: 'HU' },
+  Dunakeszi: { lat: 47.6294, lng: 19.1331, country: 'HU' },
+  'Cegléd': { lat: 47.1725, lng: 19.8019, country: 'HU' },
 };
 
 function haversineKm(aLat, aLng, bLat, bLng) {

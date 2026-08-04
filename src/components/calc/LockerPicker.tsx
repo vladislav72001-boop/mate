@@ -29,6 +29,13 @@ export type LockerOption = {
 /** Approximate city centers for geolocation matching */
 export const CITY_COORDS: Array<{ city: string; country: string; lat: number; lng: number }> = [
   { city: 'Budapest', country: 'HU', lat: 47.4979, lng: 19.0402 },
+  { city: 'Érd', country: 'HU', lat: 47.3949, lng: 18.9136 },
+  { city: 'Dunakeszi', country: 'HU', lat: 47.6300, lng: 19.1320 },
+  { city: 'Szentendre', country: 'HU', lat: 47.6694, lng: 19.0756 },
+  { city: 'Vác', country: 'HU', lat: 47.7856, lng: 19.1310 },
+  { city: 'Gödöllő', country: 'HU', lat: 47.6000, lng: 19.3667 },
+  { city: 'Monor', country: 'HU', lat: 47.3514, lng: 19.4492 },
+  { city: 'Cegléd', country: 'HU', lat: 47.1725, lng: 19.7995 },
   { city: 'Debrecen', country: 'HU', lat: 47.5316, lng: 21.6273 },
   { city: 'Szeged', country: 'HU', lat: 46.253, lng: 20.1414 },
   { city: 'Pécs', country: 'HU', lat: 46.0727, lng: 18.2328 },
@@ -168,6 +175,12 @@ export async function detectCityByGeolocation(country?: string): Promise<{ city:
     const canonical = canonicalCityValue(preferredCountry, coords.city)
     if (canonical) {
       return { city: canonical, country: preferredCountry, source: coords.source }
+    }
+    // Keep reverse-geocoded city even if not in catalog (e.g. Monor before it was listed).
+    // Snapping to nearest catalog city remapped Pest suburbs to Budapest.
+    const cleaned = String(coords.city).trim()
+    if (cleaned) {
+      return { city: cleaned, country: preferredCountry, source: coords.source }
     }
   }
 

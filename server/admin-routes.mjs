@@ -30,6 +30,7 @@ import {
   updateOrder,
   publicOrder,
 } from './orders.mjs';
+import { buildAnalyticsReport } from './analytics.mjs';
 import { resolveCheckoutAmount } from './shipping.mjs';
 import {
   createCourierPickupForShipment,
@@ -108,6 +109,17 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Не удалось загрузить дашборд' });
+    }
+  });
+
+  router.get('/analytics', async (req, res) => {
+    try {
+      const days = Number(req.query.days) || 30;
+      const report = await buildAnalyticsReport({ days });
+      res.json(report);
+    } catch (err) {
+      console.error('[admin] analytics:', err);
+      res.status(500).json({ error: 'Не удалось загрузить аналитику' });
     }
   });
 

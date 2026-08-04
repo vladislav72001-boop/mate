@@ -593,6 +593,19 @@ app.use('/api/shipping', createShippingRouter({ authMiddleware, optionalAuth }))
 app.use('/api/client', createClientRouter({ authMiddleware }));
 app.use('/api/admin', createAdminRouter({ authMiddleware, requireAdmin }));
 
+app.post('/api/analytics/event', async (req, res) => {
+  try {
+    const { assertAnalyticsRateLimit, recordAnalyticsEvent } = await import('./analytics.mjs');
+    assertAnalyticsRateLimit(req);
+    await recordAnalyticsEvent(req.body || {});
+    res.json({ ok: true });
+  } catch (err) {
+    const status = Number(err?.status) || 500;
+    if (status >= 500) console.error('[analytics]', err);
+    res.status(status).json({ error: String(err?.message || err).slice(0, 200) });
+  }
+});
+
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const user = await findById(req.userId);
