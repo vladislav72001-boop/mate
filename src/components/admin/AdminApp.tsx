@@ -714,13 +714,13 @@ function AnalyticsTab() {
         <div className="ax-hero__glow" aria-hidden />
         <div className="ax-hero__body">
           <span className="ax-hero__label">Ключевые выводы</span>
-          <p>{data.insight}</p>
+          <p className="ax-hero__text">{data.insight}</p>
         </div>
-        <div className="ax-hero__ring" aria-hidden>
-          <div
-            className="ax-hero__ring-fill"
-            style={{ '--p': `${Math.min(100, o.conversionPct)}` } as React.CSSProperties}
-          />
+        <div
+          className="ax-hero__ring"
+          aria-hidden
+          style={{ '--p': Math.min(100, Number(o.conversionPct) || 0) } as React.CSSProperties}
+        >
           <div className="ax-hero__ring-core">
             <strong>{o.conversionPct}%</strong>
             <span>оплата</span>
