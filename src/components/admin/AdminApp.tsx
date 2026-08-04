@@ -590,6 +590,7 @@ function AnalyticsTab() {
   const [data, setData] = useState<AdminAnalyticsReport | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [hoverDay, setHoverDay] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -601,67 +602,106 @@ function AnalyticsTab() {
   }, [days]);
 
   if (error) return <div className="admin-alert">{error}</div>;
-  if (loading || !data) return <p className="admin-muted">Загрузка аналитики…</p>;
+  if (loading || !data) {
+    return (
+      <div className="ax ax--loading">
+        <div className="ax-skeleton ax-skeleton--hero" />
+        <div className="ax-skeleton-grid">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="ax-skeleton" style={{ '--d': `${i * 40}ms` } as React.CSSProperties} />
+          ))}
+        </div>
+        <p className="admin-muted">Собираем аналитику…</p>
+      </div>
+    );
+  }
 
   const maxReached = Math.max(1, ...data.funnel.map((f) => f.reached), 1);
   const maxDaily = Math.max(1, ...data.daily.map((d) => d.orders), 1);
   const maxStatus = Math.max(1, ...data.byStatus.map((s) => s.count), 1);
   const maxHour = Math.max(1, ...data.byHour.map((h) => h.count), 1);
   const o = data.orders;
+  const hovered = data.daily.find((d) => d.date === hoverDay) || data.peakDay;
 
-  const cards = [
-    { label: 'Заказы', value: o.total, tone: 'ink' },
-    { label: 'Оплачено / в работе', value: o.paidOrSubmitted, tone: 'green' },
-    { label: 'Конверсия оплаты', value: `${o.conversionPct}%`, tone: 'teal' },
-    { label: 'Ожидают оплаты', value: o.pendingPayment, tone: 'amber' },
-    { label: 'Отменено', value: o.cancelled, tone: 'mute' },
-    { label: 'Выручка', value: formatMoney(o.revenue, o.currency), tone: 'lime', featured: true },
-    { label: 'Средний чек', value: formatMoney(o.avgCheck, o.currency), tone: 'ink' },
-    { label: 'Медиана чека', value: formatMoney(o.medianCheck, o.currency), tone: 'ink' },
-    { label: 'С TTN Nova Post', value: o.withTtn, tone: 'teal' },
-    { label: 'Гости / аккаунты', value: `${o.guests} / ${o.withUser}`, tone: 'mute' },
-    { label: 'Хрупкое / страховка', value: `${o.fragile} / ${o.insurance}`, tone: 'amber' },
-    { label: 'Сессии калькулятора', value: data.sessions, tone: 'ink' },
-  ];
+  const statusTone = (name: string) => {
+    if (name === 'cancelled') return 'danger';
+    if (name === 'pending_payment') return 'warn';
+    if (name === 'waiting_from_you' || name === 'paid') return 'info';
+    if (name === 'submitted' || name === 'delivered') return 'ok';
+    return 'neutral';
+  };
 
   const RankList = ({
     title,
     items,
     empty = 'Нет данных',
+    accent = 'lime',
   }: {
     title: string;
     items: Array<{ name: string; count: number }>;
     empty?: string;
-  }) => (
-    <>
-      <h2 className="admin-panel__sub">{title}</h2>
-      <ul className="admin-rank-list">
-        {items.map((r) => (
-          <li key={r.name}>
-            <span>{r.name}</span>
-            <b>{r.count}</b>
-          </li>
-        ))}
-        {items.length === 0 && <li className="admin-muted">{empty}</li>}
-      </ul>
-    </>
-  );
+    accent?: string;
+  }) => {
+    const max = Math.max(1, ...items.map((i) => i.count));
+    return (
+      <div className="ax-rank">
+        <h3 className="ax-rank__title">{title}</h3>
+        <ul className="ax-rank__list">
+          {items.map((r, idx) => (
+            <li key={r.name} className="ax-rank__item" style={{ '--i': idx } as React.CSSProperties}>
+              <div className="ax-rank__head">
+                <span className="ax-rank__name">{r.name}</span>
+                <b className="ax-rank__count">{r.count}</b>
+              </div>
+              <div className="ax-rank__track">
+                <div
+                  className={`ax-rank__fill ax-rank__fill--${accent}`}
+                  style={{ width: `${(r.count / max) * 100}%` }}
+                />
+              </div>
+            </li>
+          ))}
+          {items.length === 0 && <li className="ax-rank__empty">{empty}</li>}
+        </ul>
+      </div>
+    );
+  };
+
+  const kpis: Array<{
+    label: string;
+    value: string | number;
+    hint?: string;
+    tone: string;
+    wide?: boolean;
+  }> = [
+    { label: 'Выручка', value: formatMoney(o.revenue, o.currency), hint: `${days} дней`, tone: 'lime', wide: true },
+    { label: 'Заказы', value: o.total, hint: `конверсия ${o.conversionPct}%`, tone: 'ink' },
+    { label: 'В работе', value: o.paidOrSubmitted, hint: 'оплачено и дальше', tone: 'ok' },
+    { label: 'Средний чек', value: formatMoney(o.avgCheck, o.currency), hint: `медиана ${formatMoney(o.medianCheck, o.currency)}`, tone: 'ink' },
+    { label: 'Ждут оплаты', value: o.pendingPayment, tone: 'warn' },
+    { label: 'Отмены', value: o.cancelled, hint: o.total ? `${Math.round((o.cancelled / o.total) * 100)}%` : undefined, tone: 'danger' },
+    { label: 'С TTN', value: o.withTtn, hint: 'Nova Post', tone: 'info' },
+    { label: 'Гости / аккаунты', value: `${o.guests} / ${o.withUser}`, tone: 'mute' },
+    { label: 'Хрупкое · страховка', value: `${o.fragile} · ${o.insurance}`, tone: 'warn' },
+    { label: 'Сессии калькулятора', value: data.sessions, hint: data.pageViews ? `${data.pageViews} просмотров` : undefined, tone: 'ink' },
+  ];
 
   return (
-    <div className="admin-section admin-section--animate admin-section--fluid">
-      <header className="admin-section__head admin-section__head--row">
-        <div>
+    <div className="ax admin-section admin-section--animate admin-section--fluid">
+      <header className="ax-head">
+        <div className="ax-head__copy">
+          <p className="ax-eyebrow">Mate Insights</p>
           <h1>Аналитика</h1>
-          <p>Заказы, маршруты, чеки и воронка калькулятора</p>
+          <p className="ax-head__sub">Живая картина бизнеса: заказы, маршруты и поведение в калькуляторе</p>
         </div>
-        <div className="admin-period-chips" role="tablist" aria-label="Период">
+        <div className="ax-period" role="tablist" aria-label="Период">
           {([7, 30, 90] as const).map((d) => (
             <button
               key={d}
               type="button"
               role="tab"
               aria-selected={days === d}
-              className={`admin-chip${days === d ? ' is-active' : ''}`}
+              className={`ax-period__btn${days === d ? ' is-on' : ''}`}
               onClick={() => setDays(d)}
             >
               {d} дн.
@@ -670,80 +710,107 @@ function AnalyticsTab() {
         </div>
       </header>
 
-      <p className="admin-insight card">{data.insight}</p>
-
-      <div className="admin-stats admin-stats--dense">
-        {cards.map((c, i) => (
+      <section className="ax-hero card">
+        <div className="ax-hero__glow" aria-hidden />
+        <div className="ax-hero__body">
+          <span className="ax-hero__label">Ключевые выводы</span>
+          <p>{data.insight}</p>
+        </div>
+        <div className="ax-hero__ring" aria-hidden>
           <div
-            key={c.label}
-            className={`admin-stat card admin-stat--${c.tone}${c.featured ? ' admin-stat--featured' : ''}`}
-            style={{ '--delay': `${i * 30}ms` } as React.CSSProperties}
-          >
-            <span>{c.label}</span>
-            <b>{c.value}</b>
+            className="ax-hero__ring-fill"
+            style={{ '--p': `${Math.min(100, o.conversionPct)}` } as React.CSSProperties}
+          />
+          <div className="ax-hero__ring-core">
+            <strong>{o.conversionPct}%</strong>
+            <span>оплата</span>
           </div>
+        </div>
+      </section>
+
+      <div className="ax-kpis">
+        {kpis.map((c, i) => (
+          <article
+            key={c.label}
+            className={`ax-kpi ax-kpi--${c.tone}${c.wide ? ' ax-kpi--wide' : ''} card`}
+            style={{ '--i': i } as React.CSSProperties}
+          >
+            <span className="ax-kpi__label">{c.label}</span>
+            <b className="ax-kpi__value">{c.value}</b>
+            {c.hint && <small className="ax-kpi__hint">{c.hint}</small>}
+          </article>
         ))}
       </div>
 
-      <div className="admin-grid-2">
-        <section className="card admin-panel admin-panel--rise">
-          <h2>Заказы по дням</h2>
-          <div className="admin-bars admin-bars--daily">
-            {data.daily.map((d) => (
-              <div key={d.date} className="admin-bars__col" title={`${d.date}: ${d.orders} зак., ${d.revenue} ${o.currency}`}>
-                <div className="admin-bars__stack">
-                  <div
-                    className="admin-bars__fill"
-                    style={{ height: `${Math.max(4, (d.orders / maxDaily) * 100)}%` }}
-                  />
-                </div>
-                <span>{d.date.slice(5)}</span>
+      <div className="ax-grid-2">
+        <section className="ax-panel card">
+          <div className="ax-panel__head">
+            <div>
+              <h2>Заказы по дням</h2>
+              <p>Динамика за выбранный период</p>
+            </div>
+            {hovered && hovered.orders > 0 && (
+              <div className="ax-tooltip">
+                <b>{hovered.date}</b>
+                <span>{hovered.orders} зак. · {formatMoney(hovered.revenue, o.currency)}</span>
               </div>
-            ))}
+            )}
           </div>
-          {data.peakDay && data.peakDay.orders > 0 && (
-            <p className="admin-muted admin-panel__note">
-              Пик: {data.peakDay.date} — {data.peakDay.orders} зак., {formatMoney(data.peakDay.revenue, o.currency)}
-            </p>
-          )}
-          <div className="admin-mini-grid">
-            <div>
-              <span>Мин. чек</span>
-              <b>{formatMoney(o.minCheck, o.currency)}</b>
-            </div>
-            <div>
-              <span>Макс. чек</span>
-              <b>{formatMoney(o.maxCheck, o.currency)}</b>
-            </div>
-            <div>
-              <span>Просмотры страниц</span>
-              <b>{data.pageViews}</b>
-            </div>
-            <div>
-              <span>Checkout из кальк.</span>
-              <b>{data.calcConversionPct == null ? '—' : `${data.calcConversionPct}%`}</b>
-            </div>
+          <div className="ax-chart">
+            {data.daily.map((d, i) => {
+              const h = d.orders ? Math.max(8, (d.orders / maxDaily) * 100) : 3;
+              const active = hoverDay === d.date || (!hoverDay && data.peakDay?.date === d.date && d.orders > 0);
+              return (
+                <button
+                  key={d.date}
+                  type="button"
+                  className={`ax-chart__col${d.orders ? ' has-data' : ''}${active ? ' is-active' : ''}`}
+                  style={{ '--i': i, '--h': `${h}%` } as React.CSSProperties}
+                  onMouseEnter={() => setHoverDay(d.date)}
+                  onMouseLeave={() => setHoverDay(null)}
+                  onFocus={() => setHoverDay(d.date)}
+                  onBlur={() => setHoverDay(null)}
+                  aria-label={`${d.date}: ${d.orders} заказов`}
+                >
+                  <span className="ax-chart__bar" />
+                  <span className="ax-chart__label">{d.date.slice(8)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="ax-mini">
+            <div><span>Мин. чек</span><b>{formatMoney(o.minCheck, o.currency)}</b></div>
+            <div><span>Макс. чек</span><b>{formatMoney(o.maxCheck, o.currency)}</b></div>
+            <div><span>Просмотры</span><b>{data.pageViews}</b></div>
+            <div><span>Checkout из кальк.</span><b>{data.calcConversionPct == null ? '—' : `${data.calcConversionPct}%`}</b></div>
           </div>
         </section>
 
-        <section className="card admin-panel admin-panel--rise">
-          <h2>Статусы заказов</h2>
-          <div className="admin-funnel">
-            {data.byStatus.map((row) => (
-              <div key={row.name} className="admin-funnel__row">
-                <div className="admin-funnel__meta">
+        <section className="ax-panel card">
+          <div className="ax-panel__head">
+            <div>
+              <h2>Статусы заказов</h2>
+              <p>Где сейчас находится поток</p>
+            </div>
+          </div>
+          <div className="ax-status">
+            {data.byStatus.map((row, i) => (
+              <div
+                key={row.name}
+                className={`ax-status__row ax-status__row--${statusTone(row.name)}`}
+                style={{ '--i': i } as React.CSSProperties}
+              >
+                <div className="ax-status__meta">
                   <b>{STATUS_LABELS[row.name] || row.name}</b>
                   <span>{row.pct}%</span>
                 </div>
-                <div className="admin-funnel__bar-wrap">
+                <div className="ax-status__track">
                   <div
-                    className="admin-funnel__bar"
+                    className="ax-status__fill"
                     style={{ width: `${Math.max(4, (row.count / maxStatus) * 100)}%` }}
                   />
                 </div>
-                <div className="admin-funnel__nums">
-                  <strong>{row.count}</strong>
-                </div>
+                <strong className="ax-status__n">{row.count}</strong>
               </div>
             ))}
             {data.byStatus.length === 0 && <p className="admin-muted">Нет заказов за период</p>}
@@ -751,29 +818,29 @@ function AnalyticsTab() {
         </section>
       </div>
 
-      <div className="admin-grid-3">
-        <section className="card admin-panel">
-          <RankList title="Топ маршрутов (заказы)" items={data.topCityRoutes} />
-          <RankList title="Страны назначения" items={data.topDestCountries} />
+      <div className="ax-grid-3">
+        <section className="ax-panel card">
+          <RankList title="Топ маршрутов" items={data.topCityRoutes} accent="lime" />
+          <RankList title="Страны назначения" items={data.topDestCountries} accent="teal" />
         </section>
-        <section className="card admin-panel">
-          <RankList title="Размеры посылок" items={data.topOrderSizes} />
-          <RankList title="Связки режимов" items={data.topModePairs} />
-          <RankList title="Кто платит" items={data.topPayers} />
+        <section className="ax-panel card">
+          <RankList title="Размеры посылок" items={data.topOrderSizes} accent="ink" />
+          <RankList title="Связки режимов" items={data.topModePairs} accent="teal" />
+          <RankList title="Кто платит" items={data.topPayers} accent="lime" />
         </section>
-        <section className="card admin-panel">
-          <RankList title="Дни недели" items={data.byWeekday} />
-          <h2 className="admin-panel__sub">Часы активности</h2>
-          <div className="admin-bars admin-bars--hours">
-            {data.byHour.map((h) => (
-              <div key={h.name} className="admin-bars__col" title={`${h.name}: ${h.count}`}>
-                <div className="admin-bars__stack">
-                  <div
-                    className="admin-bars__fill admin-bars__fill--teal"
-                    style={{ height: `${Math.max(4, (h.count / maxHour) * 100)}%` }}
-                  />
-                </div>
-                <span>{h.name.slice(0, 2)}</span>
+        <section className="ax-panel card">
+          <RankList title="Дни недели" items={data.byWeekday} accent="ink" />
+          <h3 className="ax-rank__title">Часы активности</h3>
+          <div className="ax-hours">
+            {data.byHour.map((h, i) => (
+              <div
+                key={h.name}
+                className="ax-hours__col"
+                style={{ '--i': i, '--h': `${Math.max(6, (h.count / maxHour) * 100)}%` } as React.CSSProperties}
+                title={`${h.name}: ${h.count}`}
+              >
+                <span className="ax-hours__bar" />
+                <span className="ax-hours__label">{h.name.slice(0, 2)}</span>
               </div>
             ))}
             {data.byHour.length === 0 && <p className="admin-muted">Нет данных</p>}
@@ -781,45 +848,49 @@ function AnalyticsTab() {
         </section>
       </div>
 
-      <div className="admin-grid-2">
-        <section className="card admin-panel admin-panel--rise">
-          <h2>Воронка шагов калькулятора</h2>
-          <p className="admin-muted admin-panel__note">
-            Живые сессии на сайте (после включения трекинга). Клики «Оплатить»: {data.payClicks}, checkout: {data.checkouts}.
-          </p>
-          <div className="admin-funnel">
-            {data.funnel.map((row) => (
-              <div key={row.step} className="admin-funnel__row">
-                <div className="admin-funnel__meta">
-                  <b>Шаг {row.step}</b>
-                  <span>{CALC_STEP_LABELS[row.step] || `Step ${row.step}`}</span>
+      <div className="ax-grid-2">
+        <section className="ax-panel card">
+          <div className="ax-panel__head">
+            <div>
+              <h2>Воронка калькулятора</h2>
+              <p>Live · клики «Оплатить» {data.payClicks} · checkout {data.checkouts}</p>
+            </div>
+          </div>
+          <div className="ax-funnel">
+            {data.funnel.map((row, i) => (
+              <div key={row.step} className="ax-funnel__row" style={{ '--i': i } as React.CSSProperties}>
+                <div className="ax-funnel__step">
+                  <span className="ax-funnel__num">{row.step}</span>
+                  <div>
+                    <b>{CALC_STEP_LABELS[row.step] || `Step ${row.step}`}</b>
+                    {row.step > 1 && row.dropOffPct > 0 && (
+                      <small className="ax-funnel__drop">−{row.dropOffPct}%</small>
+                    )}
+                  </div>
                 </div>
-                <div className="admin-funnel__bar-wrap" title={`${row.reached} сессий`}>
+                <div className="ax-funnel__track">
                   <div
-                    className="admin-funnel__bar"
-                    style={{ width: `${Math.max(data.sessions ? 4 : 0, (row.reached / maxReached) * 100)}%` }}
+                    className="ax-funnel__fill"
+                    style={{ width: `${Math.max(data.sessions ? 3 : 0, (row.reached / maxReached) * 100)}%` }}
                   />
                 </div>
-                <div className="admin-funnel__nums">
+                <div className="ax-funnel__stats">
                   <strong>{row.reached}</strong>
-                  <small>{row.pctOfSessions}%</small>
-                  {row.step > 1 && row.dropOffPct > 0 && (
-                    <small className="admin-funnel__drop">−{row.dropOffPct}%</small>
-                  )}
+                  <span>{row.pctOfSessions}%</span>
                 </div>
               </div>
             ))}
           </div>
           {data.sessions === 0 && (
-            <p className="admin-muted">Пока 0 сессий — откройте калькулятор на сайте (данные появятся сразу).</p>
+            <p className="ax-empty">Пока нет live-сессий — откройте калькулятор на сайте, и воронка оживёт.</p>
           )}
         </section>
 
-        <section className="card admin-panel admin-panel--rise">
-          <RankList title="Интерес в калькуляторе (live)" items={data.topCalcRoutes} empty="Появится после проходов по калькулятору" />
-          <RankList title="Размеры в калькуляторе" items={data.topCalcSizes} />
-          <RankList title="Страницы сайта" items={data.topPages} />
-          <RankList title="Языки интерфейса" items={data.topLocales} />
+        <section className="ax-panel card">
+          <RankList title="Интерес в калькуляторе" items={data.topCalcRoutes} empty="Появится после проходов" accent="lime" />
+          <RankList title="Размеры в калькуляторе" items={data.topCalcSizes} accent="ink" />
+          <RankList title="Страницы сайта" items={data.topPages} accent="teal" />
+          <RankList title="Языки интерфейса" items={data.topLocales} accent="ink" />
         </section>
       </div>
     </div>
