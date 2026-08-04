@@ -2478,10 +2478,9 @@ export function CalcForm({
                 <label className="calc-form__field-label">{t('calc.to')}</label>
                 <CountrySelect
                   value={toCountry}
-                  exclude={PICKUP_COUNTRY}
                   onChange={(code) => {
                     setToCountry(code);
-                    setReceiverDial(DIAL_BY_CC[code] || '+49');
+                    setReceiverDial(DIAL_BY_CC[code] || '+36');
                   }}
                 />
               </div>
