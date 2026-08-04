@@ -273,15 +273,24 @@ export async function deleteAdminPromo(id: string) {
 export type AdminAnalyticsReport = {
   days: number;
   from: string;
+  currency: string;
+  insight: string;
   sessions: number;
+  pageViews: number;
   funnel: Array<{ step: number; reached: number; pctOfSessions: number; dropOffPct: number }>;
   payClicks: number;
   checkouts: number;
+  calcConversionPct: number | null;
+  topCalcRoutes: Array<{ name: string; count: number }>;
+  topCalcSizes: Array<{ name: string; count: number }>;
+  topCalcPickupModes: Array<{ name: string; count: number }>;
+  topCalcDeliveryModes: Array<{ name: string; count: number }>;
+  topPages: Array<{ name: string; count: number }>;
+  topLocales: Array<{ name: string; count: number }>;
   topRoutes: Array<{ name: string; count: number }>;
   topSizes: Array<{ name: string; count: number }>;
   topPickupModes: Array<{ name: string; count: number }>;
   topDeliveryModes: Array<{ name: string; count: number }>;
-  topPages: Array<{ name: string; count: number }>;
   orders: {
     total: number;
     pendingPayment: number;
@@ -289,8 +298,27 @@ export type AdminAnalyticsReport = {
     cancelled: number;
     revenue: number;
     currency: string;
+    withTtn: number;
+    withUser: number;
+    guests: number;
+    fragile: number;
+    insurance: number;
+    conversionPct: number;
+    avgCheck: number;
+    medianCheck: number;
+    minCheck: number;
+    maxCheck: number;
   };
-  insight: string;
+  byStatus: Array<{ name: string; count: number; pct: number }>;
+  topDestCountries: Array<{ name: string; count: number }>;
+  topCityRoutes: Array<{ name: string; count: number }>;
+  topOrderSizes: Array<{ name: string; count: number }>;
+  topModePairs: Array<{ name: string; count: number }>;
+  topPayers: Array<{ name: string; count: number }>;
+  byWeekday: Array<{ name: string; count: number }>;
+  byHour: Array<{ name: string; count: number }>;
+  daily: Array<{ date: string; orders: number; revenue: number }>;
+  peakDay: { date: string; orders: number; revenue: number } | null;
 };
 
 export async function fetchAdminAnalytics(days: 7 | 30 | 90 = 30) {

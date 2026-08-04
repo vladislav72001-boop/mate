@@ -603,27 +603,56 @@ function AnalyticsTab() {
   if (error) return <div className="admin-alert">{error}</div>;
   if (loading || !data) return <p className="admin-muted">Загрузка аналитики…</p>;
 
-  const maxReached = Math.max(1, ...data.funnel.map((f) => f.reached));
+  const maxReached = Math.max(1, ...data.funnel.map((f) => f.reached), 1);
+  const maxDaily = Math.max(1, ...data.daily.map((d) => d.orders), 1);
+  const maxStatus = Math.max(1, ...data.byStatus.map((s) => s.count), 1);
+  const maxHour = Math.max(1, ...data.byHour.map((h) => h.count), 1);
+  const o = data.orders;
+
   const cards = [
+    { label: 'Заказы', value: o.total, tone: 'ink' },
+    { label: 'Оплачено / в работе', value: o.paidOrSubmitted, tone: 'green' },
+    { label: 'Конверсия оплаты', value: `${o.conversionPct}%`, tone: 'teal' },
+    { label: 'Ожидают оплаты', value: o.pendingPayment, tone: 'amber' },
+    { label: 'Отменено', value: o.cancelled, tone: 'mute' },
+    { label: 'Выручка', value: formatMoney(o.revenue, o.currency), tone: 'lime', featured: true },
+    { label: 'Средний чек', value: formatMoney(o.avgCheck, o.currency), tone: 'ink' },
+    { label: 'Медиана чека', value: formatMoney(o.medianCheck, o.currency), tone: 'ink' },
+    { label: 'С TTN Nova Post', value: o.withTtn, tone: 'teal' },
+    { label: 'Гости / аккаунты', value: `${o.guests} / ${o.withUser}`, tone: 'mute' },
+    { label: 'Хрупкое / страховка', value: `${o.fragile} / ${o.insurance}`, tone: 'amber' },
     { label: 'Сессии калькулятора', value: data.sessions, tone: 'ink' },
-    { label: 'Клики «Оплатить»', value: data.payClicks, tone: 'amber' },
-    { label: 'Успешный checkout', value: data.checkouts, tone: 'green' },
-    { label: 'Заказы за период', value: data.orders.total, tone: 'teal' },
-    { label: 'Ожидают оплаты', value: data.orders.pendingPayment, tone: 'mute' },
-    {
-      label: 'Выручка',
-      value: formatMoney(data.orders.revenue, data.orders.currency),
-      tone: 'lime',
-      featured: true,
-    },
   ];
 
+  const RankList = ({
+    title,
+    items,
+    empty = 'Нет данных',
+  }: {
+    title: string;
+    items: Array<{ name: string; count: number }>;
+    empty?: string;
+  }) => (
+    <>
+      <h2 className="admin-panel__sub">{title}</h2>
+      <ul className="admin-rank-list">
+        {items.map((r) => (
+          <li key={r.name}>
+            <span>{r.name}</span>
+            <b>{r.count}</b>
+          </li>
+        ))}
+        {items.length === 0 && <li className="admin-muted">{empty}</li>}
+      </ul>
+    </>
+  );
+
   return (
-    <div className="admin-section admin-section--animate">
+    <div className="admin-section admin-section--animate admin-section--fluid">
       <header className="admin-section__head admin-section__head--row">
         <div>
           <h1>Аналитика</h1>
-          <p>Воронка калькулятора и популярные маршруты</p>
+          <p>Заказы, маршруты, чеки и воронка калькулятора</p>
         </div>
         <div className="admin-period-chips" role="tablist" aria-label="Период">
           {([7, 30, 90] as const).map((d) => (
@@ -643,12 +672,12 @@ function AnalyticsTab() {
 
       <p className="admin-insight card">{data.insight}</p>
 
-      <div className="admin-stats">
+      <div className="admin-stats admin-stats--dense">
         {cards.map((c, i) => (
           <div
             key={c.label}
             className={`admin-stat card admin-stat--${c.tone}${c.featured ? ' admin-stat--featured' : ''}`}
-            style={{ '--delay': `${i * 45}ms` } as React.CSSProperties}
+            style={{ '--delay': `${i * 30}ms` } as React.CSSProperties}
           >
             <span>{c.label}</span>
             <b>{c.value}</b>
@@ -658,7 +687,106 @@ function AnalyticsTab() {
 
       <div className="admin-grid-2">
         <section className="card admin-panel admin-panel--rise">
+          <h2>Заказы по дням</h2>
+          <div className="admin-bars admin-bars--daily">
+            {data.daily.map((d) => (
+              <div key={d.date} className="admin-bars__col" title={`${d.date}: ${d.orders} зак., ${d.revenue} ${o.currency}`}>
+                <div className="admin-bars__stack">
+                  <div
+                    className="admin-bars__fill"
+                    style={{ height: `${Math.max(4, (d.orders / maxDaily) * 100)}%` }}
+                  />
+                </div>
+                <span>{d.date.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+          {data.peakDay && data.peakDay.orders > 0 && (
+            <p className="admin-muted admin-panel__note">
+              Пик: {data.peakDay.date} — {data.peakDay.orders} зак., {formatMoney(data.peakDay.revenue, o.currency)}
+            </p>
+          )}
+          <div className="admin-mini-grid">
+            <div>
+              <span>Мин. чек</span>
+              <b>{formatMoney(o.minCheck, o.currency)}</b>
+            </div>
+            <div>
+              <span>Макс. чек</span>
+              <b>{formatMoney(o.maxCheck, o.currency)}</b>
+            </div>
+            <div>
+              <span>Просмотры страниц</span>
+              <b>{data.pageViews}</b>
+            </div>
+            <div>
+              <span>Checkout из кальк.</span>
+              <b>{data.calcConversionPct == null ? '—' : `${data.calcConversionPct}%`}</b>
+            </div>
+          </div>
+        </section>
+
+        <section className="card admin-panel admin-panel--rise">
+          <h2>Статусы заказов</h2>
+          <div className="admin-funnel">
+            {data.byStatus.map((row) => (
+              <div key={row.name} className="admin-funnel__row">
+                <div className="admin-funnel__meta">
+                  <b>{STATUS_LABELS[row.name] || row.name}</b>
+                  <span>{row.pct}%</span>
+                </div>
+                <div className="admin-funnel__bar-wrap">
+                  <div
+                    className="admin-funnel__bar"
+                    style={{ width: `${Math.max(4, (row.count / maxStatus) * 100)}%` }}
+                  />
+                </div>
+                <div className="admin-funnel__nums">
+                  <strong>{row.count}</strong>
+                </div>
+              </div>
+            ))}
+            {data.byStatus.length === 0 && <p className="admin-muted">Нет заказов за период</p>}
+          </div>
+        </section>
+      </div>
+
+      <div className="admin-grid-3">
+        <section className="card admin-panel">
+          <RankList title="Топ маршрутов (заказы)" items={data.topCityRoutes} />
+          <RankList title="Страны назначения" items={data.topDestCountries} />
+        </section>
+        <section className="card admin-panel">
+          <RankList title="Размеры посылок" items={data.topOrderSizes} />
+          <RankList title="Связки режимов" items={data.topModePairs} />
+          <RankList title="Кто платит" items={data.topPayers} />
+        </section>
+        <section className="card admin-panel">
+          <RankList title="Дни недели" items={data.byWeekday} />
+          <h2 className="admin-panel__sub">Часы активности</h2>
+          <div className="admin-bars admin-bars--hours">
+            {data.byHour.map((h) => (
+              <div key={h.name} className="admin-bars__col" title={`${h.name}: ${h.count}`}>
+                <div className="admin-bars__stack">
+                  <div
+                    className="admin-bars__fill admin-bars__fill--teal"
+                    style={{ height: `${Math.max(4, (h.count / maxHour) * 100)}%` }}
+                  />
+                </div>
+                <span>{h.name.slice(0, 2)}</span>
+              </div>
+            ))}
+            {data.byHour.length === 0 && <p className="admin-muted">Нет данных</p>}
+          </div>
+        </section>
+      </div>
+
+      <div className="admin-grid-2">
+        <section className="card admin-panel admin-panel--rise">
           <h2>Воронка шагов калькулятора</h2>
+          <p className="admin-muted admin-panel__note">
+            Живые сессии на сайте (после включения трекинга). Клики «Оплатить»: {data.payClicks}, checkout: {data.checkouts}.
+          </p>
           <div className="admin-funnel">
             {data.funnel.map((row) => (
               <div key={row.step} className="admin-funnel__row">
@@ -669,7 +797,7 @@ function AnalyticsTab() {
                 <div className="admin-funnel__bar-wrap" title={`${row.reached} сессий`}>
                   <div
                     className="admin-funnel__bar"
-                    style={{ width: `${Math.max(4, (row.reached / maxReached) * 100)}%` }}
+                    style={{ width: `${Math.max(data.sessions ? 4 : 0, (row.reached / maxReached) * 100)}%` }}
                   />
                 </div>
                 <div className="admin-funnel__nums">
@@ -681,45 +809,17 @@ function AnalyticsTab() {
                 </div>
               </div>
             ))}
-            {data.sessions === 0 && (
-              <p className="admin-muted">Пока нет данных — откройте калькулятор на сайте.</p>
-            )}
           </div>
+          {data.sessions === 0 && (
+            <p className="admin-muted">Пока 0 сессий — откройте калькулятор на сайте (данные появятся сразу).</p>
+          )}
         </section>
 
         <section className="card admin-panel admin-panel--rise">
-          <h2>Топ направлений</h2>
-          <ul className="admin-rank-list">
-            {data.topRoutes.map((r) => (
-              <li key={r.name}>
-                <span>{r.name}</span>
-                <b>{r.count}</b>
-              </li>
-            ))}
-            {data.topRoutes.length === 0 && <li className="admin-muted">Нет данных</li>}
-          </ul>
-
-          <h2 className="admin-panel__sub">Размеры</h2>
-          <ul className="admin-rank-list">
-            {data.topSizes.map((r) => (
-              <li key={r.name}>
-                <span>{r.name}</span>
-                <b>{r.count}</b>
-              </li>
-            ))}
-            {data.topSizes.length === 0 && <li className="admin-muted">Нет данных</li>}
-          </ul>
-
-          <h2 className="admin-panel__sub">Страницы</h2>
-          <ul className="admin-rank-list">
-            {data.topPages.map((r) => (
-              <li key={r.name}>
-                <span>{r.name}</span>
-                <b>{r.count}</b>
-              </li>
-            ))}
-            {data.topPages.length === 0 && <li className="admin-muted">Нет данных</li>}
-          </ul>
+          <RankList title="Интерес в калькуляторе (live)" items={data.topCalcRoutes} empty="Появится после проходов по калькулятору" />
+          <RankList title="Размеры в калькуляторе" items={data.topCalcSizes} />
+          <RankList title="Страницы сайта" items={data.topPages} />
+          <RankList title="Языки интерфейса" items={data.topLocales} />
         </section>
       </div>
     </div>
