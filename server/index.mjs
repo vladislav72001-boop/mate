@@ -668,7 +668,16 @@ if (existsSync(distDir)) {
 }
 
 app.listen(PORT, () => {
+  const forceMate = String(process.env.PRICING_FORCE_MATE || '').toLowerCase() === 'true';
+  const npMarkup = String(process.env.PRICING_NP_APPLY_MARKUP || '').toLowerCase() === 'true';
   console.log(`MATE API running on http://localhost:${PORT}`);
+  console.log(
+    `[pricing] source=${forceMate ? 'mate-matrix' : 'novapost-live'} `
+    + `npMarkup=${npMarkup} npVatInclusive=${process.env.NOVAPOST_COST_INCLUDES_VAT || 'true'}`,
+  );
+  if (forceMate) {
+    console.warn('[pricing] PRICING_FORCE_MATE=true — client prices use Excel matrix, not live Nova Post');
+  }
   if (String(process.env.RUN_CALC_QA_ON_BOOT || '').toLowerCase() === '1') {
     const delayMs = Number(process.env.CALC_QA_BOOT_DELAY_MS || 8000);
     setTimeout(() => {

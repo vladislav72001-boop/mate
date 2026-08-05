@@ -6,12 +6,15 @@ import {
   finalizeNovaPostClientPrice,
   matrixCostNet,
   preferMateMatrixPricing,
+  markupsForLiveNovaPost,
+  tiersForLiveNovaPost,
 } from './pricing-config.mjs';
 
 /**
  * Client delivery price:
- * 1) Prefer Mate matrix (Excel / B2C table) when PRICING_PREFER!=novapost
- * 2) Else live Nova Post — treated as VAT-inclusive company tariff + Mate markup
+ * 1) Live Nova Post by default (PRICING_PREFER=novapost) — VAT-inclusive, no Mate % markup
+ * 2) Mate matrix only when PRICING_PREFER=mate
+ * 3) Matrix fallback if NP quote unavailable
  */
 export async function reconcileParcelPrice({
   fromCountry = 'HU',
@@ -88,8 +91,8 @@ export async function reconcileParcelPrice({
       npTotal: npQuote.total,
       quoteCurrency: npQuote.currency?.code || 'EUR',
       settings,
-      weightMarkups: pricing.weightMarkups,
-      tiers: pricing.tiers,
+      weightMarkups: markupsForLiveNovaPost(pricing),
+      tiers: tiersForLiveNovaPost(pricing),
       weightKg: billableKg,
       monthlyShipments,
       welcomeDiscountPercent,
@@ -97,6 +100,29 @@ export async function reconcileParcelPrice({
       source,
       deliveryMode: mode,
       npServices: npQuote.breakdown || null,
+      costIncludesVat: true,
+    });
+  }
+
+  const matrixFallback = matrixCostNet(pricing, {
+    toCountry,
+    weightKg: billableKg,
+    deliveryMode: mode,
+  });
+  if (matrixFallback != null) {
+    return finalizeNovaPostClientPrice({
+      npTotal: matrixFallback,
+      quoteCurrency: currency,
+      settings,
+      weightMarkups: markupsForLiveNovaPost(pricing),
+      tiers: tiersForLiveNovaPost(pricing),
+      weightKg: billableKg,
+      monthlyShipments,
+      welcomeDiscountPercent,
+      promo,
+      source: 'mate',
+      deliveryMode: mode,
+      costIncludesVat: true,
     });
   }
 

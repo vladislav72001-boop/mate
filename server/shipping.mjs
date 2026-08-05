@@ -47,6 +47,8 @@ import {
   chargeableWeightKg,
   matrixCostNet,
   preferMateMatrixPricing,
+  markupsForLiveNovaPost,
+  tiersForLiveNovaPost,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
 import { countNovaPostCoverage, fetchNovaPostDivisions, mapDivisionToPoint } from './novapost/divisions.mjs';
@@ -651,8 +653,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           size.boxSize,
         );
 
-        // B2C: Excel/Mate matrix first (aligned with public tables). Live NP company
-        // JWT quotes are higher and already include VAT — only used as fallback.
+        // Default: live Nova Post (company contract, VAT included) — pass-through so
+        // client price matches NP. Matrix only when PRICING_PREFER=mate.
         if (useMate) {
           const matrixNet = matrixCostNet(pricing, {
             toCountry,
@@ -686,7 +688,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           }
         }
 
-        // Carrier quote + markup. NP cost is VAT-inclusive for company contract.
+        // Live NP / estimate: no second VAT; no Mate % unless PRICING_NP_APPLY_MARKUP=true.
         if (
           npTotal != null
           && Number.isFinite(Number(npTotal))
@@ -696,14 +698,15 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             npTotal,
             quoteCurrency: npCurrency,
             settings,
-            weightMarkups: pricing.weightMarkups,
-            tiers: pricing.tiers,
+            weightMarkups: markupsForLiveNovaPost(pricing),
+            tiers: tiersForLiveNovaPost(pricing),
             weightKg,
             monthlyShipments,
             welcomeDiscountPercent,
             source,
             deliveryMode: mode,
             npServices: typeof raw === 'object' ? raw.breakdown : null,
+            costIncludesVat: true,
           });
           currency = { code: finalized.currency, symbol: finalized.currency };
           quotes[key] = {
@@ -716,6 +719,37 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           if (source === 'novapost') usedNova += 1;
           else usedEstimate += 1;
           continue;
+        }
+
+        // NP missing — last-resort matrix cell (still better than empty quote).
+        const matrixFallback = matrixCostNet(pricing, {
+          toCountry,
+          weightKg,
+          deliveryMode: mode,
+        });
+        if (matrixFallback != null) {
+          const finalized = finalizeNovaPostClientPrice({
+            npTotal: matrixFallback,
+            quoteCurrency: settings.currency || 'HUF',
+            settings,
+            weightMarkups: markupsForLiveNovaPost(pricing),
+            tiers: tiersForLiveNovaPost(pricing),
+            weightKg,
+            monthlyShipments,
+            welcomeDiscountPercent,
+            source: 'mate',
+            deliveryMode: mode,
+            costIncludesVat: true,
+          });
+          currency = { code: finalized.currency, symbol: finalized.currency };
+          quotes[key] = {
+            ...(typeof raw === 'object' && raw ? raw : {}),
+            total: finalized.amount,
+            currency: finalized.currency,
+            priceSource: 'mate',
+            breakdown: finalized.breakdown,
+          };
+          usedMate += 1;
         }
       }
 
@@ -732,6 +766,10 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         },
       });
       if (process.env.PRICING_LOG !== 'false') {
+        console.log(
+          `[pricing] mode source=${useMate ? 'mate' : 'novapost'} `
+          + `result=${priceSource} mate=${usedMate} nova=${usedNova} estimate=${usedEstimate}`,
+        );
         for (const size of sizes) {
           const q = quotes[size.boxSize];
           if (q && typeof q === 'object' && q.breakdown?.log) {

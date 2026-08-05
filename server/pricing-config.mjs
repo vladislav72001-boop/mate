@@ -656,9 +656,31 @@ export function matrixCostNet(pricing, {
   return Number(cost);
 }
 
-/** Prefer Excel/Mate matrix for B2C unless PRICING_PREFER=novapost. */
+/**
+ * Live Nova Post is the B2C source of truth (match company tariff).
+ * Excel matrix only when PRICING_FORCE_MATE=true (legacy/debug).
+ * Note: Railway may still have PRICING_PREFER=mate — that alone no longer switches to matrix.
+ */
 export function preferMateMatrixPricing() {
-  return String(process.env.PRICING_PREFER || 'mate').toLowerCase().trim() !== 'novapost';
+  return String(process.env.PRICING_FORCE_MATE || '').toLowerCase() === 'true';
+}
+
+/**
+ * Extra Mate % on top of live NP. Off by default so client price matches Nova Post.
+ * Set PRICING_NP_APPLY_MARKUP=true to re-enable admin weight markups on NP quotes.
+ */
+export function markupsForLiveNovaPost(pricing) {
+  if (String(process.env.PRICING_NP_APPLY_MARKUP || '').toLowerCase() === 'true') {
+    return pricing?.weightMarkups || [];
+  }
+  return [];
+}
+
+export function tiersForLiveNovaPost(pricing) {
+  if (String(process.env.PRICING_NP_APPLY_MARKUP || '').toLowerCase() === 'true') {
+    return pricing?.tiers || [];
+  }
+  return [];
 }
 
 export function roundAmount(amount, settings) {
