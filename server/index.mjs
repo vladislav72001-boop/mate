@@ -669,7 +669,7 @@ if (existsSync(distDir)) {
 
 app.listen(PORT, () => {
   const forceMate = String(process.env.PRICING_FORCE_MATE || '').toLowerCase() === 'true';
-  const npMarkup = String(process.env.PRICING_NP_APPLY_MARKUP || '').toLowerCase() === 'true';
+  const npMarkup = String(process.env.PRICING_NP_APPLY_MARKUP || 'true').toLowerCase() !== 'false';
   console.log(`MATE API running on http://localhost:${PORT}`);
   console.log(
     `[pricing] source=${forceMate ? 'mate-matrix' : 'novapost-live'} `

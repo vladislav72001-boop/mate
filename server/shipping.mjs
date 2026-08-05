@@ -688,7 +688,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           }
         }
 
-        // Live NP / estimate: no second VAT; no Mate % unless PRICING_NP_APPLY_MARKUP=true.
+        // Live NP / estimate: VAT already in tariff; Mate ~30% markup (unless PRICING_NP_APPLY_MARKUP=false).
         if (
           npTotal != null
           && Number.isFinite(Number(npTotal))

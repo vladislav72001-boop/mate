@@ -666,21 +666,21 @@ export function preferMateMatrixPricing() {
 }
 
 /**
- * Extra Mate % on top of live NP. Off by default so client price matches Nova Post.
- * Set PRICING_NP_APPLY_MARKUP=true to re-enable admin weight markups on NP quotes.
+ * Mate % on live NP (admin weightMarkups, currently ~30%).
+ * Set PRICING_NP_APPLY_MARKUP=false to pass NP through 1:1.
  */
 export function markupsForLiveNovaPost(pricing) {
-  if (String(process.env.PRICING_NP_APPLY_MARKUP || '').toLowerCase() === 'true') {
-    return pricing?.weightMarkups || [];
+  if (String(process.env.PRICING_NP_APPLY_MARKUP || 'true').toLowerCase() === 'false') {
+    return [];
   }
-  return [];
+  return pricing?.weightMarkups || [];
 }
 
 export function tiersForLiveNovaPost(pricing) {
-  if (String(process.env.PRICING_NP_APPLY_MARKUP || '').toLowerCase() === 'true') {
-    return pricing?.tiers || [];
+  if (String(process.env.PRICING_NP_APPLY_MARKUP || 'true').toLowerCase() === 'false') {
+    return [];
   }
-  return [];
+  return pricing?.tiers || [];
 }
 
 export function roundAmount(amount, settings) {
