@@ -223,6 +223,22 @@ async function fetchCalculationsWithRetry(jwt, payload, attempts = 3) {
   throw lastErr;
 }
 
+async function withNovaPostRetries(fn, attempts = 4) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err?.message || err);
+      const retryable = /\b(403|429|502|503|504)\b/.test(msg) || /transport error/i.test(msg);
+      if (!retryable || i === attempts - 1) break;
+      await new Promise((r) => setTimeout(r, 450 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 const quoteCache = new Map();
 const QUOTE_CACHE_MS = Number(process.env.NOVAPOST_QUOTE_CACHE_MS ?? 15 * 60 * 1000);
 
@@ -343,7 +359,10 @@ export async function calculateBatch({
       const entries = await Promise.all(
         pending.map(async ({ key, input, cacheKey }) => {
           try {
-            const result = await calculateWithSession(jwt, fromCode, toCode, fromDivisionId, toDivisionId, input);
+            const result = await withNovaPostRetries(async () => {
+              const result = await calculateWithSession(jwt, fromCode, toCode, fromDivisionId, toDivisionId, input);
+              return result;
+            });
             setCachedQuote(cacheKey, result);
             return [key, result, null];
           } catch (err) {
@@ -386,12 +405,14 @@ export async function calculateSingle(input) {
   if (cached) return cached;
 
   try {
-    const jwt = await getNovaPostJwt();
-    const [fromDivisionId, toDivisionId] = await Promise.all([
-      getNovaPostDivisionId(jwt, fromCode),
-      getNovaPostDivisionId(jwt, toCode),
-    ]);
-    const result = await calculateWithSession(jwt, fromCode, toCode, fromDivisionId, toDivisionId, normalized);
+    const result = await withNovaPostRetries(async () => {
+      const jwt = await getNovaPostJwt();
+      const [fromDivisionId, toDivisionId] = await Promise.all([
+        getNovaPostDivisionId(jwt, fromCode),
+        getNovaPostDivisionId(jwt, toCode),
+      ]);
+      return calculateWithSession(jwt, fromCode, toCode, fromDivisionId, toDivisionId, normalized);
+    });
     setCachedQuote(cacheKey, result);
     return result;
   } catch (err) {
