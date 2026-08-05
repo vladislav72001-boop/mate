@@ -666,8 +666,26 @@ export function preferMateMatrixPricing() {
 }
 
 /**
+ * Company JWT /shipments/calculations returns contract tariffs, often ~2.8× higher than
+ * personal my.novapost.com for the same parcel (Oleg 2026-08-05 HU→CZ 35×20×10 1.9kg:
+ * API 5000 HUF vs site 1795 HUF). Scale live quotes down to retail before Mate markup.
+ *
+ * Override: NOVAPOST_RETAIL_FACTOR=0.359  |  set 1 or false to disable.
+ */
+export function novaPostRetailAlignFactor() {
+  const raw = process.env.NOVAPOST_RETAIL_FACTOR;
+  if (raw != null && String(raw).trim() !== '') {
+    const s = String(raw).toLowerCase().trim();
+    if (s === 'false' || s === 'off' || s === '0') return 1;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 1795 / 5000;
+}
+
+/**
  * Mate % on live NP (admin weightMarkups, currently ~30%).
- * Set PRICING_NP_APPLY_MARKUP=false to pass NP through 1:1.
+ * Set PRICING_NP_APPLY_MARKUP=false to pass NP through 1:1 (after retail align).
  */
 export function markupsForLiveNovaPost(pricing) {
   if (String(process.env.PRICING_NP_APPLY_MARKUP || 'true').toLowerCase() === 'false') {
@@ -897,9 +915,16 @@ export function finalizeNovaPostClientPrice({
   costIncludesVat = null,
 }) {
   const currency = String(settings?.currency || 'HUF').toUpperCase();
-  const npNet = Math.round(
+  let npNet = Math.round(
     convertToSettingsCurrency(Number(npTotal) || 0, quoteCurrency, settings) * 100,
   ) / 100;
+  const retailFactor = (source === 'novapost' || source === 'estimate')
+    ? novaPostRetailAlignFactor()
+    : 1;
+  const companyApiGross = npNet;
+  if (retailFactor > 0 && retailFactor !== 1) {
+    npNet = Math.round(npNet * retailFactor * 100) / 100;
+  }
   const markupPct = markupPercentForWeight(weightMarkups, weightKg);
   const tier = tierForShipments(tiers, monthlyShipments);
   const discountPct = Number(tier.discountPercent) || 0;
@@ -958,20 +983,28 @@ export function finalizeNovaPostClientPrice({
   const sourceTitle = source === 'mate'
     ? 'Цена из матрицы (без НДС)'
     : source === 'novapost'
-      ? (vatAlreadyInQuote ? 'Тариф Nova Post (с НДС)' : 'Тариф Nova Post')
+      ? (vatAlreadyInQuote ? 'Тариф Nova Post API (с НДС)' : 'Тариф Nova Post API')
       : 'Оценка Nova Post';
   const log = [
     {
       step: 1,
       title: sourceTitle,
       detail: `${Math.round(Number(npTotal) * 100) / 100} ${String(quoteCurrency || 'EUR').toUpperCase()}`,
-      value: npNet,
+      value: companyApiGross,
     },
   ];
+  if (retailFactor > 0 && retailFactor !== 1) {
+    log.push({
+      step: log.length + 1,
+      title: 'Приведение к тарифу физлица (my.novapost)',
+      detail: `${companyApiGross} × ${Math.round(retailFactor * 10000) / 10000}`,
+      value: npNet,
+    });
+  }
   if (markupPct) {
     log.push({
       step: log.length + 1,
-      title: `Наценка +${markupPct}%`,
+      title: `Наценка Mate +${markupPct}%`,
       detail: `${npNet} × ${(1 + markupPct / 100).toFixed(2)}`,
       value: Math.round(afterMarkup * 100) / 100,
     });
@@ -1039,6 +1072,8 @@ export function finalizeNovaPostClientPrice({
     priceSource: source,
     breakdown: {
       npNet,
+      companyApiGross: companyApiGross !== npNet ? companyApiGross : null,
+      retailAlignFactor: retailFactor !== 1 ? retailFactor : null,
       matrixNet: source === 'mate' ? npNet : null,
       chosenNet: Math.round(afterDiscount * 100) / 100,
       markupPercent: markupPct,
