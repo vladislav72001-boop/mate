@@ -653,8 +653,8 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           size.boxSize,
         );
 
-        // Default: live Nova Post (company contract, VAT included) — pass-through so
-        // client price matches NP. Matrix only when PRICING_PREFER=mate.
+        // Live Nova Post under GNPHU contract (VAT included) + Mate ~30%.
+        // Matrix only when PRICING_FORCE_MATE=true. Never sell mock/estimate EUR as client price.
         if (useMate) {
           const matrixNet = matrixCostNet(pricing, {
             toCountry,
@@ -688,12 +688,12 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           }
         }
 
-        // Live NP / estimate: VAT already in tariff; Mate ~30% markup (unless PRICING_NP_APPLY_MARKUP=false).
+        // Live NP only — ignore mock/estimate quotes.
         if (
-          npTotal != null
+          npSource === 'novapost'
+          && npTotal != null
           && Number.isFinite(Number(npTotal))
         ) {
-          const source = npSource === 'novapost' ? 'novapost' : 'estimate';
           const finalized = finalizeNovaPostClientPrice({
             npTotal,
             quoteCurrency: npCurrency,
@@ -703,7 +703,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             weightKg,
             monthlyShipments,
             welcomeDiscountPercent,
-            source,
+            source: 'novapost',
             deliveryMode: mode,
             npServices: typeof raw === 'object' ? raw.breakdown : null,
             costIncludesVat: true,
@@ -713,15 +713,14 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             ...(typeof raw === 'object' && raw ? raw : {}),
             total: finalized.amount,
             currency: finalized.currency,
-            priceSource: source,
+            priceSource: 'novapost',
             breakdown: finalized.breakdown,
           };
-          if (source === 'novapost') usedNova += 1;
-          else usedEstimate += 1;
+          usedNova += 1;
           continue;
         }
 
-        // NP missing — last-resort matrix cell (still better than empty quote).
+        // NP missing — matrix cell (net + VAT via finalize), not mock EUR.
         const matrixFallback = matrixCostNet(pricing, {
           toCountry,
           weightKg,
@@ -732,14 +731,14 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             npTotal: matrixFallback,
             quoteCurrency: settings.currency || 'HUF',
             settings,
-            weightMarkups: markupsForLiveNovaPost(pricing),
-            tiers: tiersForLiveNovaPost(pricing),
+            weightMarkups: pricing.weightMarkups,
+            tiers: pricing.tiers,
             weightKg,
             monthlyShipments,
             welcomeDiscountPercent,
             source: 'mate',
             deliveryMode: mode,
-            costIncludesVat: true,
+            costIncludesVat: false,
           });
           currency = { code: finalized.currency, symbol: finalized.currency };
           quotes[key] = {

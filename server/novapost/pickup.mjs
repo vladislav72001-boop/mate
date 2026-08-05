@@ -3,6 +3,7 @@
  * Docs: https://api-portal.novapost.com/metodi-1/methods/pickups
  */
 import {
+  getNovaPostContractConfig,
   getNovaPostJwt,
   isNovaPostMock,
   novaPostFetchJson,
@@ -396,12 +397,7 @@ export async function createCourierPickupForShipment(body, shipment) {
   const phone = normalizeNovaPostPhone(String(sender.phone || ''), countryCode);
   const fullName = sanitizePersonName(sender.name) || 'Mate Customer';
   const email = String(sender.email || '').trim().slice(0, 128) || undefined;
-  const payerContractNumber = String(process.env.NOVAPOST_PAYER_CONTRACT_NUMBER || '').trim();
-  const companyTin = String(
-    process.env.NOVAPOST_COMPANY_TIN
-    || process.env.MATE_COMPANY_TIN
-    || '32834374243',
-  ).replace(/\D/g, '');
+  const { payerContractNumber, companyTin, companyName } = getNovaPostContractConfig();
 
   const pickupDate = String(tariff.pickupDate || body.pickupDate || '').trim();
   const pickupTime = String(tariff.pickupTime || body.pickupTime || '').trim();
@@ -430,11 +426,7 @@ export async function createCourierPickupForShipment(body, shipment) {
   if (email) createPayload.email = email;
   if (payerContractNumber && companyTin) {
     createPayload.companyTin = companyTin;
-    createPayload.companyName = String(
-      process.env.NOVAPOST_COMPANY_NAME
-      || process.env.MATE_COMPANY_NAME
-      || 'Mate Logisztikanetwork',
-    ).trim().slice(0, 255);
+    createPayload.companyName = companyName.slice(0, 255);
   }
   if (pickedTimeFrom) createPayload.pickedTimeFrom = pickedTimeFrom;
   if (pickedTimeTo) createPayload.pickedTimeTo = pickedTimeTo;

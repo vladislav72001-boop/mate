@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  getNovaPostContractConfig,
   getNovaPostDivisionId,
   getNovaPostJwt,
   isNovaPostMock,
@@ -223,12 +224,7 @@ export async function createInternationalShipment(body, clientOrder) {
 
   // Non-cash under Mate↔Nova Post contract when a valid API contract id is configured.
   // NP: companyTin must match the API-key company exactly, digits only (e.g. 32834374243, not 32834374-2-43).
-  const payerContractNumber = String(process.env.NOVAPOST_PAYER_CONTRACT_NUMBER || '').trim();
-  const companyTin = String(
-    process.env.NOVAPOST_COMPANY_TIN
-    || process.env.MATE_COMPANY_TIN
-    || '32834374243',
-  ).replace(/\D/g, '');
+  const { payerContractNumber, companyTin } = getNovaPostContractConfig();
 
   if (payerContractNumber && companyTin) {
     sender.companyTin = companyTin;

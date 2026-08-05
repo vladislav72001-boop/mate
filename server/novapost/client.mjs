@@ -25,7 +25,34 @@ let inFlightJwt = null;
 const divisionIdCache = new Map();
 
 export function isNovaPostConfigured() {
-  return Boolean(process.env.NOVAPOST_API_KEY?.trim());
+  return Boolean(readNovaPostEnv('NOVAPOST_API_KEY'));
+}
+
+/** Read env with trim; also matches keys that accidentally have trailing spaces (Railway UI quirk). */
+export function readNovaPostEnv(name) {
+  const direct = process.env[name];
+  if (direct != null && String(direct).trim() !== '') return String(direct).trim();
+  const hit = Object.keys(process.env).find((k) => k.trim() === name);
+  if (hit != null && process.env[hit] != null) return String(process.env[hit]).trim();
+  return '';
+}
+
+/** Mate company contract used for B2C quotes/shipments (my.novapost Legal entity). */
+export const DEFAULT_NOVAPOST_PAYER_CONTRACT = 'GNPHU-00026481';
+export const DEFAULT_NOVAPOST_COMPANY_TIN = '32834374243';
+export const DEFAULT_NOVAPOST_COMPANY_NAME = 'Mate Logisztikanetwork korlatolt felelossegu tarsasag';
+
+export function getNovaPostContractConfig() {
+  const payerContractNumber = readNovaPostEnv('NOVAPOST_PAYER_CONTRACT_NUMBER')
+    || DEFAULT_NOVAPOST_PAYER_CONTRACT;
+  const companyTin = (
+    readNovaPostEnv('NOVAPOST_COMPANY_TIN')
+    || readNovaPostEnv('MATE_COMPANY_TIN')
+    || DEFAULT_NOVAPOST_COMPANY_TIN
+  ).replace(/\D/g, '');
+  const companyName = readNovaPostEnv('NOVAPOST_COMPANY_NAME')
+    || DEFAULT_NOVAPOST_COMPANY_NAME;
+  return { payerContractNumber, companyTin, companyName };
 }
 
 let npCircuitOpenUntil = 0;
@@ -94,7 +121,7 @@ async function requestJson(method, path, extraHeaders = {}, body) {
 }
 
 export async function getNovaPostJwt() {
-  const apiKey = process.env.NOVAPOST_API_KEY?.trim();
+  const apiKey = readNovaPostEnv('NOVAPOST_API_KEY');
   if (!apiKey) throw new Error('NOVAPOST_API_KEY is not configured');
 
   if (cachedJwt && cachedJwt.expiresAt > Date.now()) return cachedJwt.token;

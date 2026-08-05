@@ -657,35 +657,31 @@ export function matrixCostNet(pricing, {
 }
 
 /**
- * Live Nova Post is the B2C source of truth (match company tariff).
+ * Live Nova Post is the B2C source of truth (Mate GNPHU company-contract tariff).
  * Excel matrix only when PRICING_FORCE_MATE=true (legacy/debug).
- * Note: Railway may still have PRICING_PREFER=mate — that alone no longer switches to matrix.
+ * Note: PRICING_PREFER is ignored — do not use it to switch sources.
  */
 export function preferMateMatrixPricing() {
   return String(process.env.PRICING_FORCE_MATE || '').toLowerCase() === 'true';
 }
 
 /**
- * Company JWT /shipments/calculations returns contract tariffs, often ~2.8× higher than
- * personal my.novapost.com for the same parcel (Oleg 2026-08-05 HU→CZ 35×20×10 1.9kg:
- * API 5000 HUF vs site 1795 HUF). Scale live quotes down to retail before Mate markup.
- *
- * Override: NOVAPOST_RETAIL_FACTOR=0.359  |  set 1 or false to disable.
+ * @deprecated Do not use. Kept only so old env NOVAPOST_RETAIL_FACTOR is ignored safely.
+ * Wrong "personal vs company" scale caused bad prices; contract tariff is the source of truth.
  */
 export function novaPostRetailAlignFactor() {
   const raw = process.env.NOVAPOST_RETAIL_FACTOR;
-  if (raw != null && String(raw).trim() !== '') {
-    const s = String(raw).toLowerCase().trim();
-    if (s === 'false' || s === 'off' || s === '0') return 1;
-    const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return n;
+  if (raw != null && String(raw).trim() !== '' && String(raw).trim() !== '1') {
+    console.warn(
+      `[pricing] Ignoring NOVAPOST_RETAIL_FACTOR=${raw} — use GNPHU contract quotes, not manual scale`,
+    );
   }
-  return 1795 / 5000;
+  return 1;
 }
 
 /**
  * Mate % on live NP (admin weightMarkups, currently ~30%).
- * Set PRICING_NP_APPLY_MARKUP=false to pass NP through 1:1 (after retail align).
+ * Set PRICING_NP_APPLY_MARKUP=false to pass NP through 1:1.
  */
 export function markupsForLiveNovaPost(pricing) {
   if (String(process.env.PRICING_NP_APPLY_MARKUP || 'true').toLowerCase() === 'false') {
@@ -918,13 +914,10 @@ export function finalizeNovaPostClientPrice({
   let npNet = Math.round(
     convertToSettingsCurrency(Number(npTotal) || 0, quoteCurrency, settings) * 100,
   ) / 100;
-  const retailFactor = (source === 'novapost' || source === 'estimate')
-    ? novaPostRetailAlignFactor()
-    : 1;
+  // Intentional no-op: novaPostRetailAlignFactor always returns 1 (legacy env ignored).
+  novaPostRetailAlignFactor();
   const companyApiGross = npNet;
-  if (retailFactor > 0 && retailFactor !== 1) {
-    npNet = Math.round(npNet * retailFactor * 100) / 100;
-  }
+  const retailFactor = 1;
   const markupPct = markupPercentForWeight(weightMarkups, weightKg);
   const tier = tierForShipments(tiers, monthlyShipments);
   const discountPct = Number(tier.discountPercent) || 0;
@@ -996,7 +989,7 @@ export function finalizeNovaPostClientPrice({
   if (retailFactor > 0 && retailFactor !== 1) {
     log.push({
       step: log.length + 1,
-      title: 'Приведение к тарифу физлица (my.novapost)',
+      title: 'Коррекция тарифа NP (NOVAPOST_RETAIL_FACTOR)',
       detail: `${companyApiGross} × ${Math.round(retailFactor * 10000) / 10000}`,
       value: npNet,
     });

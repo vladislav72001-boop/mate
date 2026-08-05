@@ -12,9 +12,9 @@ import {
 
 /**
  * Client delivery price:
- * 1) Live Nova Post by default (PRICING_PREFER=novapost) — VAT-inclusive, no Mate % markup
- * 2) Mate matrix only when PRICING_PREFER=mate
- * 3) Matrix fallback if NP quote unavailable
+ * 1) Live Nova Post under Mate GNPHU contract (VAT already in tariff) + Mate ~30%
+ * 2) Excel matrix only when PRICING_FORCE_MATE=true
+ * 3) Matrix fallback if live NP quote unavailable (never sell mock EUR estimates)
  */
 export async function reconcileParcelPrice({
   fromCountry = 'HU',
@@ -81,12 +81,7 @@ export async function reconcileParcelPrice({
     console.warn('[pricing] NP reconcile quote failed:', err?.message || err);
   }
 
-  const npOk = npQuote?.total != null
-    && Number.isFinite(Number(npQuote.total))
-    && (npQuote.priceSource === 'novapost' || npQuote.priceSource === 'mock' || npQuote.priceSource === 'estimate');
-
-  if (npOk) {
-    const source = npQuote.priceSource === 'novapost' ? 'novapost' : 'estimate';
+  if (npQuote?.priceSource === 'novapost' && npQuote?.total != null && Number.isFinite(Number(npQuote.total))) {
     return finalizeNovaPostClientPrice({
       npTotal: npQuote.total,
       quoteCurrency: npQuote.currency?.code || 'EUR',
@@ -97,7 +92,7 @@ export async function reconcileParcelPrice({
       monthlyShipments,
       welcomeDiscountPercent,
       promo,
-      source,
+      source: 'novapost',
       deliveryMode: mode,
       npServices: npQuote.breakdown || null,
       costIncludesVat: true,
@@ -114,15 +109,15 @@ export async function reconcileParcelPrice({
       npTotal: matrixFallback,
       quoteCurrency: currency,
       settings,
-      weightMarkups: markupsForLiveNovaPost(pricing),
-      tiers: tiersForLiveNovaPost(pricing),
+      weightMarkups: pricing.weightMarkups,
+      tiers: pricing.tiers,
       weightKg: billableKg,
       monthlyShipments,
       welcomeDiscountPercent,
       promo,
       source: 'mate',
       deliveryMode: mode,
-      costIncludesVat: true,
+      costIncludesVat: false,
     });
   }
 

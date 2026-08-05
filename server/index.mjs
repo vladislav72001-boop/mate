@@ -670,15 +670,17 @@ if (existsSync(distDir)) {
 app.listen(PORT, () => {
   const forceMate = String(process.env.PRICING_FORCE_MATE || '').toLowerCase() === 'true';
   const npMarkup = String(process.env.PRICING_NP_APPLY_MARKUP || 'true').toLowerCase() !== 'false';
-  const retailFactor = process.env.NOVAPOST_RETAIL_FACTOR || `${1795}/${5000}`;
   console.log(`MATE API running on http://localhost:${PORT}`);
   console.log(
-    `[pricing] source=${forceMate ? 'mate-matrix' : 'novapost-live'} `
-    + `npMarkup=${npMarkup} retailFactor=${retailFactor} `
+    `[pricing] source=${forceMate ? 'mate-matrix' : 'novapost-live+GNPHU'} `
+    + `npMarkup=${npMarkup} `
     + `npVatInclusive=${process.env.NOVAPOST_COST_INCLUDES_VAT || 'true'}`,
   );
   if (forceMate) {
     console.warn('[pricing] PRICING_FORCE_MATE=true — client prices use Excel matrix, not live Nova Post');
+  }
+  if (process.env.NOVAPOST_RETAIL_FACTOR) {
+    console.warn('[pricing] NOVAPOST_RETAIL_FACTOR is set but ignored — contract tariff is source of truth');
   }
   if (String(process.env.RUN_CALC_QA_ON_BOOT || '').toLowerCase() === '1') {
     const delayMs = Number(process.env.CALC_QA_BOOT_DELAY_MS || 8000);

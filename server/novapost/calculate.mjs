@@ -1,8 +1,8 @@
 import {
+  getNovaPostContractConfig,
   getNovaPostDivisionId,
   getNovaPostJwt,
   isNovaPostMock,
-  markNovaPostUnavailable,
   novaPostFetchJson,
   novaPostAuthHeader,
 } from './client.mjs';
@@ -13,7 +13,7 @@ import {
   validateParcelDimensionsCm,
 } from './parcel.mjs';
 
-const CURRENCY_SYMBOLS = { EUR: 'EUR', PLN: 'PLN', USD: 'USD', UAH: 'UAH' };
+const CURRENCY_SYMBOLS = { EUR: 'EUR', PLN: 'PLN', USD: 'USD', UAH: 'UAH', HUF: 'HUF' };
 
 function normalizeCountryCode(value) {
   const s = String(value || '').trim().toUpperCase();
@@ -131,41 +131,55 @@ async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDiv
   const lengthCm = isDocuments ? 35 : Math.max(1, Number(input.lengthCm) || 30);
   const widthCm = isDocuments ? 25 : Math.max(1, Number(input.widthCm) || 20);
   const heightCm = isDocuments ? 2 : Math.max(1, Number(input.heightCm) || 15);
-  const insuranceCost = Math.max(1, Math.round(Number(input.declaredValue ?? 100)));
+  // my.novapost UI allows empty declared; API requires insuranceCost > 0.
+  const declaredRaw = Number(input.declaredValue);
+  const insuranceCost = Number.isFinite(declaredRaw) && declaredRaw > 0
+    ? Math.round(declaredRaw)
+    : 1;
   const dims = normalizeParcelDimensionsMm(lengthCm, widthCm, heightCm);
   const weightKg = Math.max(0.1, Number(input.weightKg) || (isDocuments ? 0.2 : 1));
 
+  // Same contract path as my.novapost "Legal entity" + GNPHU.
+  const { payerContractNumber, companyTin, companyName } = getNovaPostContractConfig();
+
+  const sender = {
+    ...normalizeQuoteParty(input.pickupLocation, fromCountryCode, fromDivisionId),
+    name: companyName,
+    phone: '36701234567',
+    email: 'ops@matedelivery.com',
+  };
+  if (payerContractNumber && companyTin) {
+    sender.companyTin = companyTin;
+    sender.companyName = companyName;
+  }
+
   const payload = {
-    payerType: input.payerType === 'Recipient' ? 'Recipient' : 'Sender',
+    payerType: input.payerType === 'Recipient'
+      ? 'Recipient'
+      : input.payerType === 'ThirdPerson'
+        ? 'ThirdPerson'
+        : 'Sender',
+    ...(payerContractNumber ? { payerContractNumber } : {}),
     parcels: [{
       rowNumber: 1,
       cargoCategory: isDocuments ? 'documents' : 'parcel',
       parcelDescription: isDocuments ? 'Documents' : 'Calculation request',
-      insuranceCost,
+      insuranceCost: Math.max(1, insuranceCost),
       length: dims.length,
       width: dims.width,
       height: dims.height,
       actualWeight: Math.max(1, Math.round(weightKg * 1000)),
     }],
-    sender: {
-      ...normalizeQuoteParty(input.pickupLocation, fromCountryCode, fromDivisionId),
-      name: 'Mate Sender',
-      phone: '380991111111',
-      email: 'sender@example.com',
-    },
+    sender,
     recipient: {
       ...normalizeQuoteParty(input.deliveryLocation, toCountryCode, toDivisionId),
       name: 'Mate Recipient',
-      phone: '491111111111',
+      phone: '420111111111',
       email: 'recipient@example.com',
     },
   };
 
-  const response = await novaPostFetchJson('/shipments/calculations', {
-    method: 'POST',
-    headers: { ...novaPostAuthHeader(jwt), 'Content-Type': 'application/json' },
-    body: payload,
-  });
+  const response = await fetchCalculationsWithRetry(jwt, payload);
 
   const services = response.services ?? [];
   if (!services.length) throw new Error('Nova Post returned empty calculation response');
@@ -182,7 +196,31 @@ async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDiv
       currencyCode: s.currencyCode ?? currencyCode,
     })),
     priceSource: 'novapost',
+    meta: {
+      payerContractNumber: payerContractNumber || null,
+      usedCompanySender: Boolean(sender.companyTin),
+    },
   };
+}
+
+async function fetchCalculationsWithRetry(jwt, payload, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await novaPostFetchJson('/shipments/calculations', {
+        method: 'POST',
+        headers: { ...novaPostAuthHeader(jwt), 'Content-Type': 'application/json' },
+        body: payload,
+      });
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err?.message || err);
+      const retryable = /\b(403|429|502|503|504)\b/.test(msg) || /transport error/i.test(msg);
+      if (!retryable || i === attempts - 1) break;
+      await new Promise((r) => setTimeout(r, 350 * (i + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 const quoteCache = new Map();
@@ -198,7 +236,10 @@ function quoteLocationKey(location) {
 }
 
 function quoteCacheKey(fromCode, toCode, declaredValue, input) {
+  const { payerContractNumber } = getNovaPostContractConfig();
   return [
+    'v3',
+    payerContractNumber || 'none',
     fromCode,
     toCode,
     declaredValue,
@@ -322,13 +363,10 @@ export async function calculateBatch({
 
     return { quotes, errors, currency, priceSource: 'novapost' };
   } catch (err) {
-    markNovaPostUnavailable();
-    console.warn('[novapost] calculateBatch fallback to estimate:', err?.message || err);
-    for (const input of validInputs) {
-      const key = String(input.boxSize || 'parcel');
-      if (!quotes[key]) quotes[key] = calculateMock(input);
-    }
-    return { quotes, errors, currency: { code: 'EUR', symbol: 'EUR' }, priceSource: 'estimate' };
+    // Do not open the global NP circuit on quote failures — intermittent 403s
+    // must not force mock EUR prices for every customer for a minute.
+    console.warn('[novapost] calculateBatch incomplete:', err?.message || err);
+    return { quotes, errors, currency: { code: 'EUR', symbol: 'EUR' }, priceSource: 'novapost' };
   }
 }
 
@@ -338,7 +376,10 @@ export async function calculateSingle(input) {
   const normalized = { ...input, fromCountry: fromCode, toCountry: toCode };
   validateParcelInput(normalized);
 
-  if (isNovaPostMock()) return calculateMock(normalized);
+  if (isNovaPostMock()) {
+    const mock = calculateMock(normalized);
+    return { ...mock, priceSource: 'mock' };
+  }
 
   const cacheKey = quoteCacheKey(fromCode, toCode, normalized.declaredValue ?? 100, normalized);
   const cached = getCachedQuote(cacheKey);
@@ -354,9 +395,8 @@ export async function calculateSingle(input) {
     setCachedQuote(cacheKey, result);
     return result;
   } catch (err) {
-    markNovaPostUnavailable();
-    console.warn('[novapost] calculateSingle fallback to estimate:', err?.message || err);
-    return calculateMock(normalized);
+    console.warn('[novapost] calculateSingle failed:', err?.message || err);
+    throw err;
   }
 }
 
