@@ -703,7 +703,11 @@ export function roundAmount(amount, settings) {
     return settings?.currency === 'HUF' ? Math.round(n) : Math.round(n * 100) / 100;
   }
   const step = Number(settings.roundingStep) || 10;
-  return Math.round(n / step) * step;
+  if (!(step > 0)) return Math.ceil(n);
+  // Always round UP to the step (2333.5 → 2340), keep exact multiples as-is.
+  const q = n / step;
+  const units = Math.abs(q - Math.round(q)) < 1e-9 ? Math.round(q) : Math.ceil(q);
+  return units * step;
 }
 
 export function applyVat(amount, settings) {
@@ -806,7 +810,7 @@ export async function calculateMatePrice({
   if (settings?.roundingEnabled) {
     log.push({
       step: log.length + 1,
-      title: `Округление до ${settings.roundingStep}`,
+      title: `Округление вверх до ${settings.roundingStep}`,
       detail: `→ итог`,
       value: amount,
     });
@@ -1047,7 +1051,7 @@ export function finalizeNovaPostClientPrice({
   if (settings?.roundingEnabled) {
     log.push({
       step: log.length + 1,
-      title: `Округление до ${settings.roundingStep}`,
+      title: `Округление вверх до ${settings.roundingStep}`,
       detail: '→ итог',
       value: amount,
     });

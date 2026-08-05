@@ -59,7 +59,7 @@ const finalized = finalizeNovaPostClientPrice({
 });
 
 assert.equal(finalized.currency, 'HUF');
-assert.ok(finalized.amount >= 2320 && finalized.amount <= 2340, `expected ~2330, got ${finalized.amount}`);
+assert.ok(finalized.amount === 2340, `expected 2340 (ceil), got ${finalized.amount}`);
 assert.equal(finalized.priceSource, 'novapost');
 console.log('formula OK: 1795 →', finalized.amount, finalized.currency);
 
@@ -89,7 +89,7 @@ try {
     costIncludesVat: true,
   });
   console.log('live OK: NP', quote.total, '→ Mate', client.amount, client.currency);
-  assert.ok(client.amount >= 2200 && client.amount <= 2500, `live client out of band: ${client.amount}`);
+  assert.ok(client.amount >= 2300 && client.amount <= 2500, `live client out of band: ${client.amount}`);
   liveOk = true;
 } catch (err) {
   console.warn('live NP skipped/failed (formula still OK):', err?.message || err);

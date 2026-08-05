@@ -1918,7 +1918,7 @@ function SettingsTab() {
             checked={settings.roundingEnabled}
             onChange={(e) => setSettings({ ...settings, roundingEnabled: e.target.checked })}
           />
-          <span>Округлять итоговую цену</span>
+          <span>Округлять итоговую цену вверх</span>
         </label>
         <div className="admin-fields-row">
           <label className="admin-field admin-field--md">

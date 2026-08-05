@@ -196,14 +196,17 @@ export async function fetchQuoteSettings() {
   return res.data;
 }
 
-/** Same rounding as server/pricing-config.mjs */
+/** Same rounding as server/pricing-config.mjs — always UP to step */
 export function roundQuoteAmount(amount: number, settings: Pick<QuoteSettings, 'roundingEnabled' | 'roundingStep' | 'currency'>) {
   const n = Number(amount) || 0;
   if (!settings.roundingEnabled) {
     return settings.currency === 'HUF' ? Math.round(n) : Math.round(n * 100) / 100;
   }
   const step = Number(settings.roundingStep) || 10;
-  return Math.round(n / step) * step;
+  if (!(step > 0)) return Math.ceil(n);
+  const q = n / step;
+  const units = Math.abs(q - Math.round(q)) < 1e-9 ? Math.round(q) : Math.ceil(q);
+  return units * step;
 }
 
 export function applyQuoteVat(amount: number, settings: Pick<QuoteSettings, 'vatEnabled' | 'vatPercent'>) {
