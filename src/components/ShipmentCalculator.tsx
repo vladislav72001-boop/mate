@@ -214,16 +214,51 @@ const MODE_CHIP_ORDER: DeliveryMode[] = ['locker', 'branch', 'home'];
 
 const CONTENT_KEYS: ContentKey[] = ['documents', 'clothing', 'shoes', 'cosmetics', 'electronics', 'gift', 'other'];
 
+function parseStreetAndBuilding(
+  raw: string,
+  extras: { city?: string; postCode?: string } = {},
+): { street: string; building: string } {
+  const value = String(raw || '').trim();
+  if (!value) return { street: '', building: '' };
+
+  const postalDigits = String(extras.postCode || '').replace(/\D/g, '');
+  const cityName = String(extras.city || '').trim();
+  const first = value.split(',')[0]?.trim() || value;
+  let streetLine = first;
+  if (cityName && streetLine.toLowerCase() === cityName.toLowerCase()) {
+    streetLine = value;
+  }
+
+  const houseMatch = streetLine.match(/^(.*?)[\s,]+(\d+[a-zA-Z]?(?:[/-]\d*[a-zA-Z]?)?)$/u);
+  if (houseMatch?.[1] && houseMatch[2]) {
+    const street = houseMatch[1].trim();
+    const building = houseMatch[2].trim();
+    const buildingDigits = building.replace(/\D/g, '');
+    const looksLikePostal = /^\d{4,6}$/.test(building)
+      && (!postalDigits || buildingDigits === postalDigits);
+    if (street && !looksLikePostal) return { street, building };
+  }
+
+  return { street: streetLine, building: '1' };
+}
+
+function withHouseFromQuery(street: string, typedQuery: string, extras: { city?: string; postCode?: string }) {
+  const fromStreet = parseStreetAndBuilding(street, extras);
+  const fromTyped = parseStreetAndBuilding(typedQuery, extras);
+  const building = fromStreet.building !== '1'
+    ? fromStreet.building
+    : (fromTyped.building !== '1' ? fromTyped.building : '');
+  const base = fromStreet.street || fromTyped.street || street.trim();
+  return building ? `${base} ${building}`.trim() : base;
+}
+
 function addressQuoteLocation(
   countryCode: string,
   city: string,
   streetWithBuilding: string,
   postCode: string,
 ): QuoteLocation | undefined {
-  const value = streetWithBuilding.trim();
-  const match = value.match(/^(.*?)[,\s]+(\d+[a-zA-Z/-]*)$/u);
-  const street = match?.[1]?.trim() || '';
-  const building = match?.[2]?.trim() || '';
+  const { street, building } = parseStreetAndBuilding(streetWithBuilding, { city, postCode });
   if (!city.trim() || !street || !building || !postCode.trim()) return undefined;
   return {
     kind: 'address',
@@ -1741,29 +1776,44 @@ export function CalcForm({
   }, [toCountry]);
 
   const applyDestAddress = useCallback((suggestion: AddressSuggestion) => {
-    setDestAddressQuery(suggestion.label);
+    const extras = { city: suggestion.city, postCode: suggestion.postal };
+    const street = withHouseFromQuery(
+      suggestion.street || suggestion.label,
+      destAddressQuery,
+      extras,
+    );
+    const label = [street, suggestion.city, suggestion.postal].filter(Boolean).join(', ');
+    setDestAddressQuery(label);
     setDestAddressFocus({ lat: suggestion.lat, lng: suggestion.lng });
     setDestAddressReady(true);
     const canonical = canonicalCityValue(toCountry, suggestion.city);
     if (canonical) setDestCity(canonical);
+    else if (suggestion.city) setDestCity(suggestion.city);
     if (suggestion.postal) setDestPostal(suggestion.postal);
-    if (suggestion.street) setDestStreet(suggestion.street);
+    setDestStreet(street);
     setDestLocker('');
     setDestBranch('');
-  }, [toCountry]);
+  }, [toCountry, destAddressQuery]);
 
   const applyPickupAddress = useCallback((suggestion: AddressSuggestion) => {
-    setPickupAddressQuery(suggestion.label);
+    const extras = { city: suggestion.city, postCode: suggestion.postal };
+    const street = withHouseFromQuery(
+      suggestion.street || suggestion.label,
+      pickupAddressQuery,
+      extras,
+    );
+    const label = [street, suggestion.city, suggestion.postal].filter(Boolean).join(', ');
+    setPickupAddressQuery(label);
     setPickupAddressFocus({ lat: suggestion.lat, lng: suggestion.lng });
     setPickupAddressReady(true);
-    if (suggestion.street) setPickupStreet(suggestion.street);
-    else setPickupStreet(suggestion.label.split(',')[0]?.trim() || suggestion.label);
+    setPickupStreet(street);
     const canonical = canonicalCityValue(PICKUP_COUNTRY, suggestion.city);
     if (canonical) setPickupCity(canonical);
+    else if (suggestion.city) setPickupCity(suggestion.city);
     if (suggestion.postal) setPickupPostal(suggestion.postal);
     setPickupLocker('');
     setPickupBranch('');
-  }, []);
+  }, [pickupAddressQuery]);
 
   const onPickupAddressQueryChange = useCallback((value: string) => {
     setPickupAddressQuery(value);
@@ -3258,10 +3308,7 @@ export function CalcForm({
                       onDestAddressQueryChange(v);
                       setDestStreet(v);
                     }}
-                    onSelect={(s) => {
-                      applyDestAddress(s);
-                      if (s.street) setDestStreet(s.street);
-                    }}
+                    onSelect={applyDestAddress}
                     country={toCountry}
                     city={destCity}
                     placeholder={addressPlaceholder(toCountry, destCity)}

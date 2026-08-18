@@ -65,6 +65,18 @@ function bookToSuggestion(entry: AddressEntry): AddressSuggestion {
   };
 }
 
+function uniqueSuggestions(items: AddressSuggestion[]) {
+  const seen = new Set<string>();
+  const out: AddressSuggestion[] = [];
+  for (const item of items) {
+    const key = `${(item.street || item.label).trim().toLowerCase()}|${item.city.trim().toLowerCase()}|${item.postal}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 function matchesQuery(entry: AddressEntry, q: string) {
   if (!q) return true;
   const hay = `${entry.label} ${entry.street} ${entry.city} ${entry.postal} ${entry.name}`.toLowerCase();
@@ -131,7 +143,7 @@ export function AddressSuggest({
           lang: locale,
         });
         if (!cancelled) {
-          setItems(suggestions);
+          setItems(uniqueSuggestions(suggestions));
           setSearched(true);
           setOpen(true);
         }

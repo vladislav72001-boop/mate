@@ -284,16 +284,37 @@ function rankSuggestions(items, q, country, city) {
   }).sort((a, b) => b._score - a._score);
 }
 
+function extractHouseFromQuery(q, postCode = '') {
+  const first = String(q || '').split(',')[0]?.trim() || '';
+  const postalDigits = String(postCode || '').replace(/\D/g, '');
+  const match = first.match(/^(.*?)[\s,]+(\d+[a-zA-Z]?(?:[/-]\d*[a-zA-Z]?)?)$/u);
+  if (!match?.[2]) return '';
+  const building = match[2].trim();
+  const looksLikePostal = /^\d{4,6}$/.test(building)
+    && (!postalDigits || building.replace(/\D/g, '') === postalDigits);
+  return looksLikePostal ? '' : building;
+}
+
+function suggestionDedupeKey(item) {
+  return [
+    foldText(item.street).replace(/\s+/g, ' '),
+    foldText(item.city),
+    String(item.postal || '').replace(/\D/g, ''),
+  ].join('|');
+}
+
 function dedupeSuggestions(items) {
-  const seen = new Set();
-  const out = [];
+  const map = new Map();
   for (const item of items) {
-    const key = `${item.street}|${item.city}|${item.postal}|${Math.round(item.lat * 1000)}|${Math.round(item.lng * 1000)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
+    const key = suggestionDedupeKey(item);
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, item);
+      continue;
+    }
+    if (item._hasHouse && !prev._hasHouse) map.set(key, item);
   }
-  return out;
+  return [...map.values()];
 }
 
 async function searchPhotonRaw(searchQ, country, lang = 'en') {
@@ -363,5 +384,19 @@ export async function geocodeAddressSuggestions({ q, country = '', city = '', la
   const ranked = rankSuggestions(dedupeSuggestions(merged), query, cc, cityName);
   const strong = ranked.filter((s) => s._score > 0 || s._hasHouse || streetMatchScore(query, s.street) > 0);
   const picked = (strong.length ? strong : ranked).slice(0, 10);
-  return picked.map(({ _score, _hasHouse, _source, ...suggestion }) => suggestion);
+  const typedHouse = extractHouseFromQuery(query);
+  return picked.map(({ _score, _hasHouse, _source, ...suggestion }) => {
+    if (typedHouse && !_hasHouse && suggestion.street) {
+      const already = new RegExp(`(?:^|\\s)${typedHouse}$`, 'i').test(suggestion.street);
+      if (!already) {
+        const street = `${suggestion.street} ${typedHouse}`.trim();
+        return {
+          ...suggestion,
+          street,
+          label: [street, suggestion.city, suggestion.postal].filter(Boolean).join(', '),
+        };
+      }
+    }
+    return suggestion;
+  });
 }
