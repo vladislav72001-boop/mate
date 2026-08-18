@@ -1217,7 +1217,7 @@ export function CalcForm({
           }
           return merged;
         });
-        setQuotesFromNp(data.priceSource === 'novapost' || data.priceSource === 'mate-matrix');
+        setQuotesFromNp(data.priceSource === 'novapost' || data.priceSource === 'mate');
       }
 
       if (data.priceSource === 'estimate' || data.priceSource === 'mock') {
@@ -1286,24 +1286,27 @@ export function CalcForm({
         ?? (Object.entries(data.quotes || {}).find(([k]) => k.startsWith('CUSTOM:'))?.[1])
         ?? null;
       const total = typeof q === 'number' ? q : (q?.total ?? null);
-      setCustomQuote(total);
+      const hasLiveLikePrice = total != null
+        && data.priceSource !== 'estimate'
+        && data.priceSource !== 'mock';
+      setCustomQuote(hasLiveLikePrice ? total : null);
 
       if (typeof q === 'object' && q?.breakdown?.welcomeDiscountPercent) {
         setWelcomeDiscountPercent(q.breakdown.welcomeDiscountPercent);
       }
 
-      setQuotesFromNp(data.priceSource === 'novapost' || data.priceSource === 'mate-matrix');
-      if (data.priceSource === 'estimate' || data.priceSource === 'mock') {
-        setQuoteWarning(t('calc.quoteEst'));
-      } else {
-        setQuoteWarning(null);
+      setQuotesFromNp(data.priceSource === 'novapost' || data.priceSource === 'mate');
+      if (!hasLiveLikePrice) {
+        setQuoteWarning(t('calc.quoteNpFail'));
+        return false;
       }
-      return total != null;
+      setQuoteWarning(null);
+      return true;
     } catch {
       if (reqId !== customQuoteRequestId.current) return false;
-      setCustomQuote(estimateParcelPrice(preset, DEFAULT_QUOTE_CURRENCY));
+      setCustomQuote(null);
       setQuotesFromNp(false);
-      setQuoteWarning(t('calc.quoteEst'));
+      setQuoteWarning(t('calc.quoteNpFail'));
       return false;
     } finally {
       if (reqId === customQuoteRequestId.current) setQuoteRefreshing(false);
