@@ -56,8 +56,23 @@ function validatePersonName(name, label) {
   return null;
 }
 
+function inferPhoneCountry(raw, fallbackCountry) {
+  const fallback = normalizeCountryCode(fallbackCountry);
+  let digits = String(raw ?? '').trim().replace(/[\s\u00A0\-().]/g, '').replace(/^\+/, '');
+  digits = digits.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (!digits) return fallback;
+
+  const entries = Object.entries(CALLING_CODE_BY_ISO2)
+    .sort((a, b) => b[1].length - a[1].length);
+  for (const [country, cc] of entries) {
+    if (digits.startsWith(cc)) return country;
+  }
+  return fallback;
+}
+
 function validatePhone(raw, countryCode, label) {
-  const country = normalizeCountryCode(countryCode);
+  const country = inferPhoneCountry(raw, countryCode);
   const cc = CALLING_CODE_BY_ISO2[country] || '48';
   const maxNational = MAX_NATIONAL_DIGITS[country] || 10;
 
