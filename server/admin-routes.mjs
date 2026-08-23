@@ -31,12 +31,13 @@ import {
   publicOrder,
 } from './orders.mjs';
 import { buildAnalyticsReport } from './analytics.mjs';
-import { resolveCheckoutAmount } from './shipping.mjs';
+import { resolveCheckoutAmount, syncOrderStatusFromNovaPost } from './shipping.mjs';
 import {
   createCourierPickupForShipment,
   hasFinalizedCourierPickup,
   orderNeedsCourierPickup,
 } from './novapost/pickup.mjs';
+import { createInternationalShipment } from './novapost/shipment.mjs';
 import { sendPasswordChangedEmail, sendProfileUpdatedEmail, sendOrderStatusEmail, sendOrderTrackingEmail, sendArrivedAtPointEmail } from './mail.mjs';
 import { localeFromRequest } from './mail-i18n.mjs';
 
@@ -146,7 +147,21 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
           return hay.includes(q);
         });
       }
-      res.json({ orders: orders.map(publicOrder) });
+      // Refresh NP statuses for active shipments so admin labels stay accurate.
+      const syncable = orders.filter((o) => o.npRef && !String(o.npRef).startsWith('mock-')
+        && ['waiting_from_you', 'submitted', 'paid'].includes(o.status));
+      const syncedById = new Map();
+      await Promise.all(
+        syncable.slice(0, 40).map(async (o) => {
+          const full = await findOrderById(o.id);
+          if (!full) return;
+          const updated = await syncOrderStatusFromNovaPost(full);
+          syncedById.set(o.id, publicOrder(updated));
+        }),
+      );
+      res.json({
+        orders: orders.map((o) => syncedById.get(o.id) || publicOrder(o)),
+      });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Не удалось загрузить заказы' });
@@ -155,8 +170,11 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
 
   router.get('/orders/:id', async (req, res) => {
     try {
-      const order = await findOrderById(req.params.id);
+      let order = await findOrderById(req.params.id);
       if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      if (order.npRef && !String(order.npRef).startsWith('mock-')) {
+        order = await syncOrderStatusFromNovaPost(order);
+      }
       const priced = await orderPriceBreakdown(order);
       const tariff = order.payload?.tariff || {};
       res.json({
@@ -480,6 +498,64 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Не удалось обновить ячейку' });
+    }
+  });
+
+  router.post('/orders/:id/retry-np', async (req, res) => {
+    try {
+      const order = await findOrderById(req.params.id);
+      if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      if (!order.paidAt && order.status === 'pending_payment') {
+        return res.status(400).json({ error: 'Заказ ещё не оплачен' });
+      }
+      if (order.npRef && order.npTtn && !String(order.npRef).startsWith('mock-')) {
+        return res.json({ ok: true, already: true, order: publicOrder(order) });
+      }
+
+      const body = order.payload || {};
+      const shipment = await createInternationalShipment(body, order.orderNumber);
+      if (!shipment.npRef) {
+        return res.status(502).json({ error: 'Nova Post не вернул id отправления' });
+      }
+
+      let snapshot = { ...shipment.snapshot };
+      if (orderNeedsCourierPickup(body)) {
+        try {
+          const pickup = await createCourierPickupForShipment(
+            { ...body, clientOrder: order.orderNumber },
+            shipment,
+          );
+          snapshot = { ...snapshot, pickup, pickupError: null };
+        } catch (pickupErr) {
+          const msg = pickupErr instanceof Error ? pickupErr.message : String(pickupErr);
+          const failed = await updateOrder(order.id, {
+            status: 'paid',
+            npRef: shipment.npRef,
+            npTtn: shipment.npTtn,
+            npSnapshot: { ...snapshot, pickupError: { error: msg, at: new Date().toISOString() } },
+          });
+          return res.status(502).json({ error: msg, code: 'NP_PICKUP_FAILED', order: publicOrder(failed) });
+        }
+      }
+
+      const previousStatus = order.status;
+      const updated = await updateOrder(order.id, {
+        status: 'waiting_from_you',
+        npRef: shipment.npRef,
+        npTtn: shipment.npTtn,
+        npSnapshot: snapshot,
+        paidAt: order.paidAt || new Date().toISOString(),
+      });
+      // Trigger drop-off instructions if we were stuck on paid after NP failure.
+      if (previousStatus !== 'waiting_from_you' && updated) {
+        await sendOrderStatusEmail(updated, previousStatus).catch((err) => {
+          console.error('[admin] retry-np waiting mail failed:', err?.message || err);
+        });
+      }
+      res.json({ ok: true, order: publicOrder(updated), npTtn: shipment.npTtn });
+    } catch (err) {
+      console.error('[admin] retry-np:', err);
+      res.status(502).json({ error: err?.message || 'Не удалось создать отправление в Nova Post' });
     }
   });
 

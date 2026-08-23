@@ -16,6 +16,7 @@ import {
   NOVAPOST_PARCEL_RULES,
 } from './parcel.mjs';
 import { normalizeCountryCode } from './calculate.mjs';
+import { buildShipmentInvoice } from './invoice.mjs';
 
 const CALLING_CODE_BY_ISO2 = {
   CZ: '420', DE: '49', EE: '372', ES: '34', FR: '33', GB: '44',
@@ -148,6 +149,9 @@ function formatNovaPostShipmentError(err) {
     }
     return 'Nova Post отклонил параметры посылки. Проверьте размер и вес.';
   }
+  if (raw.includes('invoice_is_null') || raw.includes('validation.condition.invoice')) {
+    return 'Nova Post требует таможенный invoice для этого направления (например HU→UA). Обновите сервер и повторите создание отправления.';
+  }
   if (raw.includes('403')) {
     return 'Nova Post API недоступен (403). Проверьте NOVAPOST_API_KEY и перезапустите сервер.';
   }
@@ -230,12 +234,15 @@ export async function createInternationalShipment(body, clientOrder) {
     sender.companyTin = companyTin;
   }
 
+  const invoice = buildShipmentInvoice(body, parcel, actualWeight, clientOrder);
+
   const payload = {
     status: 'ReadyToShip',
     clientOrder: clientOrder.slice(0, 50),
     note: `Mate B2C ${clientOrder}`.slice(0, 255),
     payerType: 'Sender',
     ...(payerContractNumber ? { payerContractNumber } : {}),
+    ...(invoice ? { invoice } : {}),
     parcels: [{
       rowNumber: 1,
       cargoCategory: isDocuments ? 'documents' : 'parcel',
@@ -328,6 +335,10 @@ export function mapNovaPostStatusToOrderStatus(npStatus) {
 
   if (s === 'readytoship' || s === 'created' || s === 'draft' || s === 'new') {
     return 'waiting_from_you';
+  }
+  // Handed over at branch / waybill issued — no longer waiting for sender drop-off.
+  if (s === 'accepted' || s === 'issued' || s.includes('intransit') || s.includes('processing')) {
+    return 'submitted';
   }
   // Still waiting for the recipient at a locker/PUDO/branch — not fully delivered yet.
   if (isArrivedAtPickupPointStatus(raw)) {

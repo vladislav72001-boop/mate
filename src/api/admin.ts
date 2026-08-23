@@ -108,16 +108,11 @@ export async function updateAdminOrder(id: string, patch: Record<string, unknown
 }
 
 /** Retry Nova Post create for a paid order that has no TTN yet. */
-export async function retryAdminOrderNp(publicToken: string) {
-  const res = await fetch(`/api/shipping/orders/${encodeURIComponent(publicToken)}/confirm-payment`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || 'Не удалось создать заявку в Nova Post');
-  }
-  return data as { data: any };
+export async function retryAdminOrderNp(orderId: string) {
+  return adminRequest<{ ok: boolean; order: any; npTtn?: string }>(
+    `/api/admin/orders/${encodeURIComponent(orderId)}/retry-np`,
+    { method: 'POST' },
+  );
 }
 
 export async function fetchAdminUsers() {

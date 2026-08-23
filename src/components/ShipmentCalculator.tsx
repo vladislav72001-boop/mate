@@ -2333,6 +2333,8 @@ export function CalcForm({
           boxSize: sizeKey === 'custom' ? 'custom' : boxSize,
           ...preset,
           declaredValue: declaredForNp,
+          contents,
+          contentsNote: contents === 'other' ? contentsNote.trim() : '',
           description: contents === 'other' && contentsNote.trim()
             ? `Parcel ${sizeKey === 'custom' ? 'custom' : boxSize} — ${t('calc.otherFmt', { note: contentsNote.trim() })}`
             : `Parcel ${sizeKey === 'custom' ? 'custom' : boxSize} — ${contentLabel(contents, contentsNote)}`,

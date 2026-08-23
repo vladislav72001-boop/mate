@@ -998,7 +998,7 @@ function OrdersTab() {
     setSaving(true);
     setError('');
     try {
-      await retryAdminOrderNp(order.publicToken);
+      await retryAdminOrderNp(order.id);
       await load();
       const detail = await fetchAdminOrder(order.id);
       setSelected(detail.order);

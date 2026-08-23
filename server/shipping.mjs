@@ -343,7 +343,7 @@ async function maybeNotifyArrivedAtPoint(order, npStatus) {
 }
 
 /** Best-effort refresh of order.status from Nova Post (cached). */
-async function syncOrderStatusFromNovaPost(order) {
+export async function syncOrderStatusFromNovaPost(order) {
   if (!order?.npRef || String(order.npRef).startsWith('mock-')) return order;
   if (order.status === 'pending_payment' || order.status === 'cancelled' || order.status === 'delivered') {
     return order;
