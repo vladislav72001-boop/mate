@@ -102,7 +102,7 @@ export function buildShipmentInvoice(body, parcel, actualWeightGrams, clientOrde
       name: label.slice(0, 512),
       nameEng: labelEng.slice(0, 512),
       actualWeight: itemWeight,
-      measurementCode: 'pcs',
+      measurementCode: 'pieces',
       amount: 1,
       cost: unitCost,
     }],

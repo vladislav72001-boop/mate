@@ -151,6 +151,45 @@ function parsePickupTimeWindow(pickupTime) {
   };
 }
 
+function hhmmToMinutes(hhmm) {
+  const [h, m] = String(hhmm || '').split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function weekdayKeyForDate(isoDate, timeZone) {
+  const noonMs = localWallTimeToUtcMs(isoDate, '12:00', timeZone);
+  return new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' })
+    .format(new Date(noonMs))
+    .toLowerCase();
+}
+
+/** Pick NP slot that matches the user window (exact match preferred). */
+function pickNpTimeSlot(slots, userFrom, userTo) {
+  if (!Array.isArray(slots) || !slots.length) return null;
+  const uFrom = hhmmToMinutes(userFrom);
+  const uTo = hhmmToMinutes(userTo);
+  if (uFrom == null || uTo == null) return null;
+
+  for (const slot of slots) {
+    if (slot?.from === userFrom && slot?.to === userTo) return slot;
+  }
+
+  let best = null;
+  let bestOverlap = -1;
+  for (const slot of slots) {
+    const sFrom = hhmmToMinutes(slot?.from);
+    const sTo = hhmmToMinutes(slot?.to);
+    if (sFrom == null || sTo == null) continue;
+    const overlap = Math.max(0, Math.min(uTo, sTo) - Math.max(uFrom, sFrom));
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = slot;
+    }
+  }
+  return best;
+}
+
 export function orderNeedsCourierPickup(orderOrBody) {
   const body = orderOrBody?.payload && typeof orderOrBody.payload === 'object'
     ? orderOrBody.payload
@@ -204,26 +243,27 @@ export async function findPickupTimeIntervals({ type, countryCode, addressParts,
 }
 
 /**
- * Best-effort: confirm user date is a working day in NP schedule; times come from the order.
+ * Map user date/time to NP pickedTimeFrom/To using /time-intervals/find slots.
+ * NP ignores arbitrary windows — must use a slot from their schedule.
  */
 async function resolvePickedTimes({ countryCode, addressParts, pickupDate, pickupTime, weightKg }) {
   const window = parsePickupTimeWindow(pickupTime);
   if (!window || !pickupDate) {
-    return { pickedTimeFrom: null, pickedTimeTo: null, intervalType: null };
+    return { pickedTimeFrom: null, pickedTimeTo: null, intervalType: null, matchedSlot: null };
   }
 
   const tz = TZ_BY_COUNTRY[normalizeCountryCode(countryCode)] || 'Europe/Budapest';
-  const fromMs = localWallTimeToUtcMs(pickupDate, window.from, tz);
-  const toMs = localWallTimeToUtcMs(pickupDate, window.to, tz);
-
-  let intervalType = 'PickupNextDay';
   const todayIso = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
-  if (pickupDate === todayIso) intervalType = 'PickupDayToDay';
+
+  let intervalType = pickupDate === todayIso ? 'PickupDayToDay' : 'PickupNextDay';
+  let matchedSlot = null;
+  let slotFrom = window.from;
+  let slotTo = window.to;
 
   try {
     let schedule = await findPickupTimeIntervals({
@@ -241,27 +281,40 @@ async function resolvePickedTimes({ countryCode, addressParts, pickupDate, picku
       });
       intervalType = 'PickupDayToDay';
     }
-    const noonLocalMs = localWallTimeToUtcMs(pickupDate, '12:00', tz);
-    const weekdayLong = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' })
-      .format(new Date(noonLocalMs))
-      .toLowerCase();
-    const scheduleDay = schedule?.[weekdayLong];
-    if (
-      scheduleDay
-      && scheduleDay.from == null
-      && Array.isArray(scheduleDay.timeIntervals)
-      && scheduleDay.timeIntervals.length === 0
+
+    const weekday = weekdayKeyForDate(pickupDate, tz);
+    const scheduleDay = schedule?.[weekday];
+    const npSlots = scheduleDay?.timeIntervals;
+    matchedSlot = pickNpTimeSlot(npSlots, window.from, window.to);
+
+    if (matchedSlot?.from && matchedSlot?.to) {
+      slotFrom = matchedSlot.from;
+      slotTo = matchedSlot.to;
+    } else if (
+      (!npSlots || npSlots.length === 0)
+      && scheduleDay?.from
+      && scheduleDay?.to
     ) {
-      console.warn(`[novapost] pickup schedule empty for ${pickupDate} (${weekdayLong}); sending user window anyway`);
+      // NP: empty timeIntervals → whole working day; use their day bounds.
+      slotFrom = scheduleDay.from;
+      slotTo = scheduleDay.to;
+      matchedSlot = { from: slotFrom, to: slotTo, fallback: 'dayBounds' };
+      console.warn(`[novapost] no pickup slots for ${pickupDate} (${weekday}); using NP day window ${slotFrom}-${slotTo}`);
+    } else if (!matchedSlot) {
+      console.warn(`[novapost] user window ${window.from}-${window.to} not in NP slots for ${pickupDate}; sending closest/overlap slot or raw window`);
     }
   } catch (err) {
     console.warn('[novapost] time-intervals/find failed (using user window):', err?.message || err);
   }
 
+  const fromMs = localWallTimeToUtcMs(pickupDate, slotFrom, tz);
+  const toMs = localWallTimeToUtcMs(pickupDate, slotTo, tz);
+
   return {
     pickedTimeFrom: toNpDateTime(fromMs),
     pickedTimeTo: toNpDateTime(toMs),
     intervalType,
+    matchedSlot: matchedSlot || { from: slotFrom, to: slotTo, userWindow: window },
   };
 }
 
@@ -402,7 +455,7 @@ export async function createCourierPickupForShipment(body, shipment) {
   const pickupDate = String(tariff.pickupDate || body.pickupDate || '').trim();
   const pickupTime = String(tariff.pickupTime || body.pickupTime || '').trim();
   const weightKg = Number(body.parcel?.weightKg);
-  const { pickedTimeFrom, pickedTimeTo, intervalType } = await resolvePickedTimes({
+  const { pickedTimeFrom, pickedTimeTo, intervalType, matchedSlot } = await resolvePickedTimes({
     countryCode,
     addressParts,
     pickupDate,
@@ -475,6 +528,7 @@ export async function createCourierPickupForShipment(body, shipment) {
       pickedTimeFrom: pickedTimeFrom || null,
       pickedTimeTo: pickedTimeTo || null,
       intervalType: intervalType || null,
+      matchedSlot: matchedSlot || null,
       request: createPayload,
       createdAt: new Date().toISOString(),
     };

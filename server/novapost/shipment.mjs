@@ -206,7 +206,8 @@ export async function createInternationalShipment(body, clientOrder) {
   if (weightCapped) {
     throw new Error(`Nova Post не принимает посылки тяжелее ${maxNpKg} кг.`);
   }
-  const insuranceCost = Math.max(1, Number(parcel.declaredValue ?? 100));
+  const invoice = buildShipmentInvoice(body, parcel, actualWeight, clientOrder);
+  const insuranceCost = Math.max(1, Number(invoice?.cost ?? parcel.declaredValue ?? 100));
 
   const jwt = await getNovaPostJwt();
   const senderCountry = normalizeCountryCode(body.sender?.country || 'HU');
@@ -233,8 +234,6 @@ export async function createInternationalShipment(body, clientOrder) {
   if (payerContractNumber && companyTin) {
     sender.companyTin = companyTin;
   }
-
-  const invoice = buildShipmentInvoice(body, parcel, actualWeight, clientOrder);
 
   const payload = {
     status: 'ReadyToShip',

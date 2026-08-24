@@ -23,5 +23,5 @@ console.assert(invoice.currency === 'EUR', 'currency');
 console.assert(invoice.incoterm === 'DAP', 'incoterm');
 console.assert(invoice.payerFeesCustoms === 'Recipient', 'payerFeesCustoms');
 console.assert(invoice.items[0].actualWeight === 6300, 'item weight matches parcel');
-console.assert(invoice.items[0].hsCode === '64039900', 'shoes hsCode');
+console.assert(invoice.items[0].measurementCode === 'pieces', 'measurementCode');
 console.log('invoice ok:', JSON.stringify(invoice, null, 2));
