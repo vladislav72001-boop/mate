@@ -1,4 +1,4 @@
-import type { ShippingOrder } from '../../api/shipping';
+import { formatScheduledDelivery } from '../calc/orderSuccessHelpers';
 import { openWaybillPdf } from '../../api/shipping';
 import { countryLabel } from '../../constants/shipping';
 import { useI18n } from '../../i18n/context';
@@ -72,6 +72,7 @@ export function ShipmentDetailModal({
   const canCancel = order.status === 'pending_payment';
   const canTrack = ['submitted', 'waiting_from_you', 'delivered'].includes(order.status) || Boolean(order.npTtn);
   const awaitingRecipient = order.status === 'pending_payment' && !canPay;
+  const deliveryEta = formatScheduledDelivery(order.scheduledDeliveryDate, locale);
 
   return (
     <div className="ship-detail-overlay" role="dialog" aria-modal="true" onClick={onClose}>
@@ -106,6 +107,9 @@ export function ShipmentDetailModal({
               <div><dt>{t('dash.to')}</dt><dd>{countryLabel(order.toCountry || '', locale)}</dd></div>
               <div><dt>{t('dash.deliveryAddress')}</dt><dd>{order.receiverLine || '—'}</dd></div>
               <div><dt>{t('dash.pickupDate')}</dt><dd>{order.pickupDate || '—'}{order.pickupTime ? `, ${order.pickupTime}` : ''}</dd></div>
+              {deliveryEta && (
+                <div><dt>{t('dash.deliveryEta')}</dt><dd>{deliveryEta.short}</dd></div>
+              )}
             </dl>
           </section>
 

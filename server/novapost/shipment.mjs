@@ -266,10 +266,17 @@ export async function createInternationalShipment(body, clientOrder) {
     const npRef = response.id != null ? String(response.id) : '';
     if (!npRef) throw new Error('Nova Post create shipment did not return id');
 
+    const scheduledDeliveryDate = extractNovaPostScheduledDelivery(response);
+
     return {
       npRef,
       npTtn: response.number ?? null,
-      snapshot: { provider: 'novapost.com', request: payload, response },
+      snapshot: {
+        provider: 'novapost.com',
+        request: payload,
+        response,
+        ...(scheduledDeliveryDate ? { scheduledDeliveryDate } : {}),
+      },
     };
   } catch (err) {
     console.error('[novapost] createInternationalShipment failed:', err?.message || err);
@@ -441,6 +448,22 @@ function extractNovaPostStatus(response) {
   return null;
 }
 
+/** NP estimated arrival (scheduledDeliveryDate from create/get shipment). */
+export function extractNovaPostScheduledDelivery(response) {
+  if (!response || typeof response !== 'object') return null;
+  const candidates = [
+    response.scheduledDeliveryDate,
+    response.scheduled_delivery_date,
+    response?.shipment?.scheduledDeliveryDate,
+    response?.data?.scheduledDeliveryDate,
+    response?.items?.[0]?.scheduledDeliveryDate,
+  ];
+  for (const c of candidates) {
+    if (c != null && String(c).trim()) return String(c).trim();
+  }
+  return null;
+}
+
 /** Fetch live shipment status from Nova Post by internal id (npRef). */
 export async function fetchInternationalShipmentStatus(shipmentId) {
   if (isNovaPostMock() || !shipmentId || String(shipmentId).startsWith('mock-')) {
@@ -452,11 +475,13 @@ export async function fetchInternationalShipmentStatus(shipmentId) {
     headers: novaPostAuthHeader(jwt),
   });
   const npStatus = extractNovaPostStatus(response);
+  const scheduledDeliveryDate = extractNovaPostScheduledDelivery(response);
   return {
     npStatus,
     orderStatus: mapNovaPostStatusToOrderStatus(npStatus),
     raw: response,
     number: response?.number ?? response?.ttn ?? null,
+    scheduledDeliveryDate,
   };
 }
 

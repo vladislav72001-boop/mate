@@ -33,7 +33,27 @@ function addBusinessDays(from: Date, days: number) {
   return date;
 }
 
+export function formatScheduledDelivery(iso: string | null | undefined, locale: Locale) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const intl = localeToIntl(locale);
+  return {
+    dateLabel: d.toLocaleDateString(intl, { day: 'numeric', month: 'long' }),
+    weekday: d.toLocaleDateString(intl, { weekday: 'long' }),
+    short: d.toLocaleDateString(intl, { day: 'numeric', month: 'short', year: 'numeric' }),
+  };
+}
+
 export function estimateDeliveryWindow(order: ShippingOrder, t: TFn, locale: Locale) {
+  const npEta = formatScheduledDelivery(order.scheduledDeliveryDate, locale);
+  if (npEta) {
+    return {
+      range: npEta.short,
+      hint: t('orderSuccess.etaNpHint', { date: npEta.dateLabel, weekday: npEta.weekday }),
+    };
+  }
+
   const base = new Date(order.paidAt || order.createdAt || Date.now());
   const latest = addBusinessDays(base, 3);
   const intl = localeToIntl(locale);

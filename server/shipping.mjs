@@ -28,6 +28,7 @@ import {
   orderBelongsToUser,
   publicOrder,
   updateOrder,
+  extractScheduledDeliveryDate,
 } from './orders.mjs';
 import { findById } from './store.mjs';
 import {
@@ -372,12 +373,28 @@ export async function syncOrderStatusFromNovaPost(order) {
       npStatus: result.npStatus,
       expiresAt: Date.now() + Math.max(15_000, NP_STATUS_TTL_MS),
     });
+
+    const patch = {};
     if (result.orderStatus && result.orderStatus !== current.status) {
-      const patch = { status: result.orderStatus };
-      if (result.number && !current.npTtn) patch.npTtn = String(result.number);
-      current = (await updateOrder(current.id, patch)) || current;
-    } else if (result.number && !current.npTtn) {
-      current = (await updateOrder(current.id, { npTtn: String(result.number) }, { notify: false })) || current;
+      patch.status = result.orderStatus;
+    }
+    if (result.number && !current.npTtn) {
+      patch.npTtn = String(result.number);
+    }
+    if (result.scheduledDeliveryDate && result.scheduledDeliveryDate !== extractScheduledDeliveryDate(current)) {
+      const snap = (current.npSnapshot && typeof current.npSnapshot === 'object')
+        ? { ...current.npSnapshot }
+        : {};
+      patch.npSnapshot = {
+        ...snap,
+        scheduledDeliveryDate: result.scheduledDeliveryDate,
+      };
+    }
+
+    if (Object.keys(patch).length) {
+      current = (await updateOrder(current.id, patch, {
+        notify: Boolean(patch.status && patch.status !== order.status),
+      })) || current;
     }
     return maybeNotifyArrivedAtPoint(current, npStatus);
   } catch (err) {

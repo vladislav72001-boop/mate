@@ -127,6 +127,11 @@ export async function buildWaybillPdf(order) {
   row('Адрес', receiver.line);
   row('Страна', receiver.country);
   row('Способ получения', modeLabel(tariff.deliveryMode || tariff.deliveryType || order.deliveryMode));
+  if (order.scheduledDeliveryDate) {
+    row('Ожидаемая доставка', new Date(order.scheduledDeliveryDate).toLocaleDateString('ru-RU', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    }));
+  }
   y += 8;
 
   doc.font('MateBold').fontSize(12).fillColor('#111111').text('Посылка', 48, y);

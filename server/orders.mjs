@@ -114,6 +114,21 @@ export function checkoutPayloadFingerprint(body) {
   });
 }
 
+/** NP scheduledDeliveryDate from npSnapshot (create/get shipment). */
+export function extractScheduledDeliveryDate(order) {
+  const snap = order?.npSnapshot;
+  if (!snap || typeof snap !== 'object') return null;
+  const candidates = [
+    snap.scheduledDeliveryDate,
+    snap.response?.scheduledDeliveryDate,
+    snap.raw?.scheduledDeliveryDate,
+  ];
+  for (const c of candidates) {
+    if (c != null && String(c).trim()) return String(c).trim();
+  }
+  return null;
+}
+
 /** Prevent duplicate checkouts when user double-clicks Pay. */
 export async function findRecentPendingOrder(customerEmail, fingerprint, maxAgeMs = 5 * 60 * 1000) {
   const email = String(customerEmail || '').trim().toLowerCase();
@@ -209,6 +224,7 @@ export function publicOrder(order) {
     tracking: buildTrackingTimeline(order),
     pickupMode: tariff.pickupMode || tariff.pickupType || null,
     deliveryMode: tariff.deliveryMode || tariff.deliveryType || null,
+    scheduledDeliveryDate: extractScheduledDeliveryDate(order),
   };
 }
 

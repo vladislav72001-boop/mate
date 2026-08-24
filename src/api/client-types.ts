@@ -36,6 +36,7 @@ export type ShippingOrder = {
   paidAt: string | null;
   cancelledAt?: string | null;
   tracking?: TrackingEvent[];
+  scheduledDeliveryDate?: string | null;
   pickupMode?: string;
   deliveryMode?: string;
 };

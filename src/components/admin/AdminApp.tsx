@@ -1259,6 +1259,9 @@ function OrdersTab() {
                   <div><dt>Доставка</dt><dd>{deliveryLabel || '—'}</dd></div>
                   <div><dt>Размер / вес</dt><dd>{selected.parcelSize || '—'} · {selected.weightKg ?? '—'} кг</dd></div>
                   <div><dt>ТТН</dt><dd>{selected.npTtn || '—'}</dd></div>
+                  {selected.scheduledDeliveryDate && (
+                    <div><dt>Ожидаемая доставка</dt><dd>{formatDate(selected.scheduledDeliveryDate)}</dd></div>
+                  )}
                   <div><dt>Создан</dt><dd>{formatDate(selected.createdAt)}</dd></div>
                   <div><dt>Оплачен</dt><dd>{formatDate(selected.paidAt)}</dd></div>
                   {selected.npSnapshot?.error && (
