@@ -37,7 +37,7 @@ import {
   hasFinalizedCourierPickup,
   orderNeedsCourierPickup,
 } from './novapost/pickup.mjs';
-import { createInternationalShipment } from './novapost/shipment.mjs';
+import { createInternationalShipment, deleteInternationalShipment } from './novapost/shipment.mjs';
 import { sendPasswordChangedEmail, sendProfileUpdatedEmail, sendOrderStatusEmail, sendOrderTrackingEmail, sendArrivedAtPointEmail } from './mail.mjs';
 import { localeFromRequest } from './mail-i18n.mjs';
 
@@ -250,6 +250,29 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
       }
       if (req.body.currency) patch.currency = String(req.body.currency).toUpperCase();
       if (req.body.npTtn !== undefined) patch.npTtn = req.body.npTtn || null;
+
+      // Admin cancel must also remove the live Nova Post shipment (ReadyToShip etc.).
+      if (patch.status === 'cancelled' && order.npRef && !String(order.npRef).startsWith('mock-')) {
+        try {
+          await deleteInternationalShipment(order.npRef);
+          patch.npRef = null;
+          patch.npTtn = null;
+          const snap = (order.npSnapshot && typeof order.npSnapshot === 'object')
+            ? { ...order.npSnapshot }
+            : {};
+          patch.npSnapshot = {
+            ...snap,
+            cancelledInNovaPostAt: new Date().toISOString(),
+            cancelledNpRef: order.npRef,
+            cancelledNpTtn: order.npTtn || null,
+          };
+        } catch (npErr) {
+          console.error('[admin] NP cancel failed:', npErr?.message || npErr);
+          return res.status(502).json({
+            error: 'Не удалось отменить отправление в Nova Post. Заказ в Mate не изменён — попробуйте ещё раз.',
+          });
+        }
+      }
 
       const updated = await updateOrder(order.id, patch);
       res.json({ order: publicOrder(updated) });
