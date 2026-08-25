@@ -872,9 +872,9 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         monthlyShipments,
         welcomeDiscountPercent,
         promo,
-        pickupLocation,
-        deliveryLocation,
-        payerType,
+        pickupLocation: pickupLocation || req.body.tariff?.pickupLocation,
+        deliveryLocation: deliveryLocation || req.body.tariff?.deliveryLocation,
+        payerType: payerType || req.body.tariff?.payerType,
       });
       if (result.amount == null) {
         return res.status(422).json({ error: 'Не удалось рассчитать стоимость' });

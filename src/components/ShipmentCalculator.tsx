@@ -583,6 +583,31 @@ function deliveryModeToApi(mode: DeliveryMode): 'locker' | 'branch' | 'address' 
   return mode;
 }
 
+function sideModeAvailable(
+  side: CoverageSide | null | undefined,
+  mode: DeliveryMode,
+): boolean {
+  if (!side) return true;
+  return side[mode]?.available !== false;
+}
+
+/**
+ * Size-tile / preliminary quotes must match modes the route can actually use.
+ * Paris (and similar cities) often have no NP branch/locker for delivery — quoting
+ * branch↔branch there underprices the only available option (courier / home).
+ */
+function resolveCatalogQuoteModes(
+  coverage: { pickup: CoverageSide; delivery: CoverageSide } | null,
+): { pickup: DeliveryMode; delivery: DeliveryMode } {
+  const pickupBranchOk = sideModeAvailable(coverage?.pickup, 'branch')
+    && !pickupExcludedModes().includes('branch');
+  const deliveryBranchOk = sideModeAvailable(coverage?.delivery, 'branch');
+  if (pickupBranchOk && deliveryBranchOk) {
+    return { pickup: 'branch', delivery: 'branch' };
+  }
+  return { pickup: 'home', delivery: 'home' };
+}
+
 function sizeToPreset(sizeKey: SizeKey, custom: { l: string; w: string; h: string; kg: string }) {
   if (sizeKey === 'envelope') return ENVELOPE_PRESET;
   if (sizeKey === 'XXL') return PARCEL_PRESETS.XL;
@@ -1115,14 +1140,20 @@ export function CalcForm({
     JSON.stringify(deliveryQuoteLocation || null),
   ].join(':');
 
-  // Catalog tile prices must NOT depend on pickup/delivery mode. Selecting
-  // "custom" forces address-only modes and used to rewrite envelope/S/M/L prices.
+  // Catalog tile prices follow route coverage (branch when both sides allow it,
+  // otherwise home/address — e.g. Paris delivery has no NP branch/locker).
+  const catalogQuoteModes = useMemo(
+    () => resolveCatalogQuoteModes(coverage),
+    [coverage],
+  );
   const preliminaryRouteKey = [
     PICKUP_COUNTRY,
     toCountry,
     pickupCity.trim().toLowerCase(),
     destCity.trim().toLowerCase(),
     npDeclaredValue,
+    catalogQuoteModes.pickup,
+    catalogQuoteModes.delivery,
   ].join(':');
 
   const applyCachedRouteQuotes = useCallback(() => {
@@ -1316,27 +1347,34 @@ export function CalcForm({
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType, t,
   ]);
 
-  // Steps 2–3: ask Nova Post for size-tile prices as soon as cities are known.
-  // Catalog uses branch↔branch sample points (locker pickup is not live yet).
+  // Steps 2–3: ask Nova Post for size-tile prices as soon as cities (+ coverage) are known.
   useEffect(() => {
     if (step < 2 || step > 3) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
+    // Prefer waiting for coverage so Paris-like routes don't flash underpriced branch tiles.
+    // If coverage failed, still quote (branch sample) — step 4 re-prices the chosen mode.
+    if (coverageLoading) return;
     if (applyCachedPreliminaryQuotes()) return;
+
+    const pickupMode = catalogQuoteModes.pickup;
+    const deliveryMode = catalogQuoteModes.delivery;
+    const apiPickup = deliveryModeToApi(pickupMode);
+    const apiDelivery = deliveryModeToApi(deliveryMode);
 
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const { pickup: pickupLoc, delivery: deliveryLoc } = await resolvePreliminaryQuoteLocations(
-          'branch',
-          'branch',
+          pickupMode,
+          deliveryMode,
           pickupCity,
           destCity,
           toCountry,
         );
         if (cancelled) return;
         await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
-          deliveryMode: 'branch',
-          pickupMode: 'branch',
+          deliveryMode: apiDelivery,
+          pickupMode: apiPickup,
           pickupLocation: pickupLoc,
           deliveryLocation: deliveryLoc,
           cacheKey: `catalog:${preliminaryRouteKey}`,
@@ -1345,8 +1383,8 @@ export function CalcForm({
       } catch {
         if (cancelled) return;
         await fetchQuoteKeys(STEP3_QUOTE_KEYS, undefined, {
-          deliveryMode: 'branch',
-          pickupMode: 'branch',
+          deliveryMode: apiDelivery,
+          pickupMode: apiPickup,
           cacheKey: `catalog:${preliminaryRouteKey}`,
           allowWithoutLocations: true,
         });
@@ -1359,7 +1397,8 @@ export function CalcForm({
     };
   }, [
     step, pickupCity, destCity, toCountry, npDeclaredValue, preliminaryRouteKey,
-    applyCachedPreliminaryQuotes, fetchQuoteKeys,
+    coverage, coverageLoading, catalogQuoteModes, applyCachedPreliminaryQuotes,
+    fetchQuoteKeys,
   ]);
 
   // Steps 4–5: re-price selected size for the chosen pickup/delivery modes.
@@ -1445,6 +1484,7 @@ export function CalcForm({
     }
     if (step !== 3) return;
     if (!pickupCity.trim() || !destCity.trim() || !toCountry) return;
+    if (coverageLoading) return;
     if (!customSize.kg) {
       setCustomQuote(null);
       return;
@@ -1460,22 +1500,23 @@ export function CalcForm({
       const weightKg = Number(customSize.kg);
       if (!Number.isFinite(weightKg) || weightKg < 0.1) return;
       const preset = sizeToPreset('custom', customSize);
+      // Match size-tile modes for this route (home when branch delivery unavailable).
+      const pickupMode = catalogQuoteModes.pickup;
+      const deliveryMode = catalogQuoteModes.delivery;
+      const apiPickup = deliveryModeToApi(pickupMode);
+      const apiDelivery = deliveryModeToApi(deliveryMode);
       try {
-        // Match catalog semantics: if dims fit branch/locker tiers, quote that —
-        // not courier — so custom doesn't look artificially more expensive than M/S.
-        const allowed = modesForSize('custom', customSize);
-        const catalogMode = allowed.includes('branch') ? 'branch' : 'home';
         const { pickup: pickupLoc, delivery: deliveryLoc } = await resolvePreliminaryQuoteLocations(
-          catalogMode,
-          catalogMode,
+          pickupMode,
+          deliveryMode,
           pickupCity,
           destCity,
           toCountry,
         );
         if (cancelled) return;
         await fetchCustomQuote(preset, {
-          deliveryMode: catalogMode === 'home' ? 'address' : 'branch',
-          pickupMode: catalogMode === 'home' ? 'address' : 'branch',
+          deliveryMode: apiDelivery,
+          pickupMode: apiPickup,
           pickupLocation: pickupLoc,
           deliveryLocation: deliveryLoc,
           allowWithoutLocations: true,
@@ -1483,8 +1524,8 @@ export function CalcForm({
       } catch {
         if (cancelled) return;
         await fetchCustomQuote(preset, {
-          deliveryMode: 'branch',
-          pickupMode: 'branch',
+          deliveryMode: apiDelivery,
+          pickupMode: apiPickup,
           allowWithoutLocations: true,
         });
       }
@@ -1496,7 +1537,7 @@ export function CalcForm({
     };
   }, [
     sizeKey, step, customSize.l, customSize.w, customSize.h, customSize.kg,
-    pickupCity, destCity, toCountry, fetchCustomQuote,
+    pickupCity, destCity, toCountry, coverage, coverageLoading, catalogQuoteModes, fetchCustomQuote,
   ]);
 
   const lastExactQuoteKey = useRef<string | null>(null);
@@ -2251,8 +2292,8 @@ export function CalcForm({
     if (step === 2) {
       const data = await loadCoverage();
       if (!data) {
-        // Keep current modes — forcing home while size tiles still show branch
-        // prices caused a silent ~+3,660 HUF jump later.
+        // Coverage failed — size tiles may still show branch samples; step 4
+        // re-quotes for the chosen mode (home for Paris-like cities).
         setCoverageError(t('calc.coverageCheckFail'));
       }
     }
