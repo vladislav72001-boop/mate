@@ -615,6 +615,9 @@ function App() {
       resumePaymentFromUrl(token)
         .then(async (order) => {
           clearAllCalcDrafts();
+          // Keep success overlay on home until the user dismisses it —
+          // auto-jump to /cabinet made the order number flash and disappear.
+          setPage('home');
           setPaymentNotice({ type: 'success', order });
           setOrdersRefresh((n) => n + 1);
           const sessionToken = getStoredToken();
@@ -623,13 +626,9 @@ function App() {
               const { user: me } = await fetchMe(sessionToken);
               setUser(me);
               clearAllCalcDrafts(me.id);
-              setPage(me.type === 'corp' ? 'dashboard' : 'client-dashboard');
             } catch {
-              /* Guest / expired session: keep success screen on home, do not bounce. */
-              setPage('home');
+              /* Guest / expired session: success screen stays on home. */
             }
-          } else {
-            setPage('home');
           }
         })
         .catch((err) => {
@@ -638,13 +637,13 @@ function App() {
           const order = (err as { data?: ShippingOrder })?.data;
           if (captured) {
             clearAllCalcDrafts();
+            setPage('home');
             setPaymentNotice({
               type: 'paid_np_pending',
               order,
               message: err instanceof Error ? err.message : t('payment.paidNpPending'),
             });
             setOrdersRefresh((n) => n + 1);
-            if (getStoredToken()) setPage('client-dashboard');
             return;
           }
           setPaymentNotice({
@@ -653,13 +652,14 @@ function App() {
           });
         })
         .finally(() => {
-          const stayCabinet = Boolean(getStoredToken());
-          window.history.replaceState({}, '', stayCabinet ? '/cabinet' : '/');
+          // Stay on `/` while the success/error overlay is up (cabinet boot
+          // early-return would hide paymentNotice if we jumped to /cabinet).
+          window.history.replaceState({}, '', '/');
         });
     } else if (payment === 'cancel') {
       setPaymentNotice({ type: 'cancel', message: t('payment.cancelMsg') });
-      window.history.replaceState({}, '', getStoredToken() ? '/cabinet' : '/');
-      if (getStoredToken()) setPage('client-dashboard');
+      window.history.replaceState({}, '', '/');
+      setPage('home');
     }
   // run once on mount for payment/deep links
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -753,7 +753,8 @@ function App() {
     );
   }
 
-  if (page === 'client-dashboard' && !user) {
+  // Never hide post-payment overlays behind the cabinet boot screen.
+  if (page === 'client-dashboard' && !user && !paymentNotice) {
     return (
       <div className="mate-app mate-app--cabinet-boot">
         <div className="cabinet-boot">
@@ -970,7 +971,6 @@ function App() {
                       order: info.orderNumber,
                     }),
                   });
-                  if (user) setPage('client-dashboard');
                 }}
                 onStepChange={setHeroCalcStep}
                 resetToStep1Signal={calcResetSignal}
@@ -1366,6 +1366,12 @@ function App() {
                 <div className="payment-notice__icon">✓</div>
                 <h2>{t('payment.paidNpPendingTitle')}</h2>
                 <p>{t('payment.paidNpPending')}</p>
+                {paymentNotice.order?.orderNumber && (
+                  <p className="payment-notice__detail">
+                    {paymentNotice.order.orderNumber}
+                    {paymentNotice.order.npTtn ? ` · ${paymentNotice.order.npTtn}` : ''}
+                  </p>
+                )}
                 {paymentNotice.message && (
                   <p className="payment-notice__detail">{paymentNotice.message}</p>
                 )}
@@ -1438,7 +1444,6 @@ function App() {
               order: info.orderNumber,
             }),
           });
-          if (user) setPage('client-dashboard');
         }}
       />
 

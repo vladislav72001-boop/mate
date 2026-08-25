@@ -8,6 +8,7 @@ import {
   fetchAddresses,
   fetchLoyalty,
   fetchMyOrders,
+  fetchOrderStatus,
   resumeCheckout,
   trackByTtn,
   updateProfile,
@@ -293,6 +294,74 @@ export function ClientDashboard({
   }, [selectedOrderId, t]);
 
   useEffect(() => { loadData(); }, [ordersRefresh, user.id, loadData]);
+
+  // Quiet background sync with Nova Post while the cabinet is open.
+  const detailOrderRef = useRef(detailOrder);
+  const trackOrderRef = useRef(trackOrder);
+  detailOrderRef.current = detailOrder;
+  trackOrderRef.current = trackOrder;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyOrders = async (next: ShippingOrder[]) => {
+      if (cancelled) return;
+      setOrders(next);
+
+      const detail = detailOrderRef.current;
+      if (detail) {
+        const fromList = next.find((o) => o.id === detail.id);
+        if (fromList) {
+          setDetailOrder(fromList);
+        } else {
+          try {
+            const fresh = await fetchOrderStatus(detail.publicToken);
+            if (!cancelled) setDetailOrder(fresh);
+          } catch {
+            /* keep current detail */
+          }
+        }
+      }
+
+      const tracked = trackOrderRef.current;
+      if (tracked) {
+        const fromList = next.find((o) => o.id === tracked.id);
+        if (fromList) {
+          setTrackOrder(fromList);
+        } else if (tracked.publicToken) {
+          try {
+            const fresh = await fetchOrderStatus(tracked.publicToken);
+            if (!cancelled) setTrackOrder(fresh);
+          } catch {
+            /* keep current tracking card */
+          }
+        }
+      }
+    };
+
+    const refreshQuiet = async () => {
+      if (document.visibilityState === 'hidden') return;
+      try {
+        const next = await fetchMyOrders();
+        await applyOrders(next);
+      } catch {
+        /* ignore background refresh errors */
+      }
+    };
+
+    const timer = window.setInterval(() => { void refreshQuiet(); }, 30_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void refreshQuiet();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [user.id]);
+
   useEffect(() => {
     setSettingsForm({
       name: user.name,
@@ -500,7 +569,15 @@ export function ClientDashboard({
     }
   };
 
-  const openDetail = (order: ShippingOrder) => setDetailOrder(order);
+  const openDetail = (order: ShippingOrder) => {
+    setDetailOrder(order);
+    void fetchOrderStatus(order.publicToken)
+      .then((fresh) => {
+        setDetailOrder(fresh);
+        setOrders((prev) => prev.map((o) => (o.id === fresh.id ? fresh : o)));
+      })
+      .catch(() => { /* keep list snapshot */ });
+  };
 
   const openTracking = (order: ShippingOrder) => {
     setDetailOrder(null);
@@ -508,6 +585,12 @@ export function ClientDashboard({
     setTrackOrder(order);
     if (order.npTtn) setTrackQuery(order.npTtn);
     switchTab('tracking');
+    void fetchOrderStatus(order.publicToken)
+      .then((fresh) => {
+        setTrackOrder(fresh);
+        setOrders((prev) => prev.map((o) => (o.id === fresh.id ? fresh : o)));
+      })
+      .catch(() => { /* keep list snapshot */ });
   };
 
   const orderCardProps = (o: ShippingOrder, mode: 'home' | 'full') => {

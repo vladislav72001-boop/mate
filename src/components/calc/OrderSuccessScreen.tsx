@@ -126,6 +126,11 @@ export function OrderSuccessScreen({ order, onTrack, onCreateAnother, onOpenDash
             <div>
               <span className="order-success__meta-label">{t('orderSuccess.trackLabel')}</span>
               <strong className="order-success__track-no">{trackNo}</strong>
+              {order.orderNumber && order.orderNumber !== trackNo && (
+                <p className="order-success__order-no">
+                  {t('orderSuccess.orderLabel')}: <strong>{order.orderNumber}</strong>
+                </p>
+              )}
             </div>
             <button type="button" className="order-success__copy" onClick={copyTrack}>
               <CopyIcon />

@@ -479,9 +479,23 @@ function DashboardTab() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchAdminDashboard()
-      .then(setData)
-      .catch((e) => setError(e.message));
+    let cancelled = false;
+    const load = () => {
+      fetchAdminDashboard()
+        .then((next) => {
+          if (!cancelled) setData(next);
+        })
+        .catch((e) => {
+          if (!cancelled) setError(e.message);
+        });
+    };
+    load();
+    // Near-realtime: NP statuses sync on each dashboard fetch.
+    const timer = window.setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   if (error) return <div className="admin-alert">{error}</div>;
@@ -952,6 +966,11 @@ function OrdersTab() {
   }, [status, q]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { void load(); }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
   const openOrder = async (id: string) => {
     setLoadingDetail(true);

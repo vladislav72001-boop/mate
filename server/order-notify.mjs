@@ -5,10 +5,16 @@ import {
 /**
  * Order transactional mail policy:
  * - Do NOT email on create / unpaid / intermediate "paid".
- * - Send ONE actionable email when status becomes waiting_from_you
- *   (drop-off point or courier pickup instructions).
+ * - waiting_from_you → drop-off / courier instructions (sender).
+ * - submitted → parcel accepted / in transit (after NP status sync).
+ * - delivered → delivered to recipient.
+ * Arrived-at-locker/PUDO mail is sent separately from shipping sync
+ * (maybeNotifyArrivedAtPoint) and suppresses the generic "submitted" letter
+ * when NP jumps straight to arrived-at-point.
  * Auth emails (welcome / login) stay in auth routes — untouched.
  */
+const MAIL_ON_STATUS = new Set(['waiting_from_you', 'submitted', 'delivered']);
+
 export async function notifyOrderCreated(_order) {
   // Intentionally no-op: no «заявка создана» / «ожидает оплаты» mail.
 }
@@ -21,8 +27,7 @@ export async function notifyOrderUpdated(before, after) {
   const statusChanged = before.status !== after.status;
   if (!statusChanged) return;
 
-  // Only the post-payment “what to do next” letter.
-  if (after.status === 'waiting_from_you') {
+  if (MAIL_ON_STATUS.has(after.status)) {
     await sendOrderStatusEmail(after, before.status);
   }
 }

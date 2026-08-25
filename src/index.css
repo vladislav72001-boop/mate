@@ -7957,7 +7957,7 @@ body {
 .payment-notice-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 5600;
   background: rgba(18, 32, 35, 0.45);
   backdrop-filter: blur(6px);
   display: grid;
@@ -8004,7 +8004,7 @@ body {
 .order-success-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1300;
+  z-index: 5600;
   background: var(--bg);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -8112,6 +8112,17 @@ body {
   font-size: 1.05rem;
   letter-spacing: 0.01em;
   color: var(--navy);
+}
+
+.order-success__order-no {
+  margin: 8px 0 0;
+  font-size: 0.92rem;
+  color: rgba(18, 32, 35, 0.62);
+}
+
+.order-success__order-no strong {
+  color: var(--navy);
+  font-weight: var(--fw-semibold);
 }
 
 .order-success__copy {

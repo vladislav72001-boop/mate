@@ -360,7 +360,10 @@ export async function syncOrderStatusFromNovaPost(order) {
 
   if (cached && cached.expiresAt > Date.now()) {
     if (cached.orderStatus && cached.orderStatus !== current.status) {
-      current = (await updateOrder(current.id, { status: cached.orderStatus }, { notify: false })) || current;
+      const arrived = isArrivedAtPickupPointStatus(cached.npStatus);
+      // Arrived-at-point keeps Mate status "submitted" — send only the arrival mail.
+      const notify = !(arrived && cached.orderStatus === 'submitted');
+      current = (await updateOrder(current.id, { status: cached.orderStatus }, { notify })) || current;
     }
     return maybeNotifyArrivedAtPoint(current, npStatus);
   }
@@ -392,9 +395,10 @@ export async function syncOrderStatusFromNovaPost(order) {
     }
 
     if (Object.keys(patch).length) {
-      current = (await updateOrder(current.id, patch, {
-        notify: Boolean(patch.status && patch.status !== order.status),
-      })) || current;
+      const statusChanged = Boolean(patch.status && patch.status !== order.status);
+      const arrived = isArrivedAtPickupPointStatus(npStatus);
+      const notify = statusChanged && !(arrived && patch.status === 'submitted');
+      current = (await updateOrder(current.id, patch, { notify })) || current;
     }
     return maybeNotifyArrivedAtPoint(current, npStatus);
   } catch (err) {
@@ -1422,7 +1426,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       // Sync a limited batch of active NP shipments so the dashboard stays fresh.
       const synced = await Promise.all(
         orders.slice(0, 25).map(async (o) => {
-          if (!o.npTtn && !o.npValid) return o;
+          if (!o.npRef || String(o.npRef).startsWith('mock-') || isMockNpOrder(o)) return o;
           const full = await findByPublicToken(o.publicToken);
           if (!full) return o;
           const updated = await syncOrderStatusFromNovaPost(full);
