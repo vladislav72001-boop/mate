@@ -84,22 +84,42 @@ export function createAdminRouter({ authMiddleware, requireAdmin }) {
       const [orders, usersAll] = await Promise.all([listAllOrders(), listUsers()]);
       const users = usersAll.filter((u) => u.type !== 'admin');
 
+      // Keep dashboard "recent orders" in sync with Nova Post (same as /orders list).
+      const recentRaw = orders.slice(0, 8);
+      const syncable = recentRaw.filter((o) => o.npRef && !String(o.npRef).startsWith('mock-')
+        && ['waiting_from_you', 'submitted', 'paid'].includes(o.status));
+      const syncedById = new Map();
+      await Promise.all(
+        syncable.map(async (o) => {
+          const full = await findOrderById(o.id);
+          if (!full) return;
+          const updated = await syncOrderStatusFromNovaPost(full);
+          syncedById.set(o.id, publicOrder(updated));
+        }),
+      );
+      const recentOrders = recentRaw.map((o) => syncedById.get(o.id) || publicOrder(o));
+
+      // Recompute status counts after sync so cards match the list below.
+      const statusById = new Map(recentOrders.map((o) => [o.id, o.status]));
+      const ordersForStats = orders.map((o) => (
+        statusById.has(o.id) ? { ...o, status: statusById.get(o.id) } : o
+      ));
+
       const stats = {
-        totalOrders: orders.length,
-        pendingPayment: orders.filter((o) => o.status === 'pending_payment').length,
-        waitingFromYou: orders.filter((o) => o.status === 'waiting_from_you').length,
-        submitted: orders.filter((o) => o.status === 'submitted').length,
-        delivered: orders.filter((o) => o.status === 'delivered').length,
-        paid: orders.filter((o) => o.status === 'paid' || o.paidAt).length,
-        cancelled: orders.filter((o) => o.status === 'cancelled').length,
+        totalOrders: ordersForStats.length,
+        pendingPayment: ordersForStats.filter((o) => o.status === 'pending_payment').length,
+        waitingFromYou: ordersForStats.filter((o) => o.status === 'waiting_from_you').length,
+        submitted: ordersForStats.filter((o) => o.status === 'submitted').length,
+        delivered: ordersForStats.filter((o) => o.status === 'delivered').length,
+        paid: ordersForStats.filter((o) => o.status === 'paid' || o.paidAt).length,
+        cancelled: ordersForStats.filter((o) => o.status === 'cancelled').length,
         users: users.length,
-        revenue: orders
+        revenue: ordersForStats
           .filter((o) => ['submitted', 'paid', 'waiting_from_you', 'delivered'].includes(o.status) || o.paidAt)
           .reduce((s, o) => s + (Number(o.amount) || 0), 0),
         currency: (await getSettings()).currency,
       };
 
-      const recentOrders = orders.slice(0, 8).map(publicOrder);
       const recentUsers = users
         .slice()
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
