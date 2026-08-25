@@ -14,6 +14,13 @@ const cases = [
   ['Accepted', false, 'submitted'],
   ['Issued', false, 'submitted'],
   ['ReadyToShip', false, 'waiting_from_you'],
+  ['Waiting for a parcel from you', false, 'waiting_from_you'],
+  ['1', false, 'waiting_from_you'],
+  ['4', false, 'submitted'],
+  ['5', false, 'submitted'],
+  ['7', true, 'submitted'],
+  ['8', true, 'submitted'],
+  ['9', false, 'delivered'],
 ];
 
 let failed = 0;

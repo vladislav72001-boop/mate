@@ -366,7 +366,7 @@ export async function syncOrderStatusFromNovaPost(order) {
   }
 
   try {
-    const result = await fetchInternationalShipmentStatus(order.npRef);
+    const result = await fetchInternationalShipmentStatus(order.npRef, order.npTtn);
     npStatus = result.npStatus;
     NP_STATUS_CACHE.set(cacheKey, {
       orderStatus: result.orderStatus,

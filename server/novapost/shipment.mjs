@@ -330,16 +330,33 @@ function isNovaPostShipmentGoneError(err) {
 }
 
 /**
- * Map Nova Post shipment status string → Mate order status.
- * ReadyToShip = waiting for sender to drop off; Delivered* = done; else in transit.
+ * Map Nova Post shipment status string/code → Mate order status.
+ * Prefer numeric tracking statusCode when available.
+ * ReadyToShip / code 1 = waiting for sender drop-off; Delivered* / 9–11 = done; else in transit.
  * Arrived-at-point (postomat/PUDO/branch) stays in transit until the recipient collects.
  */
 export function mapNovaPostStatusToOrderStatus(npStatus) {
   const raw = String(npStatus || '').trim();
   if (!raw) return null;
+
+  // FullTracking statusCode (docs: /shipments/tracking).
+  if (/^\d+$/.test(raw)) {
+    const code = Number(raw);
+    if (code === 1) return 'waiting_from_you';
+    if (code === 2) return null; // deleted — do not auto-cancel
+    if (code === 9 || code === 10 || code === 11) return 'delivered';
+    if (code > 0) return 'submitted';
+  }
+
   const s = raw.toLowerCase().replace(/[\s_-]+/g, '');
 
-  if (s === 'readytoship' || s === 'created' || s === 'draft' || s === 'new') {
+  if (
+    s === 'readytoship'
+    || s === 'created'
+    || s === 'draft'
+    || s === 'new'
+    || (s.includes('waiting') && (s.includes('parcel') || s.includes('sender')))
+  ) {
     return 'waiting_from_you';
   }
   // Handed over at branch / waybill issued — no longer waiting for sender drop-off.
@@ -376,6 +393,13 @@ export function mapNovaPostStatusToOrderStatus(npStatus) {
 export function isArrivedAtPickupPointStatus(npStatus) {
   const raw = String(npStatus || '').trim();
   if (!raw) return false;
+
+  if (/^\d+$/.test(raw)) {
+    const code = Number(raw);
+    // 7 Arrived (Division), 8 Arrived (Postomat)
+    return code === 7 || code === 8;
+  }
+
   const s = raw.toLowerCase().replace(/[\s_-]+/g, '');
 
   // Already collected by the recipient — use the regular delivered email.
@@ -434,12 +458,24 @@ export function isArrivedAtPickupPointStatus(npStatus) {
 
 function extractNovaPostStatus(response) {
   if (!response || typeof response !== 'object') return null;
+
+  // FullTracking: /shipments/tracking → items[].currentStatus
+  const trackingItem = Array.isArray(response.items) ? response.items[0] : null;
+  const current = trackingItem?.currentStatus || response.currentStatus;
+  if (current?.statusCode != null && String(current.statusCode).trim() !== '') {
+    return String(current.statusCode).trim();
+  }
+  if (current?.status != null && String(current.status).trim() !== '') {
+    return String(current.status).trim();
+  }
+
   const candidates = [
     response.status,
     response.shipmentStatus,
     response.state,
     response?.shipment?.status,
     response?.data?.status,
+    trackingItem?.status,
     response?.items?.[0]?.status,
   ];
   for (const c of candidates) {
@@ -448,10 +484,15 @@ function extractNovaPostStatus(response) {
   return null;
 }
 
-/** NP estimated arrival (scheduledDeliveryDate from create/get shipment). */
+/** NP estimated arrival (scheduledDeliveryDate from create/get/tracking). */
 export function extractNovaPostScheduledDelivery(response) {
   if (!response || typeof response !== 'object') return null;
+  const trackingItem = Array.isArray(response.items) ? response.items[0] : null;
+  const current = trackingItem?.currentStatus || response.currentStatus;
   const candidates = [
+    current?.scheduledDate,
+    current?.adjustedDate,
+    trackingItem?.scheduled_delivery_date,
     response.scheduledDeliveryDate,
     response.scheduled_delivery_date,
     response?.shipment?.scheduledDeliveryDate,
@@ -464,13 +505,42 @@ export function extractNovaPostScheduledDelivery(response) {
   return null;
 }
 
-/** Fetch live shipment status from Nova Post by internal id (npRef). */
-export async function fetchInternationalShipmentStatus(shipmentId) {
-  if (isNovaPostMock() || !shipmentId || String(shipmentId).startsWith('mock-')) {
+function extractTrackingNumber(response) {
+  const trackingItem = Array.isArray(response?.items) ? response.items[0] : null;
+  return (
+    trackingItem?.currentStatus?.number
+    || trackingItem?.number
+    || response?.number
+    || response?.ttn
+    || null
+  );
+}
+
+/**
+ * Fetch live shipment status from Nova Post.
+ * Prefer FullTracking (`GET /shipments/tracking?ids[]=` / `numbers[]=`) —
+ * `GET /shipments/{id}` returns 405 on the current API.
+ */
+export async function fetchInternationalShipmentStatus(shipmentId, shipmentNumber = null) {
+  if (isNovaPostMock() || (!shipmentId && !shipmentNumber)) {
     return { npStatus: null, orderStatus: null, raw: null };
   }
+  if (shipmentId && String(shipmentId).startsWith('mock-')) {
+    return { npStatus: null, orderStatus: null, raw: null };
+  }
+
   const jwt = await getNovaPostJwt();
-  const response = await novaPostFetchJson(`/shipments/${encodeURIComponent(shipmentId)}`, {
+  const qs = new URLSearchParams();
+  if (shipmentId && /^\d+$/.test(String(shipmentId))) {
+    qs.set('ids[]', String(shipmentId));
+  } else if (shipmentNumber) {
+    qs.set('numbers[]', String(shipmentNumber));
+  } else if (shipmentId) {
+    // Legacy: some older rows may store TTN in npRef.
+    qs.set('numbers[]', String(shipmentId));
+  }
+
+  const response = await novaPostFetchJson(`/shipments/tracking?${qs.toString()}`, {
     method: 'GET',
     headers: novaPostAuthHeader(jwt),
   });
@@ -480,7 +550,7 @@ export async function fetchInternationalShipmentStatus(shipmentId) {
     npStatus,
     orderStatus: mapNovaPostStatusToOrderStatus(npStatus),
     raw: response,
-    number: response?.number ?? response?.ttn ?? null,
+    number: extractTrackingNumber(response),
     scheduledDeliveryDate,
   };
 }
