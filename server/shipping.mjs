@@ -703,6 +703,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
               currency: finalized.currency,
               priceSource: 'mate',
               breakdown: finalized.breakdown,
+              scheduledDeliveryDate: typeof raw === 'object' ? (raw.scheduledDeliveryDate || null) : null,
             };
             usedMate += 1;
             continue;
@@ -736,6 +737,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             currency: finalized.currency,
             priceSource: 'novapost',
             breakdown: finalized.breakdown,
+            scheduledDeliveryDate: typeof raw === 'object' ? (raw.scheduledDeliveryDate || null) : null,
           };
           usedNova += 1;
           continue;
@@ -768,6 +770,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             currency: finalized.currency,
             priceSource: 'mate',
             breakdown: finalized.breakdown,
+            scheduledDeliveryDate: typeof raw === 'object' ? (raw.scheduledDeliveryDate || null) : null,
           };
           usedMate += 1;
         }

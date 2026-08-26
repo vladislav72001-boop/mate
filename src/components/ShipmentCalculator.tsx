@@ -43,6 +43,7 @@ import {
   countryCodeFromDial,
 } from '../constants/shipping';
 import { deliveryEtaForCountry } from '../constants/deliveryEta';
+import { formatScheduledDelivery } from './calc/orderSuccessHelpers';
 import { TrackingMap } from './client-dash/TrackingMap';
 import {
   LockerPicker,
@@ -789,6 +790,7 @@ export function CalcForm({
   const [parcelQuotes, setParcelQuotes] = useState<Partial<Record<ParcelKey, number>>>({});
   const [customQuote, setCustomQuote] = useState<number | null>(null);
   const [quoteRefreshing, setQuoteRefreshing] = useState(false);
+  const [npScheduledDeliveryDate, setNpScheduledDeliveryDate] = useState<string | null>(null);
   const [welcomeDiscountPercent, setWelcomeDiscountPercent] = useState<number | null>(null);
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoInput, setPromoInput] = useState('');
@@ -1176,6 +1178,7 @@ export function CalcForm({
   }, [preliminaryRouteKey]);
 
   const applyEstimateFallback = useCallback((keys: ParcelKey[] = STEP3_QUOTE_KEYS) => {
+    setNpScheduledDeliveryDate(null);
     setParcelQuotes((prev) => {
       const next = { ...prev };
       for (const key of keys) {
@@ -1229,6 +1232,7 @@ export function CalcForm({
 
       const updates: Partial<Record<ParcelKey, number>> = {};
       let welcomePct: number | null = null;
+      let etaIso: string | null = null;
       for (const key of keys) {
         const q = data.quotes[key];
         const base = typeof q === 'number' ? q : (q?.total ?? null);
@@ -1236,8 +1240,17 @@ export function CalcForm({
         if (typeof q === 'object' && q?.breakdown?.welcomeDiscountPercent) {
           welcomePct = q.breakdown.welcomeDiscountPercent;
         }
+        if (typeof q === 'object' && q?.scheduledDeliveryDate) {
+          etaIso = q.scheduledDeliveryDate;
+        }
+      }
+      // Prefer ETA for the size currently selected when available.
+      const preferred = data.quotes[apiParcelKey as string] ?? data.quotes[String(sizeKey)];
+      if (typeof preferred === 'object' && preferred?.scheduledDeliveryDate) {
+        etaIso = preferred.scheduledDeliveryDate;
       }
       setWelcomeDiscountPercent(welcomePct);
+      setNpScheduledDeliveryDate(etaIso);
 
       if (Object.keys(updates).length) {
         setParcelQuotes((prev) => {
@@ -1274,7 +1287,7 @@ export function CalcForm({
   }, [
     toCountry, npDeclaredValue, routeCacheKey, quoteDeliveryMode, quotePickupMode,
     pickupQuoteLocation, deliveryQuoteLocation, quotePayerType,
-    applyEstimateFallback, t,
+    apiParcelKey, sizeKey, applyEstimateFallback, t,
   ]);
 
   const fetchCustomQuote = useCallback(async (
@@ -1326,6 +1339,9 @@ export function CalcForm({
       if (typeof q === 'object' && q?.breakdown?.welcomeDiscountPercent) {
         setWelcomeDiscountPercent(q.breakdown.welcomeDiscountPercent);
       }
+      setNpScheduledDeliveryDate(
+        typeof q === 'object' && q?.scheduledDeliveryDate ? q.scheduledDeliveryDate : null,
+      );
 
       setQuotesFromNp(data.priceSource === 'novapost' || data.priceSource === 'mate');
       if (!hasLiveLikePrice) {
@@ -1337,6 +1353,7 @@ export function CalcForm({
     } catch {
       if (reqId !== customQuoteRequestId.current) return false;
       setCustomQuote(null);
+      setNpScheduledDeliveryDate(null);
       setQuotesFromNp(false);
       setQuoteWarning(t('calc.quoteNpFail'));
       return false;
@@ -1615,6 +1632,7 @@ export function CalcForm({
       routeQuoteCache.current.delete(`catalog:${prevRouteKey.current}`);
       routeQuoteCache.current.delete(`prelim:${prevRouteKey.current}`);
       setQuotesFromNp(false);
+      setNpScheduledDeliveryDate(null);
       // Keep last quotes on screen while the next batch loads — clearing here
       // caused «Оплатить 0 HUF» / «Считаем…» if the user moved fast through steps 4→9.
       lastExactQuoteKey.current = null;
@@ -2525,9 +2543,16 @@ export function CalcForm({
       price={totalPrice}
       currency={currency}
       deliveryEstimate={(() => {
+        const npEta = formatScheduledDelivery(npScheduledDeliveryDate, locale);
+        if (npEta) return t('calc.deliveryEstimateNp', { date: npEta.dateLabel });
         const band = deliveryEtaForCountry(toCountry);
         return t('calc.deliveryEstimate', { min: band.minDays, max: band.maxDays });
       })()}
+      deliveryEstimateNote={
+        npScheduledDeliveryDate
+          ? t('calc.deliveryEstimateNoteNp')
+          : t('calc.deliveryEstimateNote')
+      }
       compact={summaryCompact}
       pricePending={quoteRefreshing && totalPrice == null}
       priceIsMinimum={priceIsMinimum}

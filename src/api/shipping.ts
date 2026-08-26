@@ -170,6 +170,7 @@ export async function calculateBatch(payload: {
       currency?: { code?: string } | string;
       priceSource?: string;
       breakdown?: PriceBreakdown;
+      scheduledDeliveryDate?: string | null;
     } | number>;
     currency?: { code?: string };
     priceSource?: string;

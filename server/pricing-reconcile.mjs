@@ -45,20 +45,23 @@ export async function reconcileParcelPrice({
       deliveryMode: mode,
     });
     if (matrixNet != null) {
-      return finalizeNovaPostClientPrice({
-        npTotal: matrixNet,
-        quoteCurrency: currency,
-        settings,
-        weightMarkups: pricing.weightMarkups,
-        tiers: pricing.tiers,
-        weightKg: billableKg,
-        monthlyShipments,
-        welcomeDiscountPercent,
-        promo,
-        source: 'mate',
-        deliveryMode: mode,
-        costIncludesVat: false,
-      });
+      return {
+        ...finalizeNovaPostClientPrice({
+          npTotal: matrixNet,
+          quoteCurrency: currency,
+          settings,
+          weightMarkups: pricing.weightMarkups,
+          tiers: pricing.tiers,
+          weightKg: billableKg,
+          monthlyShipments,
+          welcomeDiscountPercent,
+          promo,
+          source: 'mate',
+          deliveryMode: mode,
+          costIncludesVat: false,
+        }),
+        scheduledDeliveryDate: null,
+      };
     }
   }
 
@@ -82,21 +85,24 @@ export async function reconcileParcelPrice({
   }
 
   if (npQuote?.priceSource === 'novapost' && npQuote?.total != null && Number.isFinite(Number(npQuote.total))) {
-    return finalizeNovaPostClientPrice({
-      npTotal: npQuote.total,
-      quoteCurrency: npQuote.currency?.code || 'EUR',
-      settings,
-      weightMarkups: markupsForLiveNovaPost(pricing),
-      tiers: tiersForLiveNovaPost(pricing),
-      weightKg: billableKg,
-      monthlyShipments,
-      welcomeDiscountPercent,
-      promo,
-      source: 'novapost',
-      deliveryMode: mode,
-      npServices: npQuote.breakdown || null,
-      costIncludesVat: true,
-    });
+    return {
+      ...finalizeNovaPostClientPrice({
+        npTotal: npQuote.total,
+        quoteCurrency: npQuote.currency?.code || 'EUR',
+        settings,
+        weightMarkups: markupsForLiveNovaPost(pricing),
+        tiers: tiersForLiveNovaPost(pricing),
+        weightKg: billableKg,
+        monthlyShipments,
+        welcomeDiscountPercent,
+        promo,
+        source: 'novapost',
+        deliveryMode: mode,
+        npServices: npQuote.breakdown || null,
+        costIncludesVat: true,
+      }),
+      scheduledDeliveryDate: npQuote.scheduledDeliveryDate || null,
+    };
   }
 
   const matrixFallback = matrixCostNet(pricing, {
@@ -105,20 +111,23 @@ export async function reconcileParcelPrice({
     deliveryMode: mode,
   });
   if (matrixFallback != null) {
-    return finalizeNovaPostClientPrice({
-      npTotal: matrixFallback,
-      quoteCurrency: currency,
-      settings,
-      weightMarkups: pricing.weightMarkups,
-      tiers: pricing.tiers,
-      weightKg: billableKg,
-      monthlyShipments,
-      welcomeDiscountPercent,
-      promo,
-      source: 'mate',
-      deliveryMode: mode,
-      costIncludesVat: false,
-    });
+    return {
+      ...finalizeNovaPostClientPrice({
+        npTotal: matrixFallback,
+        quoteCurrency: currency,
+        settings,
+        weightMarkups: pricing.weightMarkups,
+        tiers: pricing.tiers,
+        weightKg: billableKg,
+        monthlyShipments,
+        welcomeDiscountPercent,
+        promo,
+        source: 'mate',
+        deliveryMode: mode,
+        costIncludesVat: false,
+      }),
+      scheduledDeliveryDate: npQuote?.scheduledDeliveryDate || null,
+    };
   }
 
   return {
@@ -126,5 +135,6 @@ export async function reconcileParcelPrice({
     currency,
     priceSource: null,
     breakdown: null,
+    scheduledDeliveryDate: null,
   };
 }

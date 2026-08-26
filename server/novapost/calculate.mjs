@@ -58,6 +58,7 @@ export function calculateMock(input) {
     currency: { code: 'EUR', symbol: 'EUR' },
     breakdown: [{ item: 'Delivery service (mock)', total: delivery, currencyCode: 'EUR' }],
     priceSource: 'mock',
+    scheduledDeliveryDate: null,
   };
 }
 
@@ -123,6 +124,21 @@ function normalizeQuoteParty(location, fallbackCountryCode, fallbackDivisionId) 
     return { countryCode, addressParts };
   }
   return { countryCode, divisionId: fallbackDivisionId };
+}
+
+function extractCalculationEta(response) {
+  if (!response || typeof response !== 'object') return null;
+  const services = Array.isArray(response.services) ? response.services : [];
+  const candidates = [
+    response.scheduledDeliveryDate,
+    response.scheduled_delivery_date,
+    response?.data?.scheduledDeliveryDate,
+    ...services.map((s) => s?.scheduledDeliveryDate || s?.scheduled_delivery_date),
+  ];
+  for (const c of candidates) {
+    if (c != null && String(c).trim()) return String(c).trim();
+  }
+  return null;
 }
 
 async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDivisionId, toDivisionId, input) {
@@ -196,6 +212,7 @@ async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDiv
       currencyCode: s.currencyCode ?? currencyCode,
     })),
     priceSource: 'novapost',
+    scheduledDeliveryDate: extractCalculationEta(response),
     meta: {
       payerContractNumber: payerContractNumber || null,
       usedCompanySender: Boolean(sender.companyTin),

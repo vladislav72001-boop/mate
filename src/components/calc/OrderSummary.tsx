@@ -14,6 +14,7 @@ type Props = {
   price: number | null;
   currency?: string;
   deliveryEstimate?: string;
+  deliveryEstimateNote?: string;
   compact?: boolean;
   pricePending?: boolean;
   priceIsMinimum?: boolean;
@@ -30,6 +31,7 @@ export function OrderSummary({
   price,
   currency = DEFAULT_QUOTE_CURRENCY,
   deliveryEstimate,
+  deliveryEstimateNote,
   compact = false,
   pricePending = false,
   priceIsMinimum = false,
@@ -43,6 +45,7 @@ export function OrderSummary({
   const { t } = useI18n();
   const formatMoney = (n: number) => formatQuoteMoney(n, currency);
   const estimate = deliveryEstimate ?? t('calc.deliveryEstimate', { min: 5, max: 9 });
+  const estimateNote = deliveryEstimateNote ?? t('calc.deliveryEstimateNote');
   const routeRow = rows.find((r) => r.key === 'from');
   const showExtras = Boolean(fragileFee || insuranceFee);
 
@@ -110,7 +113,7 @@ export function OrderSummary({
           <span className="calc-summary__discount">{promoHint}</span>
         )}
         <span>{estimate}</span>
-        <span className="calc-summary__eta-note">{t('calc.deliveryEstimateNote')}</span>
+        <span className="calc-summary__eta-note">{estimateNote}</span>
       </div>
     </aside>
   );
