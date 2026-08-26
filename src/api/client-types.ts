@@ -4,6 +4,8 @@ export type TrackingEvent = {
   at: string | null;
   done: boolean;
   current?: boolean;
+  place?: string | null;
+  source?: string;
 };
 
 export type ShippingOrder = {

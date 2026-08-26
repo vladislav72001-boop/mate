@@ -7744,6 +7744,12 @@ body {
 
 .client-dash__timeline-item b { display: block; }
 .client-dash__timeline-item small { color: var(--muted); }
+.client-dash__timeline-place {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.86rem;
+  color: rgba(18, 32, 35, 0.62);
+}
 
 .client-track-map {
   position: relative;
@@ -7824,6 +7830,11 @@ body {
   flex-direction: column;
   gap: 8px;
   margin: 12px 0;
+}
+
+.ship-track__result .client-dash__timeline,
+.ship-detail__timeline {
+  margin-top: 12px;
 }
 
 .ship-track__result .client-track-map {

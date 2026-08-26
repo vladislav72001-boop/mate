@@ -243,6 +243,22 @@ function buildTrackingTimeline(order) {
 
   events.push({ id: 'payment', title: 'Оплачено', at: order.paidAt || order.createdAt, done: true });
 
+  const npTimeline = Array.isArray(order?.npSnapshot?.trackingTimeline)
+    ? order.npSnapshot.trackingTimeline
+    : null;
+  if (npTimeline?.length) {
+    // Real Nova Post movement history (where the parcel is / was).
+    return [...events, ...npTimeline.map((ev, i) => ({
+      id: ev.id || `np-${i}`,
+      title: ev.title || 'Update',
+      place: ev.place || null,
+      at: ev.at || null,
+      done: Boolean(ev.done),
+      current: Boolean(ev.current),
+      source: 'novapost',
+    }))];
+  }
+
   if (order.status === 'waiting_from_you' || order.status === 'paid') {
     events.push({
       id: 'waiting',

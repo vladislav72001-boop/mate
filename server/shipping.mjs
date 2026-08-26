@@ -346,10 +346,16 @@ async function maybeNotifyArrivedAtPoint(order, npStatus) {
 /** Best-effort refresh of order.status from Nova Post (cached). */
 export async function syncOrderStatusFromNovaPost(order) {
   if (!order?.npRef || String(order.npRef).startsWith('mock-')) return order;
-  if (order.status === 'pending_payment' || order.status === 'cancelled' || order.status === 'delivered') {
+  if (order.status === 'pending_payment' || order.status === 'cancelled') {
     return order;
   }
-  if (!SYNCABLE_STATUSES.has(order.status) && order.status !== 'waiting_from_you') {
+  // Delivered: still refresh timeline once if we never stored NP movement history.
+  const deliveredNeedsTimeline = order.status === 'delivered'
+    && !(Array.isArray(order?.npSnapshot?.trackingTimeline) && order.npSnapshot.trackingTimeline.length);
+  if (order.status === 'delivered' && !deliveredNeedsTimeline) {
+    return order;
+  }
+  if (!SYNCABLE_STATUSES.has(order.status) && order.status !== 'waiting_from_you' && !deliveredNeedsTimeline) {
     return order;
   }
 
@@ -357,13 +363,35 @@ export async function syncOrderStatusFromNovaPost(order) {
   const cached = NP_STATUS_CACHE.get(cacheKey);
   let npStatus = cached?.npStatus || null;
   let current = order;
+  const needsTimeline = !(Array.isArray(current?.npSnapshot?.trackingTimeline) && current.npSnapshot.trackingTimeline.length);
+  const cacheUsable = cached
+    && cached.expiresAt > Date.now()
+    && (!needsTimeline || (Array.isArray(cached.timeline) && cached.timeline.length));
 
-  if (cached && cached.expiresAt > Date.now()) {
-    if (cached.orderStatus && cached.orderStatus !== current.status) {
+  if (cacheUsable) {
+    if (
+      cached.orderStatus
+      && cached.orderStatus !== current.status
+      && current.status !== 'delivered'
+    ) {
       const arrived = isArrivedAtPickupPointStatus(cached.npStatus);
       // Arrived-at-point keeps Mate status "submitted" — send only the arrival mail.
       const notify = !(arrived && cached.orderStatus === 'submitted');
       current = (await updateOrder(current.id, { status: cached.orderStatus }, { notify })) || current;
+    }
+    if (Array.isArray(cached.timeline) && cached.timeline.length) {
+      const snap = (current.npSnapshot && typeof current.npSnapshot === 'object')
+        ? { ...current.npSnapshot }
+        : {};
+      if (JSON.stringify(snap.trackingTimeline || null) !== JSON.stringify(cached.timeline)) {
+        current = (await updateOrder(current.id, {
+          npSnapshot: {
+            ...snap,
+            trackingTimeline: cached.timeline,
+            trackingSyncedAt: new Date().toISOString(),
+          },
+        }, { notify: false })) || current;
+      }
     }
     return maybeNotifyArrivedAtPoint(current, npStatus);
   }
@@ -374,25 +402,36 @@ export async function syncOrderStatusFromNovaPost(order) {
     NP_STATUS_CACHE.set(cacheKey, {
       orderStatus: result.orderStatus,
       npStatus: result.npStatus,
+      timeline: result.timeline || null,
       expiresAt: Date.now() + Math.max(15_000, NP_STATUS_TTL_MS),
     });
 
     const patch = {};
-    if (result.orderStatus && result.orderStatus !== current.status) {
+    if (
+      result.orderStatus
+      && result.orderStatus !== current.status
+      && current.status !== 'delivered'
+    ) {
       patch.status = result.orderStatus;
     }
     if (result.number && !current.npTtn) {
       patch.npTtn = String(result.number);
     }
+
+    const snap = (current.npSnapshot && typeof current.npSnapshot === 'object')
+      ? { ...current.npSnapshot }
+      : {};
+    let snapChanged = false;
     if (result.scheduledDeliveryDate && result.scheduledDeliveryDate !== extractScheduledDeliveryDate(current)) {
-      const snap = (current.npSnapshot && typeof current.npSnapshot === 'object')
-        ? { ...current.npSnapshot }
-        : {};
-      patch.npSnapshot = {
-        ...snap,
-        scheduledDeliveryDate: result.scheduledDeliveryDate,
-      };
+      snap.scheduledDeliveryDate = result.scheduledDeliveryDate;
+      snapChanged = true;
     }
+    if (Array.isArray(result.timeline) && result.timeline.length) {
+      snap.trackingTimeline = result.timeline;
+      snap.trackingSyncedAt = new Date().toISOString();
+      snapChanged = true;
+    }
+    if (snapChanged) patch.npSnapshot = snap;
 
     if (Object.keys(patch).length) {
       const statusChanged = Boolean(patch.status && patch.status !== order.status);
@@ -406,6 +445,7 @@ export async function syncOrderStatusFromNovaPost(order) {
     NP_STATUS_CACHE.set(cacheKey, {
       orderStatus: null,
       npStatus: null,
+      timeline: null,
       expiresAt: Date.now() + 30_000,
     });
     return current;

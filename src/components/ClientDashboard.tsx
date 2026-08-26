@@ -193,6 +193,19 @@ export function ClientDashboard({
     return new Date(iso).toLocaleDateString(intlLocale, { day: '2-digit', month: 'short', year: 'numeric' });
   }, [intlLocale]);
 
+  const formatDateTime = useCallback((iso?: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString(intlLocale, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }, [intlLocale]);
+
   const [tab, setTab] = useState<Tab>('home');
   const [shipFilter, setShipFilter] = useState<ShipmentFilter>('all');
   const [orders, setOrders] = useState<ShippingOrder[]>([]);
@@ -1079,7 +1092,8 @@ export function ClientDashboard({
                           <span className="client-dash__timeline-dot" />
                           <div>
                             <b>{trackingEventLabel(ev, t)}</b>
-                            {ev.at && <small>{formatDate(ev.at)}</small>}
+                            {ev.place && <span className="client-dash__timeline-place">{ev.place}</span>}
+                            {ev.at && <small>{formatDateTime(ev.at)}</small>}
                           </div>
                         </li>
                       ))}

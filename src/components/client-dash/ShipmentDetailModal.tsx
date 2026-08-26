@@ -1,8 +1,10 @@
+import type { ShippingOrder } from '../../api/client-types';
 import { formatScheduledDelivery } from '../calc/orderSuccessHelpers';
 import { openWaybillPdf } from '../../api/shipping';
 import { countryLabel } from '../../constants/shipping';
 import { useI18n } from '../../i18n/context';
 import { TrackingMap } from './TrackingMap';
+import { trackingEventLabel } from './trackingLabels';
 
 type Props = {
   order: ShippingOrder;
@@ -145,6 +147,20 @@ export function ShipmentDetailModal({
               {order.cancelledAt && <div><dt>{t('dash.cancelledAt')}</dt><dd>{formatDate(order.cancelledAt, intlLocale)}</dd></div>}
               {order.npTtn && <div><dt>{t('dash.ttnLabel')}</dt><dd><b>{order.npTtn}</b></dd></div>}
             </dl>
+            {Array.isArray(order.tracking) && order.tracking.length > 0 && (
+              <ul className="client-dash__timeline ship-detail__timeline">
+                {order.tracking.map((ev) => (
+                  <li key={ev.id} className={`client-dash__timeline-item${ev.done ? ' done' : ''}${ev.current ? ' current' : ''}`}>
+                    <span className="client-dash__timeline-dot" />
+                    <div>
+                      <b>{trackingEventLabel(ev, t)}</b>
+                      {ev.place && <span className="client-dash__timeline-place">{ev.place}</span>}
+                      {ev.at && <small>{formatDate(ev.at, intlLocale)}</small>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         </div>
 

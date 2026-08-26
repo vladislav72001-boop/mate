@@ -75,6 +75,8 @@ import { useCalcDraftPersistence } from './calc/useCalcDraft';
 import { trackAnalytics } from '../utils/analytics';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
+import { localeToIntl } from '../i18n/config';
+import { trackingEventLabel } from './client-dash/trackingLabels';
 
 type FormProps = {
   user?: AuthUser | null;
@@ -3673,6 +3675,30 @@ export function TrackShipment() {
             : order.status
           }</span>
           {order.npTtn && <span>{t('calc.ttnLabel')}: {order.npTtn}</span>}
+          {Array.isArray(order.tracking) && order.tracking.length > 0 && (
+            <ul className="client-dash__timeline ship-track__timeline">
+              {order.tracking.map((ev) => (
+                <li key={ev.id} className={`client-dash__timeline-item${ev.done ? ' done' : ''}${ev.current ? ' current' : ''}`}>
+                  <span className="client-dash__timeline-dot" />
+                  <div>
+                    <b>{trackingEventLabel(ev, t)}</b>
+                    {ev.place && <span className="client-dash__timeline-place">{ev.place}</span>}
+                    {ev.at && (
+                      <small>
+                        {new Date(ev.at).toLocaleString(localeToIntl(locale), {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </small>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       <button className="btn btn-lime calc-submit" type="button" disabled={loading} onClick={handleTrack}>

@@ -456,12 +456,20 @@ export function isArrivedAtPickupPointStatus(npStatus) {
   return false;
 }
 
+function unwrapCurrentStatus(response) {
+  if (!response || typeof response !== 'object') return null;
+  const trackingItem = Array.isArray(response.items) ? response.items[0] : null;
+  const raw = trackingItem?.currentStatus || response.currentStatus;
+  if (Array.isArray(raw)) return raw[0] || null;
+  return raw || null;
+}
+
 function extractNovaPostStatus(response) {
   if (!response || typeof response !== 'object') return null;
 
-  // FullTracking: /shipments/tracking → items[].currentStatus
+  // FullTracking: /shipments/tracking → currentStatus (object or array) / items[]
   const trackingItem = Array.isArray(response.items) ? response.items[0] : null;
-  const current = trackingItem?.currentStatus || response.currentStatus;
+  const current = unwrapCurrentStatus(response);
   if (current?.statusCode != null && String(current.statusCode).trim() !== '') {
     return String(current.statusCode).trim();
   }
@@ -488,7 +496,7 @@ function extractNovaPostStatus(response) {
 export function extractNovaPostScheduledDelivery(response) {
   if (!response || typeof response !== 'object') return null;
   const trackingItem = Array.isArray(response.items) ? response.items[0] : null;
-  const current = trackingItem?.currentStatus || response.currentStatus;
+  const current = unwrapCurrentStatus(response);
   const candidates = [
     current?.scheduledDate,
     current?.adjustedDate,
@@ -507,13 +515,83 @@ export function extractNovaPostScheduledDelivery(response) {
 
 function extractTrackingNumber(response) {
   const trackingItem = Array.isArray(response?.items) ? response.items[0] : null;
+  const current = unwrapCurrentStatus(response);
   return (
-    trackingItem?.currentStatus?.number
+    current?.number
     || trackingItem?.number
     || response?.number
     || response?.ttn
     || null
   );
+}
+
+/** CamelCase / PascalCase NP event code → readable label fallback. */
+function humanizeNovaPostEvent(event) {
+  const raw = String(event || '').trim();
+  if (!raw) return '';
+  return raw
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .trim();
+}
+
+/**
+ * Build a client timeline from FullTracking detailsTracking / historyOnlineTracking.
+ */
+export function extractNovaPostTrackingTimeline(response) {
+  if (!response || typeof response !== 'object') return null;
+  const trackingItem = Array.isArray(response.items) ? response.items[0] : null;
+  const pools = [
+    response.detailsTracking,
+    trackingItem?.detailsTracking,
+    response.historyOnlineTracking,
+    trackingItem?.historyOnlineTracking,
+  ];
+  let details = [];
+  for (const pool of pools) {
+    if (Array.isArray(pool) && pool.length) {
+      details = pool;
+      break;
+    }
+  }
+  if (!details.length) return null;
+
+  const events = details.map((d, i) => {
+    const status = String(d?.eventStatus || d?.status || '').trim();
+    const place = [d?.settlementName, d?.divisionName, d?.countryCode, d?.city, d?.country]
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+      .filter((v, idx, arr) => arr.indexOf(v) === idx)
+      .join(' · ');
+    // Prefer localized eventName (cabinet text); event is a machine code like PickUpCreated.
+    const title = String(d?.eventName || d?.statusName || d?.description || '').trim()
+      || humanizeNovaPostEvent(d?.event)
+      || `Status ${d?.code ?? i + 1}`;
+    const at = d?.date || d?.statusDate || d?.createdDate || null;
+    const normalized = status.toLowerCase();
+    const done = normalized === 'passed' || normalized === 'now' || normalized === 'current';
+    const current = normalized === 'now' || normalized === 'current';
+    return {
+      id: `np-${d?.code ?? d?.event ?? 'e'}-${at || i}`,
+      title,
+      place: place || null,
+      at: at ? String(at) : null,
+      done,
+      current,
+      source: 'novapost',
+    };
+  }).sort((a, b) => {
+    const ta = a.at ? Date.parse(a.at) : Number.POSITIVE_INFINITY;
+    const tb = b.at ? Date.parse(b.at) : Number.POSITIVE_INFINITY;
+    if (ta !== tb) return ta - tb;
+    return 0;
+  });
+
+  if (!events.some((e) => e.current)) {
+    const lastDone = [...events].reverse().find((e) => e.done);
+    if (lastDone) lastDone.current = true;
+  }
+  return events;
 }
 
 /**
@@ -523,10 +601,10 @@ function extractTrackingNumber(response) {
  */
 export async function fetchInternationalShipmentStatus(shipmentId, shipmentNumber = null) {
   if (isNovaPostMock() || (!shipmentId && !shipmentNumber)) {
-    return { npStatus: null, orderStatus: null, raw: null };
+    return { npStatus: null, orderStatus: null, raw: null, timeline: null };
   }
   if (shipmentId && String(shipmentId).startsWith('mock-')) {
-    return { npStatus: null, orderStatus: null, raw: null };
+    return { npStatus: null, orderStatus: null, raw: null, timeline: null };
   }
 
   const jwt = await getNovaPostJwt();
@@ -552,6 +630,7 @@ export async function fetchInternationalShipmentStatus(shipmentId, shipmentNumbe
     raw: response,
     number: extractTrackingNumber(response),
     scheduledDeliveryDate,
+    timeline: extractNovaPostTrackingTimeline(response),
   };
 }
 

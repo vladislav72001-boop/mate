@@ -13,6 +13,9 @@ export function trackingEventLabel(
   ev: TrackingEvent,
   t: (key: string) => string,
 ) {
+  if (ev.source === 'novapost' || String(ev.id || '').startsWith('np-')) {
+    return ev.title;
+  }
   if (ev.id === 'payment') {
     return ev.done ? t('dash.trackPaid') : t('dash.trackPaymentPending');
   }
