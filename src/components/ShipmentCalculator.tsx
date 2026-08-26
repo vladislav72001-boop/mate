@@ -2253,6 +2253,9 @@ export function CalcForm({
       if (emailErr) return emailErr;
       const phoneErr = validatePhone(receiverDial, receiverPhone, countryCodeFromDial(receiverDial), t('calc.fieldReceiverPhone'));
       if (phoneErr) return phoneErr;
+      if (toCountry === 'FR' && receiverDial !== (DIAL_BY_CC.FR || '+33')) {
+        return `${t('calc.fieldReceiverPhone')}: для доставки во Францию укажите французский номер (+33)`;
+      }
       if (deliveryType === 'home') {
         if (!destAddressReady) return t('calc.valSelectAddressHint');
         if (!destStreet || !destCity || !destPostal) return t('calc.valDeliveryAddress');
@@ -2292,6 +2295,9 @@ export function CalcForm({
       if (rEmailErr) return rEmailErr;
       const rPhoneErr = validatePhone(receiverDial, receiverPhone, countryCodeFromDial(receiverDial), t('calc.fieldReceiverPhone'));
       if (rPhoneErr) return rPhoneErr;
+      if (toCountry === 'FR' && receiverDial !== (DIAL_BY_CC.FR || '+33')) {
+        return `${t('calc.fieldReceiverPhone')}: для доставки во Францию укажите французский номер (+33)`;
+      }
     }
     return null;
   }, [
@@ -3310,6 +3316,7 @@ export function CalcForm({
                   phone={receiverPhone}
                   onPhoneChange={setReceiverPhone}
                   defaultCountry={toCountry}
+                  lockedCountry={toCountry === 'FR' ? 'FR' : undefined}
                   autoComplete="shipping tel-national"
                   name="receiver_phone"
                 />

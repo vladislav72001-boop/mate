@@ -94,6 +94,20 @@ function validatePhone(raw, countryCode, label) {
   return null;
 }
 
+/** For FR deliveries NP SMS expects a French (+33) recipient number. */
+function validatePhoneMatchesDestination(raw, destinationCountry, label) {
+  const dest = normalizeCountryCode(destinationCountry);
+  if (dest !== 'FR') return null;
+  const expectedCc = CALLING_CODE_BY_ISO2.FR;
+  let digits = String(raw ?? '').trim().replace(/[\s\u00A0\-().]/g, '').replace(/^\+/, '');
+  digits = digits.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (!digits.startsWith(expectedCc)) {
+    return `${label}: для доставки во Францию укажите французский номер (+${expectedCc})`;
+  }
+  return null;
+}
+
 function validateEmail(email, label) {
   const v = String(email ?? '').trim().toLowerCase();
   if (!v) return `${label}: укажите email`;
@@ -153,6 +167,12 @@ export function validateCheckoutBody(body) {
     'Телефон получателя',
   );
   if (receiverPhoneErr) errors.push(receiverPhoneErr);
+  const receiverPhoneCountryErr = validatePhoneMatchesDestination(
+    receiver.phone,
+    receiver.country || tariff.toCountry,
+    'Телефон получателя',
+  );
+  if (receiverPhoneCountryErr) errors.push(receiverPhoneCountryErr);
 
   const weightKg = Number(parcel.weightKg ?? 0);
   const lengthCm = Number(parcel.lengthCm ?? 0);

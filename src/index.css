@@ -7728,8 +7728,11 @@ body {
 }
 
 .client-dash__timeline-item.done { opacity: 1; }
+.client-dash__timeline-item.done .client-dash__timeline-dot,
 .client-dash__timeline-item.current .client-dash__timeline-dot {
   background: var(--lime);
+}
+.client-dash__timeline-item.current .client-dash__timeline-dot {
   box-shadow: 0 0 0 4px rgb(225 255 1 / 0.35);
 }
 
@@ -10347,6 +10350,13 @@ body {
   color: var(--navy);
   position: relative;
   box-sizing: border-box;
+}
+
+.calc-phone-dial__trigger.is-locked,
+.calc-phone-dial__trigger:disabled {
+  cursor: default;
+  padding-right: 12px;
+  opacity: 1;
 }
 
 .calc-phone-dial__flag {

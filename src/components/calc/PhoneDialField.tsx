@@ -16,6 +16,8 @@ type Props = {
   onPhoneChange: (value: string) => void;
   placeholder?: string;
   defaultCountry?: string;
+  /** When set, dial is fixed to this country (no country picker). */
+  lockedCountry?: string;
   autoComplete?: string;
   name?: string;
 };
@@ -35,6 +37,7 @@ export function PhoneDialField({
   onPhoneChange,
   placeholder = '301234567',
   defaultCountry = 'HU',
+  lockedCountry,
   autoComplete = 'tel-national',
   name = 'phone',
 }: Props) {
@@ -43,12 +46,21 @@ export function PhoneDialField({
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const locked = String(lockedCountry || '').toUpperCase();
+  const lockedDial = locked ? (DIAL_BY_CC[locked] || null) : null;
   const known = PHONE_PREFIXES.some((p) => p.dial === dial);
-  const selectedDial = known ? dial : PHONE_PREFIXES.find((p) => p.code === defaultCountry)?.dial || '+36';
+  const selectedDial = lockedDial
+    || (known ? dial : PHONE_PREFIXES.find((p) => p.code === defaultCountry)?.dial || '+36');
   const [selectedCountry, setSelectedCountry] = useState(
-    () => countryCodeFromDial(selectedDial, defaultCountry),
+    () => locked || countryCodeFromDial(selectedDial, defaultCountry),
   );
-  const flagCode = selectedCountry || countryCodeFromDial(selectedDial, defaultCountry);
+  const flagCode = locked || selectedCountry || countryCodeFromDial(selectedDial, defaultCountry);
+
+  useEffect(() => {
+    if (!lockedDial) return;
+    if (dial !== lockedDial) onDialChange(lockedDial);
+    setSelectedCountry(locked);
+  }, [locked, lockedDial, dial, onDialChange]);
 
   const displayNames = useMemo(() => {
     try {
@@ -63,6 +75,7 @@ export function PhoneDialField({
   );
 
   useEffect(() => {
+    if (locked) return;
     const preferred = String(defaultCountry || '').toUpperCase();
     setSelectedCountry((current) => {
       if (DIAL_BY_CC[preferred] === selectedDial) return preferred;
@@ -70,16 +83,16 @@ export function PhoneDialField({
       if (DIAL_BY_CC[current] === selectedDial) return current;
       return countryCodeFromDial(selectedDial, preferred);
     });
-  }, [defaultCountry, selectedDial]);
+  }, [defaultCountry, selectedDial, locked]);
 
   useEffect(() => {
-    if (!open) {
+    if (!open || locked) {
       setQuery('');
       return;
     }
     const timer = window.setTimeout(() => searchRef.current?.focus(), 40);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [open, locked]);
 
   const filtered = useMemo(() => {
     const q = fold(query);
@@ -98,6 +111,7 @@ export function PhoneDialField({
   }, [query, displayNames, locale]);
 
   const pick = (next: (typeof PHONE_PREFIXES)[number]) => {
+    if (locked) return;
     setSelectedCountry(next.code);
     onDialChange(next.dial);
     setOpen(false);
@@ -125,62 +139,75 @@ export function PhoneDialField({
     />
   );
 
+  const dialTrigger = (
+    <button
+      type="button"
+      className={`calc-phone-dial__trigger${open ? ' is-open' : ''}${locked ? ' is-locked' : ''}`}
+      aria-haspopup={locked ? undefined : 'listbox'}
+      aria-expanded={locked ? undefined : open}
+      aria-controls={locked ? undefined : listId}
+      aria-label={t('calc.dialCode')}
+      disabled={Boolean(locked)}
+      onClick={() => {
+        if (locked) return;
+        setOpen((v) => !v);
+      }}
+    >
+      <CountryFlag code={flagCode} size={20} className="calc-phone-dial__flag" />
+      <span className="calc-phone-dial__code">{selectedDial}</span>
+      {!locked && <span className="calc-phone-dial__chev" aria-hidden />}
+    </button>
+  );
+
   return (
     <div className="calc-form__phone">
-      <CalcOptionPicker
-        wrapperClassName="calc-form__dial calc-phone-dial"
-        listId={listId}
-        ariaLabel={t('calc.dialCode')}
-        sheetTitle={t('calc.dialCode')}
-        open={open}
-        onOpenChange={setOpen}
-        scrollable
-        minMenuWidth={300}
-        header={searchHeader}
-        trigger={(
-          <button
-            type="button"
-            className={`calc-phone-dial__trigger${open ? ' is-open' : ''}`}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            aria-controls={listId}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <CountryFlag code={flagCode} size={20} className="calc-phone-dial__flag" />
-            <span className="calc-phone-dial__code">{selectedDial}</span>
-            <span className="calc-phone-dial__chev" aria-hidden />
-          </button>
-        )}
-      >
-        {filtered.length === 0 ? (
-          <li role="presentation" className="calc-option-list__empty">
-            {t('calc.dialSearchEmpty')}
-          </li>
-        ) : (
-          filtered.map((p) => {
-            const active = p.code === flagCode;
-            return (
-              <li key={p.code} role="presentation">
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={active}
-                  className={`calc-option-list__item${active ? ' is-active' : ''}`}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(p)}
-                >
-                  <CountryFlag code={p.code} size={20} />
-                  <span className="calc-option-list__text calc-phone-dial__option">
-                    <b>{p.dial}</b>
-                    <em>{regionLabel(p.code)}</em>
-                  </span>
-                  {active && <span className="calc-option-list__check" aria-hidden>✓</span>}
-                </button>
-              </li>
-            );
-          })
-        )}
-      </CalcOptionPicker>
+      {locked ? (
+        <div className="calc-form__dial calc-phone-dial calc-phone-dial--locked">
+          {dialTrigger}
+        </div>
+      ) : (
+        <CalcOptionPicker
+          wrapperClassName="calc-form__dial calc-phone-dial"
+          listId={listId}
+          ariaLabel={t('calc.dialCode')}
+          sheetTitle={t('calc.dialCode')}
+          open={open}
+          onOpenChange={setOpen}
+          scrollable
+          minMenuWidth={300}
+          header={searchHeader}
+          trigger={dialTrigger}
+        >
+          {filtered.length === 0 ? (
+            <li role="presentation" className="calc-option-list__empty">
+              {t('calc.dialSearchEmpty')}
+            </li>
+          ) : (
+            filtered.map((p) => {
+              const active = p.code === flagCode;
+              return (
+                <li key={p.code} role="presentation">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    className={`calc-option-list__item${active ? ' is-active' : ''}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pick(p)}
+                  >
+                    <CountryFlag code={p.code} size={20} />
+                    <span className="calc-option-list__text calc-phone-dial__option">
+                      <b>{p.dial}</b>
+                      <em>{regionLabel(p.code)}</em>
+                    </span>
+                    {active && <span className="calc-option-list__check" aria-hidden>✓</span>}
+                  </button>
+                </li>
+              );
+            })
+          )}
+        </CalcOptionPicker>
+      )}
       <input
         className="calc-form__phone-input"
         name={name}
