@@ -9531,6 +9531,11 @@ body {
   color: rgba(255, 255, 255, 0.55);
 }
 
+.calc-summary__eta-note {
+  font-size: 0.72rem !important;
+  color: rgba(255, 255, 255, 0.42) !important;
+}
+
 .calc-summary__discount {
   font-size: 0.82rem;
   font-weight: var(--fw-semibold);

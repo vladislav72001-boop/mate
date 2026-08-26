@@ -42,6 +42,7 @@ import {
   countryLabel,
   countryCodeFromDial,
 } from '../constants/shipping';
+import { deliveryEtaForCountry } from '../constants/deliveryEta';
 import { TrackingMap } from './client-dash/TrackingMap';
 import {
   LockerPicker,
@@ -2523,6 +2524,10 @@ export function CalcForm({
       rows={visibleSummaryRows}
       price={totalPrice}
       currency={currency}
+      deliveryEstimate={(() => {
+        const band = deliveryEtaForCountry(toCountry);
+        return t('calc.deliveryEstimate', { min: band.minDays, max: band.maxDays });
+      })()}
       compact={summaryCompact}
       pricePending={quoteRefreshing && totalPrice == null}
       priceIsMinimum={priceIsMinimum}

@@ -42,7 +42,7 @@ export function OrderSummary({
 }: Props) {
   const { t } = useI18n();
   const formatMoney = (n: number) => formatQuoteMoney(n, currency);
-  const estimate = deliveryEstimate ?? t('calc.deliveryEstimate');
+  const estimate = deliveryEstimate ?? t('calc.deliveryEstimate', { min: 5, max: 9 });
   const routeRow = rows.find((r) => r.key === 'from');
   const showExtras = Boolean(fragileFee || insuranceFee);
 
@@ -110,6 +110,7 @@ export function OrderSummary({
           <span className="calc-summary__discount">{promoHint}</span>
         )}
         <span>{estimate}</span>
+        <span className="calc-summary__eta-note">{t('calc.deliveryEstimateNote')}</span>
       </div>
     </aside>
   );

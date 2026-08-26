@@ -1,5 +1,6 @@
 import type { ShippingOrder } from '../../api/client-types';
 import { countryLabel, formatQuoteMoney } from '../../constants/shipping';
+import { deliveryEtaForCountry } from '../../constants/deliveryEta';
 import type { Locale, TranslateVars } from '../../i18n/types';
 import { localeToIntl } from '../../i18n/config';
 
@@ -54,14 +55,15 @@ export function estimateDeliveryWindow(order: ShippingOrder, t: TFn, locale: Loc
     };
   }
 
+  const band = deliveryEtaForCountry(order.toCountry);
   const base = new Date(order.paidAt || order.createdAt || Date.now());
-  const latest = addBusinessDays(base, 3);
+  const latest = addBusinessDays(base, band.maxDays);
   const intl = localeToIntl(locale);
   const weekday = latest.toLocaleDateString(intl, { weekday: 'long' });
   const dateLabel = latest.toLocaleDateString(intl, { day: 'numeric', month: 'long' });
   return {
-    range: t('orderSuccess.etaRange'),
-    hint: t('orderSuccess.etaUntil', { date: dateLabel, weekday }),
+    range: t('orderSuccess.etaRange', { min: band.minDays, max: band.maxDays }),
+    hint: `${t('orderSuccess.etaUntil', { date: dateLabel, weekday })} · ${t('orderSuccess.etaHintFallback')}`,
   };
 }
 

@@ -5,6 +5,7 @@
 
 import { localeFromOrder, mailT, intlLocale } from './mail-i18n.mjs';
 import { barcodeImageUrls } from './barcode.mjs';
+import { deliveryEtaForCountry } from './delivery-eta.mjs';
 
 const BRAND = {
   lime: '#D2E84D',
@@ -194,8 +195,12 @@ function orderContext(order) {
   const pointDetail = pickupLocation.address
     || pickupLocation.addressLine
     || (pickupAddress !== sender.line ? pickupAddress : '');
-  const fromCity = cityFromCountry(tariff.fromCountry || sender.country || 'HU', sender.line);
-  const toCity = cityFromCountry(tariff.toCountry || receiver.country || 'SK', receiver.destinationLine);
+  const fromCountry = tariff.fromCountry || sender.country || 'HU';
+  const toCountry = tariff.toCountry || receiver.country || 'SK';
+  const fromCity = cityFromCountry(fromCountry, sender.line);
+  const toCity = cityFromCountry(toCountry, receiver.destinationLine);
+  const etaBand = deliveryEtaForCountry(toCountry);
+  const etaLabel = t('etaRange', { min: etaBand.minDays, max: etaBand.maxDays });
   const boxSize = parcel.boxSize || 'S';
   const weightKg = parcel.weightKg || 5;
   const contents = parcel.description || parcel.contents || '—';
@@ -252,6 +257,8 @@ function orderContext(order) {
     pointDetail,
     fromCity,
     toCity,
+    toCountry,
+    etaLabel,
     boxSize,
     weightKg,
     contents,
@@ -621,7 +628,7 @@ function buildCourierBody(ctx) {
     ])}
 
     ${barcodeBlock({ title: t('trackTellCourier'), track: ctx.track })}
-    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta23'))}
+    ${routeBlock(ctx.fromCity, ctx.toCity, ctx.etaLabel)}
     ${orderTotalCard(ctx)}
     <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, t('trackParcel'))}</div>
     <div style="margin:0 0 8px;">${btnOutline(ctx.pdfUrl, t('waybillPdf'))}</div>
@@ -715,7 +722,7 @@ function buildBranchBody(ctx) {
     <div style="margin:0 0 6px;font-family:${FONT.body};font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:${BRAND.muted};font-weight:700;">
       ${escapeHtml(t('parcelRoute'))}
     </div>
-    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta35'))}
+    ${routeBlock(ctx.fromCity, ctx.toCity, ctx.etaLabel)}
     ${orderTotalCard(ctx)}
     <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, t('trackParcel'))}</div>
     ${dualButtons(ctx.pdfUrl, t('waybillPdf'), ctx.manageUrl, t('changeBranch'), false)}
@@ -792,7 +799,7 @@ function buildLockerBody(ctx) {
     ])}
 
     ${barcodeBlock({ title: t('trackTtn'), track: ctx.track })}
-    ${routeBlock(ctx.fromCity, ctx.toCity, t('eta12'))}
+    ${routeBlock(ctx.fromCity, ctx.toCity, ctx.etaLabel)}
     ${orderTotalCard(ctx)}
     <div style="margin:0 0 10px;">${btnPrimary(ctx.trackUrl, t('trackParcel'))}</div>
     ${dualButtons(ctx.pdfUrl, t('waybillPdf'), ctx.manageUrl, t('changeOrCancel'), false)}
