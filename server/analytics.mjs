@@ -499,5 +499,13 @@ export async function buildAnalyticsReport({ days = 30 } = {}) {
     daily,
     peakDay,
     daySlices,
+    metaPixel: {
+      pixelId: '1059734696786111',
+      active: true,
+      pageViews,
+      initiateCheckout: payClicks,
+      purchases: checkouts,
+      eventsManagerUrl: 'https://business.facebook.com/events_manager2/list/pixel/1059734696786111',
+    },
   };
 }

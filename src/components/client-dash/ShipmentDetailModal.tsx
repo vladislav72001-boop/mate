@@ -108,7 +108,7 @@ export function ShipmentDetailModal({
               <div><dt>{t('dash.pickupAddress')}</dt><dd>{order.senderLine || '—'}</dd></div>
               <div><dt>{t('dash.to')}</dt><dd>{countryLabel(order.toCountry || '', locale)}</dd></div>
               <div><dt>{t('dash.deliveryAddress')}</dt><dd>{order.receiverLine || '—'}</dd></div>
-              <div><dt>{t('dash.pickupDate')}</dt><dd>{order.pickupDate || '—'}{order.pickupTime ? `, ${order.pickupTime}` : ''}</dd></div>
+              <div><dt>{t('dash.pickupDate')}</dt><dd>{order.pickupDate || '—'}{order.pickupTime && order.pickupTime !== 'within_day' ? `, ${order.pickupTime}` : order.pickupDate ? `, ${t('calc.pickupWithinDay')}` : ''}</dd></div>
               {deliveryEta && (
                 <div><dt>{t('dash.deliveryEta')}</dt><dd>{deliveryEta.short}</dd></div>
               )}

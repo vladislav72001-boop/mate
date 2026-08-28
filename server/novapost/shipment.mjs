@@ -17,6 +17,7 @@ import {
 } from './parcel.mjs';
 import { normalizeCountryCode } from './calculate.mjs';
 import { buildShipmentInvoice } from './invoice.mjs';
+import { transliterateAddressParts, transliteratePersonName } from './transliterate.mjs';
 
 const CALLING_CODE_BY_ISO2 = {
   CZ: '420', DE: '49', EE: '372', ES: '34', FR: '33', GB: '44',
@@ -58,7 +59,8 @@ function sanitizePersonName(...parts) {
   const raw = parts.map((p) => String(p ?? '').trim()).filter(Boolean).join(' ').replace(/[—–-]+/g, ' ').trim();
   const words = raw.match(/[\p{L}][\p{L}\s'.]*/gu) ?? [];
   const cleaned = words.map((w) => w.trim()).filter((w) => w.length >= 2).join(' ').trim();
-  if (cleaned.length >= 3) return cleaned.slice(0, 64);
+  const latin = transliteratePersonName(cleaned);
+  if (latin.length >= 3) return latin.slice(0, 64);
   return 'Mate Customer';
 }
 
@@ -110,11 +112,12 @@ function applyShipmentLocation(party, location) {
       const value = String(source[key] || '').trim();
       if (value) addressParts[key] = value;
     }
+    const latinParts = transliterateAddressParts(addressParts);
     const { divisionId: _ignored, ...withoutDivision } = party;
     return {
       ...withoutDivision,
       countryCode: normalizeCountryCode(location.countryCode),
-      addressParts,
+      addressParts: latinParts,
     };
   }
   return party;

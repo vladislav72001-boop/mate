@@ -766,6 +766,44 @@ function AnalyticsTab() {
         </div>
       </section>
 
+      <section className="ax-meta card">
+        <div className="ax-meta__head">
+          <div>
+            <p className="ax-eyebrow">Meta Pixel</p>
+            <h2>Facebook / Instagram</h2>
+            <p className="ax-meta__sub">ID {data.metaPixel.pixelId} · события зеркалятся с сайта</p>
+          </div>
+          <span className={`ax-meta__status${data.metaPixel.active ? ' is-on' : ''}`}>
+            {data.metaPixel.active ? 'Активен' : 'Выключен'}
+          </span>
+        </div>
+        <div className="ax-meta__grid">
+          <article className="ax-meta__kpi">
+            <span>PageView</span>
+            <b>{data.metaPixel.pageViews}</b>
+          </article>
+          <article className="ax-meta__kpi">
+            <span>InitiateCheckout</span>
+            <b>{data.metaPixel.initiateCheckout}</b>
+          </article>
+          <article className="ax-meta__kpi">
+            <span>Purchase</span>
+            <b>{data.metaPixel.purchases}</b>
+          </article>
+        </div>
+        <p className="ax-meta__note">
+          Полная статистика Meta — в Events Manager. Здесь показаны события за {days} дн., которые отправляет сайт вместе с пикселем.
+        </p>
+        <a
+          className="ax-meta__link"
+          href={data.metaPixel.eventsManagerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Открыть Meta Events Manager →
+        </a>
+      </section>
+
       <div className="ax-kpis">
         {kpis.map((c, i) => (
           <article

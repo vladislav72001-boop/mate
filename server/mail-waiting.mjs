@@ -137,9 +137,12 @@ function lockerCodeFromOrder(order) {
 
 function parsePickupTime(raw) {
   const text = String(raw || '').trim();
+  if (!text || text === 'within_day') {
+    return { start: null, end: null, label: null, withinDay: true };
+  }
   const m = text.match(/(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/);
-  if (m) return { start: m[1], end: m[2], label: `${m[1]}-${m[2]}` };
-  return { start: '10:00', end: '11:30', label: text || '10:00-11:30' };
+  if (m) return { start: m[1], end: m[2], label: `${m[1]}-${m[2]}`, withinDay: false };
+  return { start: '10:00', end: '11:30', label: text || '10:00-11:30', withinDay: false };
 }
 
 function formatRuDate(isoOrText, locale = 'ru') {
@@ -588,9 +591,11 @@ function buildCourierBody(ctx) {
   const dayLead = ctx.tomorrow ? t('tomorrow') : t('date');
   const fromPart = t('fromTime');
   const toPart = t('toTime');
-  const headline = fromPart
-    ? `${dayLead}, ${ctx.dateLabel} • ${fromPart} ${ctx.time.start} ${toPart} ${ctx.time.end}`
-    : `${dayLead}, ${ctx.dateLabel} • ${ctx.time.start}${toPart}${ctx.time.end}`;
+  const headline = ctx.time.withinDay
+    ? `${dayLead}, ${ctx.dateLabel} • ${t('pickupWithinDay')}`
+    : fromPart
+      ? `${dayLead}, ${ctx.dateLabel} • ${fromPart} ${ctx.time.start} ${toPart} ${ctx.time.end}`
+      : `${dayLead}, ${ctx.dateLabel} • ${ctx.time.start}${toPart}${ctx.time.end}`;
   return `
     <h1 style="margin:0 0 8px;font-family:${FONT.display};font-size:26px;line-height:1.2;font-weight:700;color:${BRAND.ink};letter-spacing:-.02em;">
       ${escapeHtml(headline)}
@@ -598,7 +603,7 @@ function buildCourierBody(ctx) {
     <p style="margin:0 0 12px;font-family:${FONT.body};font-size:14px;line-height:1.55;color:${BRAND.muted};">
       ${escapeHtml(t('courierLead'))}
     </p>
-    ${timelineBar(ctx.time.start, ctx.time.end, ctx.locale)}
+    ${ctx.time.withinDay ? '' : timelineBar(ctx.time.start, ctx.time.end, ctx.locale)}
     ${dualButtons(ctx.manageUrl, t('reschedule'), ctx.manageUrl, t('cancelPickup'), true)}
 
     ${mapBlock({ pinLabel: t('pickupHere'), distanceLabel: `4 ${t('minShort')}`, fromLabel: t('courier') })}
@@ -911,9 +916,11 @@ export function buildWaitingFromYouEmail(order) {
     const fromPart = t('fromTime');
     const toPart = t('toTime');
     const dayLead = ctx.tomorrow ? t('tomorrow') : t('date');
-    title = fromPart
-      ? `${dayLead}, ${ctx.dateLabel} • ${fromPart} ${ctx.time.start} ${toPart} ${ctx.time.end}`
-      : `${dayLead}, ${ctx.dateLabel} • ${ctx.time.start}${toPart}${ctx.time.end}`;
+    title = ctx.time.withinDay
+      ? `${dayLead}, ${ctx.dateLabel} • ${t('pickupWithinDay')}`
+      : fromPart
+        ? `${dayLead}, ${ctx.dateLabel} • ${fromPart} ${ctx.time.start} ${toPart} ${ctx.time.end}`
+        : `${dayLead}, ${ctx.dateLabel} • ${ctx.time.start}${toPart}${ctx.time.end}`;
     preheader = t('courierPre');
     bodyHtml = buildCourierBody(ctx);
   } else if (ctx.pickupMode === 'branch') {

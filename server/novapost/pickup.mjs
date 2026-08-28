@@ -10,6 +10,9 @@ import {
   novaPostAuthHeader,
 } from './client.mjs';
 import { normalizeCountryCode } from './calculate.mjs';
+import { transliterateAddressParts, transliteratePersonName } from './transliterate.mjs';
+
+export const PICKUP_WITHIN_DAY = 'within_day';
 
 const CALLING_CODE_BY_ISO2 = {
   CZ: '420', DE: '49', EE: '372', ES: '34', FR: '33', GB: '44',
@@ -75,14 +78,14 @@ function sanitizePersonName(...parts) {
 function buildAddressParts(location) {
   const source = location?.addressParts || {};
   const city = String(source.city || '').trim().slice(0, 100);
-  const addressParts = {
+  const addressParts = transliterateAddressParts({
     city,
     // NP pickups require region when addressParts is present (422 otherwise).
     region: String(source.region || city || '').trim().slice(0, 100),
     street: String(source.street || '').trim().slice(0, 100),
     postCode: String(source.postCode || source.post_code || '').trim().slice(0, 10),
     building: String(source.building || '').trim().slice(0, 100),
-  };
+  });
   if (!addressParts.city || !addressParts.street || !addressParts.postCode || !addressParts.building) {
     throw new Error('Забор курьером: заполните полный адрес (город, улица, дом, индекс)');
   }
@@ -149,6 +152,12 @@ function parsePickupTimeWindow(pickupTime) {
     from: `${pad(m[1])}:${m[2]}`,
     to: `${pad(m[3])}:${m[4]}`,
   };
+}
+
+function withinDayLabel(pickupTime) {
+  const raw = String(pickupTime || '').trim();
+  if (!raw || raw === PICKUP_WITHIN_DAY || raw === 'within_day') return ' (within day)';
+  return ` ${raw}`;
 }
 
 function hhmmToMinutes(hhmm) {
@@ -243,12 +252,16 @@ export async function findPickupTimeIntervals({ type, countryCode, addressParts,
 }
 
 /**
- * Map user date/time to NP pickedTimeFrom/To using /time-intervals/find slots.
- * NP ignores arbitrary windows — must use a slot from their schedule.
+ * Map pickup date to NP pickedTimeFrom/To.
+ * Default: whole working day (NP day bounds) — user does not pick a slot.
  */
 async function resolvePickedTimes({ countryCode, addressParts, pickupDate, pickupTime, weightKg }) {
-  const window = parsePickupTimeWindow(pickupTime);
-  if (!window || !pickupDate) {
+  const rawTime = String(pickupTime || '').trim();
+  const withinDay = !rawTime
+    || rawTime === PICKUP_WITHIN_DAY
+    || rawTime === 'within_day';
+
+  if (!pickupDate) {
     return { pickedTimeFrom: null, pickedTimeTo: null, intervalType: null, matchedSlot: null };
   }
 
@@ -261,6 +274,49 @@ async function resolvePickedTimes({ countryCode, addressParts, pickupDate, picku
   }).format(new Date());
 
   let intervalType = pickupDate === todayIso ? 'PickupDayToDay' : 'PickupNextDay';
+
+  if (withinDay) {
+    let slotFrom = '09:00';
+    let slotTo = '18:00';
+    try {
+      let schedule = await findPickupTimeIntervals({
+        type: intervalType,
+        countryCode,
+        addressParts,
+        weightKg,
+      });
+      if (!schedule?.monday && intervalType === 'PickupNextDay') {
+        schedule = await findPickupTimeIntervals({
+          type: 'PickupDayToDay',
+          countryCode,
+          addressParts,
+          weightKg,
+        });
+        intervalType = 'PickupDayToDay';
+      }
+      const weekday = weekdayKeyForDate(pickupDate, tz);
+      const scheduleDay = schedule?.[weekday];
+      if (scheduleDay?.from && scheduleDay?.to) {
+        slotFrom = scheduleDay.from;
+        slotTo = scheduleDay.to;
+      }
+    } catch (err) {
+      console.warn('[novapost] time-intervals/find failed (within-day fallback):', err?.message || err);
+    }
+    const fromMs = localWallTimeToUtcMs(pickupDate, slotFrom, tz);
+    const toMs = localWallTimeToUtcMs(pickupDate, slotTo, tz);
+    return {
+      pickedTimeFrom: toNpDateTime(fromMs),
+      pickedTimeTo: toNpDateTime(toMs),
+      intervalType,
+      matchedSlot: { from: slotFrom, to: slotTo, withinDay: true },
+    };
+  }
+
+  const window = parsePickupTimeWindow(pickupTime);
+  if (!window) {
+    return { pickedTimeFrom: null, pickedTimeTo: null, intervalType: null, matchedSlot: null };
+  }
   let matchedSlot = null;
   let slotFrom = window.from;
   let slotTo = window.to;
@@ -448,7 +504,7 @@ export async function createCourierPickupForShipment(body, shipment) {
   const addressParts = buildAddressParts(location);
   const sender = body.sender || {};
   const phone = normalizeNovaPostPhone(String(sender.phone || ''), countryCode);
-  const fullName = sanitizePersonName(sender.name) || 'Mate Customer';
+  const fullName = transliteratePersonName(sanitizePersonName(sender.name)) || 'Mate Customer';
   const email = String(sender.email || '').trim().slice(0, 128) || undefined;
   const { payerContractNumber, companyTin, companyName } = getNovaPostContractConfig();
 
@@ -465,7 +521,7 @@ export async function createCourierPickupForShipment(body, shipment) {
 
   const noteParts = [
     `Mate B2C ${body.clientOrder || shipment.npTtn || ''}`.trim(),
-    pickupDate && pickupTime ? `${pickupDate} ${pickupTime}` : '',
+    pickupDate ? `${pickupDate}${withinDayLabel(pickupTime)}` : '',
     addressParts.note || '',
   ].filter(Boolean);
 

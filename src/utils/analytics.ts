@@ -1,3 +1,5 @@
+import { mirrorAnalyticsToMeta } from './metaPixel';
+
 const SESSION_KEY = 'mate_analytics_sid';
 
 function randomId() {
@@ -28,11 +30,18 @@ type AnalyticsPayload = {
   deliveryMode?: string;
   locale?: string;
   page?: string;
+  amount?: number;
+  currency?: string;
 };
 
 /** Fire-and-forget analytics; never blocks UI. */
 export function trackAnalytics(payload: AnalyticsPayload) {
   try {
+    mirrorAnalyticsToMeta(payload.event, {
+      toCountry: payload.toCountry,
+      amount: payload.amount,
+      currency: payload.currency,
+    });
     const body = {
       sessionId: getAnalyticsSessionId(),
       ...payload,

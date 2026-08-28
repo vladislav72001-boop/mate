@@ -343,6 +343,14 @@ export type AdminAnalyticsReport = {
   daily: Array<{ date: string; orders: number; revenue: number }>;
   peakDay: { date: string; orders: number; revenue: number } | null;
   daySlices?: Record<string, AdminAnalyticsDaySlice>;
+  metaPixel: {
+    pixelId: string;
+    active: boolean;
+    pageViews: number;
+    initiateCheckout: number;
+    purchases: number;
+    eventsManagerUrl: string;
+  };
 };
 
 export async function fetchAdminAnalytics(days: 7 | 30 | 90 = 30) {

@@ -67,13 +67,11 @@ export const COUNTRIES = [
   { code: 'MD', label: 'Молдова', flag: '🇲🇩' },
 ] as const;
 
+export const PICKUP_WITHIN_DAY = 'within_day';
+
+/** @deprecated Use PICKUP_WITHIN_DAY — courier picks up any time during working hours. */
 export const PICKUP_TIMES = [
-  '10:00-11:30',
-  '11:30-13:00',
-  '13:00-14:30',
-  '14:30-16:00',
-  '16:00-17:30',
-  '17:30-19:00',
+  PICKUP_WITHIN_DAY,
 ];
 
 /** Local calendar YYYY-MM-DD (avoid UTC shift from toISOString). */

@@ -27,7 +27,7 @@ import {
   NONSTANDARD_LIMITS,
   PARCEL_PRESETS,
   PICKUP_COUNTRY,
-  PICKUP_TIMES,
+  PICKUP_WITHIN_DAY,
   SIZE_ALLOWED_MODES,
   coerceCourierPickupDate,
   isCourierPickupWeekend,
@@ -764,7 +764,7 @@ export function CalcForm({
   const [pickupDate, setPickupDate] = useState(
     coerceCourierPickupDate(saved?.pickupDate || nextCourierPickupDateIso()),
   );
-  const [pickupTime, setPickupTime] = useState(saved?.pickupTime ?? PICKUP_TIMES[0]);
+  const [pickupTime] = useState(saved?.pickupTime ?? PICKUP_WITHIN_DAY);
   const [pickupLocker, setPickupLocker] = useState(sanitizeDivisionId(saved?.pickupLocker));
   const [pickupBranch, setPickupBranch] = useState(sanitizeDivisionId(saved?.pickupBranch));
   const [destLocker, setDestLocker] = useState(sanitizeDivisionId(saved?.destLocker));
@@ -2161,7 +2161,7 @@ export function CalcForm({
     },
     { key: 'sender', label: t('calc.summarySender'), value: [senderFirst, senderLast].filter(Boolean).join(' ') || pickupLocationObj?.provider || '—', onEdit: () => goTo(5) },
     { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(6) },
-    { key: 'when', label: t('calc.summaryWhen'), value: pickupDate ? `${pickupDate}, ${pickupTime}` : '—' },
+    { key: 'when', label: t('calc.summaryWhen'), value: pickupDate ? `${pickupDate}, ${t('calc.pickupWithinDay')}` : '—' },
   ], [
     t, toCountry, pickupCity, destCity, pickupType, deliveryType, sizeKey, sizeLabel, contents, contentsNote, contentValue, payer,
     senderFirst, senderLast, pickupLocationObj, receiverFirst, receiverLast, destLocationObj, pickupDate, pickupTime,
@@ -2451,8 +2451,9 @@ export function CalcForm({
           pickupMode: pickupType,
           deliveryMode: deliveryType,
           locale,
+          amount: result.amount,
+          currency: result.currency,
         });
-        // Stop pagehide/unmount from re-writing the draft after we clear it.
         skipDraftFlushRef.current = true;
         suppressCalcDraftWrites(true);
         clearAllCalcDrafts(user?.id);
@@ -2478,6 +2479,8 @@ export function CalcForm({
           pickupMode: pickupType,
           deliveryMode: deliveryType,
           locale,
+          amount: result.amount,
+          currency: result.currency,
         });
         // Clear before Stripe redirect; suppress saves so pagehide cannot revive the cart.
         skipDraftFlushRef.current = true;
@@ -3257,12 +3260,7 @@ export function CalcForm({
                         onBlur={() => setPickupDate((prev) => coerceCourierPickupDate(prev))}
                       />
                       <p className="calc-form__hint calc-form__hint--inline">{t('calc.pickupWeekdaysHint')}</p>
-                    </div>
-                    <div className="field-block">
-                      <label>{t('calc.pickupTime')}</label>
-                      <select value={pickupTime} onChange={(e) => setPickupTime(e.target.value)}>
-                        {PICKUP_TIMES.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
-                      </select>
+                      <p className="calc-form__hint calc-form__hint--inline">{t('calc.pickupWithinDayHint')}</p>
                     </div>
                   </div>
                 </>

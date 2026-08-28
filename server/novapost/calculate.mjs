@@ -12,6 +12,7 @@ import {
   validateNovaPostParcelRules,
   validateParcelDimensionsCm,
 } from './parcel.mjs';
+import { transliterateAddressParts } from './transliterate.mjs';
 
 const CURRENCY_SYMBOLS = { EUR: 'EUR', PLN: 'PLN', USD: 'USD', UAH: 'UAH', HUF: 'HUF' };
 
@@ -121,7 +122,7 @@ function normalizeQuoteParty(location, fallbackCountryCode, fallbackDivisionId) 
       const value = String(source[key] || '').trim();
       if (value) addressParts[key] = value;
     }
-    return { countryCode, addressParts };
+    return { countryCode, addressParts: transliterateAddressParts(addressParts) };
   }
   return { countryCode, divisionId: fallbackDivisionId };
 }
