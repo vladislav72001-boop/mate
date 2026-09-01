@@ -484,6 +484,15 @@ function fitsParcelTier(lengthCm: number, widthCm: number, heightCm: number, wei
     && girth <= limits.maxGirthCm;
 }
 
+/** Official Nova Post parcel envelope — branch/courier, not locker-sized tiers. */
+function fitsNpCustomParcelRules(lengthCm: number, widthCm: number, heightCm: number, weightKg: number) {
+  const [longest, middle, shortest] = sortedSidesCm(lengthCm, widthCm, heightCm);
+  const sumSides = longest + middle + shortest;
+  return weightKg <= NONSTANDARD_LIMITS.maxWeightKg
+    && longest <= NONSTANDARD_LIMITS.maxLengthCm
+    && sumSides <= NONSTANDARD_LIMITS.maxSumSidesCm;
+}
+
 function modesForSize(
   sizeKey: SizeKey,
   custom?: { l: string; w: string; h: string; kg: string },
@@ -496,14 +505,21 @@ function modesForSize(
     const heightCm = Math.max(1, Number(custom?.h) || 0);
     const weightKg = Math.max(0.1, Number(custom?.kg) || 0);
     if (lengthCm && widthCm && heightCm && weightKg) {
-      for (const tier of (['XS', 'S', 'M', 'L', 'XL'] as ParcelKey[])) {
+      // Locker/branch tiers — stop at L; XL home-only applies to weight band, not loose NP dims.
+      for (const tier of (['XS', 'S', 'M', 'L'] as ParcelKey[])) {
         if (fitsParcelTier(lengthCm, widthCm, heightCm, weightKg, tier)) {
           return SIZE_ALLOWED_MODES[tier];
         }
       }
+      if (fitsNpCustomParcelRules(lengthCm, widthCm, heightCm, weightKg)) {
+        if (weightKg > PARCEL_LIMITS.L.maxWeightKg) {
+          return SIZE_ALLOWED_MODES.XL;
+        }
+        return SIZE_ALLOWED_MODES.custom;
+      }
     }
-    // Oversized / incomplete dims → courier only (Nova Post nonstandard).
-    return SIZE_ALLOWED_MODES.custom;
+    // Beyond NP limits — courier only.
+    return ['home'];
   }
   return SIZE_ALLOWED_MODES[sizeKey] ?? SIZE_ALLOWED_MODES.M;
 }
@@ -2890,7 +2906,7 @@ export function CalcForm({
                       onChange={(e) => {
                         const n = Math.round(Number(e.target.value) * 10) / 10;
                         setSizeKey('custom');
-                        setCustomSize((prev) => ({ ...prev, kg: String(n) }));
+                        setCustomSize(buildCustomSizeFromWeight(n));
                       }}
                       style={{
                         ['--weight-pct' as string]: `${Math.min(

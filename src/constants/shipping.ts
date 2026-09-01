@@ -35,7 +35,8 @@ export const SIZE_ALLOWED_MODES: Record<ParcelKey | 'custom', ReadonlyArray<'loc
   M: ['locker', 'pudo', 'branch', 'home'],
   L: ['branch', 'home'],
   XL: ['home'],
-  custom: ['home'],
+  /** NP-valid nonstandard parcel (≤120 cm longest, ≤150 cm sum) — branch + courier, no locker. */
+  custom: ['branch', 'home'],
 };
 
 export const NONSTANDARD_LIMITS = {
