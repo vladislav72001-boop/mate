@@ -213,10 +213,12 @@ export async function resolveCheckoutAmount(body, userId = null) {
     parcel.heightCm,
     parcel.boxSize,
   );
-  const deliveryMode = resolvePricingMode(
-    tariff.pickupType || tariff.pickupMode || body.pickupMode,
-    tariff.deliveryType || tariff.deliveryMode || body.deliveryType,
-  );
+  const deliveryMode = isHuRuRoute(fromCountry, toCountry)
+    ? huRuPricingMode(tariff.deliveryType || tariff.deliveryMode || body.deliveryType)
+    : resolvePricingMode(
+      tariff.pickupType || tariff.pickupMode || body.pickupMode,
+      tariff.deliveryType || tariff.deliveryMode || body.deliveryType,
+    );
   const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(userId || body.userId);
 
   let promo = null;
