@@ -1147,7 +1147,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         npRef: null,
         npTtn: null,
         npSnapshot: { provider: 'deferred', reason: 'awaiting_payment', clientOrder: orderNumber },
-      }, { notify: false });
+      }, { notify: true });
 
       if (stripeEnabled()) {
         try {

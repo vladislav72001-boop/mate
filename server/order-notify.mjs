@@ -16,8 +16,13 @@ import { isHuRuOrder, notifyTelegramHuRuOrder } from './telegram-notify.mjs';
  */
 const MAIL_ON_STATUS = new Set(['waiting_from_you', 'submitted', 'delivered']);
 
-export async function notifyOrderCreated(_order) {
-  // Intentionally no-op: no «заявка создана» / «ожидает оплаты» mail.
+export async function notifyOrderCreated(order) {
+  if (!isHuRuOrder(order)) return;
+  try {
+    await notifyTelegramHuRuOrder(order, { event: 'created' });
+  } catch (err) {
+    console.error('[telegram] order created notify failed:', err?.message || err);
+  }
 }
 
 export async function notifyOrderUpdated(before, after) {
@@ -38,7 +43,7 @@ export async function notifyOrderUpdated(before, after) {
     && isHuRuOrder(after)
   ) {
     try {
-      await notifyTelegramHuRuOrder(after);
+      await notifyTelegramHuRuOrder(after, { event: 'paid' });
     } catch (err) {
       console.error('[telegram] order notify failed:', err?.message || err);
     }
