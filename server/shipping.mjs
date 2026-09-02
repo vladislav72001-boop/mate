@@ -171,6 +171,11 @@ function resolvePricingMode(pickupRaw, deliveryRaw) {
   return rank[pickup] >= rank[delivery] ? pickup : delivery;
 }
 
+/** HU→RU tariffs depend on delivery type only (pickup is always Mate courier). */
+function huRuPricingMode(deliveryRaw) {
+  return mapDeliveryMode(deliveryRaw || 'branch');
+}
+
 /** Countries exposed in the B2C calculator UI (ISO2). */
 const QUOTE_COUNTRY_CODES = new Set([
   'HU', 'PL', 'DE', 'FR', 'ES', 'IT', 'CZ', 'SK', 'AT', 'RO', 'UA',
@@ -708,7 +713,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
 
       if (isHuRuRoute(fromCountry, toCountry)) {
         const settings = await getSettings();
-        const mode = resolvePricingMode(pickupMode, deliveryMode || 'locker');
+        const mode = huRuPricingMode(deliveryMode);
         const quotes = {};
         for (const size of sizes) {
           const huRu = quoteHuRuParcel({
@@ -974,7 +979,9 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         fromCountry: fromCountry || 'HU',
         toCountry,
         weightKg: Number(parcel.weightKg) || 2,
-        deliveryMode: resolvePricingMode(pickupMode, deliveryMode || 'locker'),
+        deliveryMode: isHuRuRoute(fromCountry || 'HU', toCountry)
+          ? huRuPricingMode(deliveryMode)
+          : resolvePricingMode(pickupMode, deliveryMode || 'locker'),
         lengthCm: parcel.lengthCm,
         widthCm: parcel.widthCm,
         heightCm: parcel.heightCm,
