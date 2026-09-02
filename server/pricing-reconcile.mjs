@@ -9,6 +9,7 @@ import {
   markupsForLiveNovaPost,
   tiersForLiveNovaPost,
 } from './pricing-config.mjs';
+import { isHuRuRoute, quoteHuRuParcel } from './hu-ru-pricing.mjs';
 
 /**
  * Client delivery price:
@@ -37,6 +38,28 @@ export async function reconcileParcelPrice({
   const currency = String(settings.currency || 'HUF').toUpperCase();
   const billableKg = chargeableWeightKg(weightKg, lengthCm, widthCm, heightCm, boxSize);
   const mode = deliveryMode || 'locker';
+
+  if (isHuRuRoute(fromCountry, toCountry)) {
+    const huRu = quoteHuRuParcel({
+      weightKg,
+      lengthCm,
+      widthCm,
+      heightCm,
+      boxSize,
+      deliveryMode: mode,
+      settings,
+      monthlyShipments,
+      welcomeDiscountPercent,
+      promo,
+    });
+    return {
+      amount: huRu.amount,
+      currency: huRu.currency,
+      priceSource: huRu.priceSource,
+      breakdown: huRu.breakdown,
+      scheduledDeliveryDate: null,
+    };
+  }
 
   if (preferMateMatrixPricing()) {
     const matrixNet = matrixCostNet(pricing, {

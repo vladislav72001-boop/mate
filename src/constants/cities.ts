@@ -290,6 +290,18 @@ export const CITIES_BY_COUNTRY: Record<string, CityOption[]> = {
     ['Strășeni', 'Strășeni'],
     ['Florești', 'Florești'],
   ),
+  RU: cities(
+    ['Москва', 'Moscow'],
+    ['Санкт-Петербург', 'Saint Petersburg'],
+    ['Новосибирск', 'Novosibirsk'],
+    ['Екатеринбург', 'Yekaterinburg'],
+    ['Казань', 'Kazan'],
+    ['Нижний Новгород', 'Nizhny Novgorod'],
+    ['Краснодар', 'Krasnodar'],
+    ['Самара', 'Samara'],
+    ['Ростов-на-Дону', 'Rostov-on-Don'],
+    ['Воронеж', 'Voronezh'],
+  ),
   UA: cities(
     ['Киев', 'Kyiv'],
     ['Львов', 'Lviv'],

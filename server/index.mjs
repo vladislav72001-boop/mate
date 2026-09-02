@@ -33,6 +33,7 @@ import { createShippingRouter } from './shipping.mjs';
 import { createClientRouter } from './client-routes.mjs';
 import { createAdminRouter, ensureAdminUser } from './admin-routes.mjs';
 import { syncPricingFromJsonIfNeeded } from './pricing-config.mjs';
+import { startTelegramBot } from './telegram-bot.mjs';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5012);
@@ -668,6 +669,7 @@ if (existsSync(distDir)) {
 }
 
 app.listen(PORT, () => {
+  startTelegramBot();
   const forceMate = String(process.env.PRICING_FORCE_MATE || '').toLowerCase() === 'true';
   const npMarkup = String(process.env.PRICING_NP_APPLY_MARKUP || 'true').toLowerCase() !== 'false';
   console.log(`MATE API running on http://localhost:${PORT}`);

@@ -41,6 +41,7 @@ import {
   type ParcelKey,
   countryLabel,
   countryCodeFromDial,
+  isHuRuRoute,
 } from '../constants/shipping';
 import { deliveryEtaForCountry } from '../constants/deliveryEta';
 import { formatScheduledDelivery } from './calc/orderSuccessHelpers';
@@ -373,7 +374,7 @@ async function resolvePreliminaryQuoteLocations(
     city: string,
     side: 'pickup' | 'delivery',
   ) => {
-    if (mode === 'home') {
+    if (mode === 'home' || (isHuRuRoute(country) && mode === 'branch' && side === 'delivery')) {
       return placeholderAddressQuoteLocation(country, city);
     }
     const preferredKind = pointsKindForMode(mode);
@@ -442,8 +443,10 @@ function firstAvailableMode(
   return order.find((k) => !excluded.includes(k)) ?? 'home';
 }
 
-function pickupExcludedModes(): DeliveryMode[] {
-  return PICKUP_FROM_LOCKER_COMING_SOON ? ['locker'] : [];
+function pickupExcludedModes(toCountry?: string): DeliveryMode[] {
+  const base: DeliveryMode[] = PICKUP_FROM_LOCKER_COMING_SOON ? ['locker'] : [];
+  if (isHuRuRoute(toCountry)) return ['locker', 'pudo', 'branch', ...base];
+  return base;
 }
 
 function normalizePickupMode(mode: DeliveryMode | undefined | null): DeliveryMode {
@@ -618,9 +621,13 @@ function sideModeAvailable(
  */
 function resolveCatalogQuoteModes(
   coverage: { pickup: CoverageSide; delivery: CoverageSide } | null,
+  toCountry?: string,
 ): { pickup: DeliveryMode; delivery: DeliveryMode } {
+  if (isHuRuRoute(toCountry)) {
+    return { pickup: 'home', delivery: 'branch' };
+  }
   const pickupBranchOk = sideModeAvailable(coverage?.pickup, 'branch')
-    && !pickupExcludedModes().includes('branch');
+    && !pickupExcludedModes(toCountry).includes('branch');
   const deliveryBranchOk = sideModeAvailable(coverage?.delivery, 'branch');
   if (pickupBranchOk && deliveryBranchOk) {
     return { pickup: 'branch', delivery: 'branch' };
@@ -945,6 +952,12 @@ export function CalcForm({
     setReceiverDial(DIAL_BY_CC[initialTo] || '+49');
   }, [initialTo]);
 
+  useEffect(() => {
+    if (!isHuRuRoute(toCountry)) return;
+    setPickupType('home');
+    setDeliveryType((prev) => (prev === 'home' || prev === 'branch') ? prev : 'branch');
+  }, [toCountry]);
+
   const skipInitialDestCitySync = useRef(Boolean(saved?.destCity?.trim()));
 
   // Only when destination country changes — never fight free-text typing in the city field.
@@ -1137,7 +1150,7 @@ export function CalcForm({
       )
   ), [pickupType, pickupCity, pickupStreet, pickupPostal, pickupLocker, pickupBranch]);
   const deliveryQuoteLocation = useMemo(() => (
-    deliveryType === 'home'
+    deliveryType === 'home' || (isHuRuRoute(toCountry) && deliveryType === 'branch')
       ? addressQuoteLocation(toCountry, destCity, destStreet, destPostal)
       : divisionQuoteLocation(
         toCountry,
@@ -1164,8 +1177,8 @@ export function CalcForm({
   // Catalog tile prices follow route coverage (branch when both sides allow it,
   // otherwise home/address — e.g. Paris delivery has no NP branch/locker).
   const catalogQuoteModes = useMemo(
-    () => resolveCatalogQuoteModes(coverage),
-    [coverage],
+    () => resolveCatalogQuoteModes(coverage, toCountry),
+    [coverage, toCountry],
   );
   const preliminaryRouteKey = [
     PICKUP_COUNTRY,
@@ -1508,7 +1521,7 @@ export function CalcForm({
 
   // Keep pickup/delivery modes within what the selected size physically allows.
   useEffect(() => {
-    setPickupType((prev) => clampModeToSize(prev, sizeKey, coverage?.pickup, pickupExcludedModes(), customSize));
+    setPickupType((prev) => clampModeToSize(prev, sizeKey, coverage?.pickup, pickupExcludedModes(toCountry), customSize));
     setDeliveryType((prev) => clampModeToSize(prev, sizeKey, coverage?.delivery, [], customSize));
   }, [sizeKey, coverage, customSize.l, customSize.w, customSize.h, customSize.kg]);
 
@@ -1812,10 +1825,10 @@ export function CalcForm({
       });
       setCoverage({ pickup: data.pickup, delivery: data.delivery });
       setPickupType((prev) => clampModeToSize(
-        firstAvailableMode(data.pickup, prev, PICKUP_MODE_ORDER, pickupExcludedModes()),
+        firstAvailableMode(data.pickup, prev, PICKUP_MODE_ORDER, pickupExcludedModes(toCountry)),
         sizeKey,
         data.pickup,
-        pickupExcludedModes(),
+        pickupExcludedModes(toCountry),
         customSize,
       ));
       setDeliveryType((prev) => clampModeToSize(
@@ -2280,7 +2293,10 @@ export function CalcForm({
       if (isLockerLikeMode(deliveryType) && !destLocker) {
         return deliveryType === 'pudo' ? t('calc.valSelectDestPudo') : t('calc.valSelectDestLocker');
       }
-      if (deliveryType === 'branch' && !destBranch) return t('calc.valSelectDestBranch');
+      if (deliveryType === 'branch' && !isHuRuRoute(toCountry) && !destBranch) return t('calc.valSelectDestBranch');
+      if (deliveryType === 'branch' && isHuRuRoute(toCountry)) {
+        if (!destStreet || !destCity || !destPostal) return t('calc.valDeliveryAddress');
+      }
       if (!deliveryQuoteLocation) {
         return deliveryType === 'home' ? t('calc.valDeliveryAddress') : t('calc.valSelectDeliveryPointNp');
       }
@@ -2604,10 +2620,13 @@ export function CalcForm({
     9: { title: t('calc.step9Title'), sub: t('calc.step9Sub') },
   }), [t]);
 
-  const sizeAllowedModes = useMemo(
-    () => modesForSize(sizeKey, customSize),
-    [sizeKey, customSize.l, customSize.w, customSize.h, customSize.kg],
-  );
+  const sizeAllowedModes = useMemo(() => {
+    const base = modesForSize(sizeKey, customSize);
+    if (isHuRuRoute(toCountry)) {
+      return base.filter((mode) => mode === 'branch' || mode === 'home');
+    }
+    return base;
+  }, [sizeKey, customSize.l, customSize.w, customSize.h, customSize.kg, toCountry]);
 
   const deliveryModes = useMemo(() => DELIVERY_MODE_KEYS.map((key) => ({
     key,
@@ -2846,7 +2865,7 @@ export function CalcForm({
                         if (restored) {
                           modesBeforeCustomRef.current = null;
                           setPickupType(
-                            clampModeToSize(restored.pickup, s.key, coverage?.pickup, pickupExcludedModes()),
+                            clampModeToSize(restored.pickup, s.key, coverage?.pickup, pickupExcludedModes(toCountry)),
                           );
                           setDeliveryType(
                             clampModeToSize(restored.delivery, s.key, coverage?.delivery),
@@ -3377,25 +3396,50 @@ export function CalcForm({
               {deliveryType === 'branch' && (
                 <>
                   <AddressSuggest
-                    label={t('calc.receiverAddress')}
+                    label={isHuRuRoute(toCountry) ? t('calc.deliveryAddress') : t('calc.receiverAddress')}
                     value={destAddressQuery}
                     onChange={onDestAddressQueryChange}
                     onSelect={applyDestAddress}
                     country={toCountry}
                     city={destCity}
                     placeholder={addressPlaceholder(toCountry, destCity)}
-                    hint={t('calc.addressHintBranches')}
+                    hint={isHuRuRoute(toCountry) ? t('calc.ruPostOfficeHint') : t('calc.addressHintBranches')}
                     name="receiver_address_branch"
                     bookAddresses={bookAddresses}
                   />
-                  <p className="calc-form__group-label">{t('calc.pickupBranchesLabel')}</p>
-                  {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
-                  <LockerPicker
-                    lockers={destBranchesForCity}
-                    selected={destBranch}
-                    onSelect={setDestBranch}
-                    focusPos={destAddressFocus}
-                  />
+                  {isHuRuRoute(toCountry) ? (
+                    <div className="calc-form__grid">
+                      <div className="field-block">
+                        <label>{t('calc.city')}</label>
+                        <input
+                          name="receiver_city"
+                          autoComplete="shipping address-level2"
+                          value={destCity}
+                          onChange={(e) => setDestCity(e.target.value)}
+                        />
+                      </div>
+                      <div className="field-block">
+                        <label>{t('calc.postal')}</label>
+                        <input
+                          name="receiver_postal"
+                          autoComplete="shipping postal-code"
+                          value={destPostal}
+                          onChange={(e) => setDestPostal(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="calc-form__group-label">{t('calc.pickupBranchesLabel')}</p>
+                      {pointsLoading && <p className="calc-form__hint">{t('calc.loadingPoints')}</p>}
+                      <LockerPicker
+                        lockers={destBranchesForCity}
+                        selected={destBranch}
+                        onSelect={setDestBranch}
+                        focusPos={destAddressFocus}
+                      />
+                    </>
+                  )}
                 </>
               )}
               {deliveryType === 'home' && (

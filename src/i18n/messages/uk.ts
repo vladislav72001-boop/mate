@@ -24,6 +24,7 @@ const countries = {
   BE: 'Бельгія',
   GB: 'Велика Британія',
   MD: 'Молдова',
+  RU: 'Росія',
 };
 
 export const uk: MessageTree = {

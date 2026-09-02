@@ -66,7 +66,14 @@ export const COUNTRIES = [
   { code: 'BE', label: 'Бельгия', flag: '🇧🇪' },
   { code: 'GB', label: 'Великобритания', flag: '🇬🇧' },
   { code: 'MD', label: 'Молдова', flag: '🇲🇩' },
+  { code: 'RU', label: 'Россия', flag: '🇷🇺' },
 ] as const;
+
+export const RUSSIA_COUNTRY = 'RU' as const;
+
+export function isHuRuRoute(toCountry?: string | null): boolean {
+  return String(toCountry || '').trim().toUpperCase() === RUSSIA_COUNTRY;
+}
 
 export const PICKUP_WITHIN_DAY = 'within_day';
 

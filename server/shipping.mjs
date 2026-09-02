@@ -61,6 +61,7 @@ import { resolvePromoDiscount, consumePromoCode } from './promo-codes.mjs';
 import { sendArrivedAtPointEmail } from './mail.mjs';
 import { geocodeAddressSuggestions } from './geocode.mjs';
 import { buildWaybillPdf, waybillFilename } from './waybill-pdf.mjs';
+import { isHuRuRoute, quoteHuRuParcel } from './hu-ru-pricing.mjs';
 
 function buildSideCoverage({ country, city, npCounts, useFallback }) {
   const mateBranches = filterCatalogPoints(MATE_BRANCHES, country, city);
@@ -173,7 +174,7 @@ function resolvePricingMode(pickupRaw, deliveryRaw) {
 /** Countries exposed in the B2C calculator UI (ISO2). */
 const QUOTE_COUNTRY_CODES = new Set([
   'HU', 'PL', 'DE', 'FR', 'ES', 'IT', 'CZ', 'SK', 'AT', 'RO', 'UA',
-  'LT', 'LV', 'EE', 'NL', 'BE', 'GB', 'MD',
+  'LT', 'LV', 'EE', 'NL', 'BE', 'GB', 'MD', 'RU',
 ]);
 
 function assertQuoteCountries(fromCountry, toCountry) {
@@ -182,7 +183,21 @@ function assertQuoteCountries(fromCountry, toCountry) {
   if (!QUOTE_COUNTRY_CODES.has(from) || !QUOTE_COUNTRY_CODES.has(to)) {
     return `Неподдерживаемое направление: ${from || '?'} → ${to || '?'}`;
   }
+  if (to === 'RU' && from !== 'HU') {
+    return 'Доставка в Россию доступна только из Венгрии';
+  }
   return null;
+}
+
+function buildHuRuCoverageSide(role) {
+  const isDelivery = role === 'delivery';
+  return {
+    home: { available: true, count: null },
+    locker: { available: false, count: 0 },
+    pudo: { available: false, count: 0 },
+    branch: { available: isDelivery, count: isDelivery ? null : 0 },
+    source: 'hu-ru',
+  };
 }
 
 export async function resolveCheckoutAmount(body, userId = null) {
@@ -467,6 +482,16 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         return res.status(400).json({ error: 'Укажите страны и города маршрута' });
       }
 
+      if (isHuRuRoute(fromCountry, toCountry)) {
+        return res.json({
+          data: {
+            pickup: buildHuRuCoverageSide('pickup'),
+            delivery: buildHuRuCoverageSide('delivery'),
+            route: { fromCountry, fromCity, toCountry, toCity },
+          },
+        });
+      }
+
       const useFallback = isNovaPostMock();
       const [pickupNp, deliveryNp] = await Promise.all([
         countNovaPostCoverage(fromCountry, fromCity),
@@ -678,6 +703,43 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       const monthlyShipments = Number(req.body.monthlyShipments)
         || await resolveUserMonthlyShipments(req.userId);
       const welcomeDiscountPercent = await resolveWelcomeDiscountPercent(req.userId);
+
+      if (isHuRuRoute(fromCountry, toCountry)) {
+        const settings = await getSettings();
+        const mode = resolvePricingMode(pickupMode, deliveryMode || 'locker');
+        const quotes = {};
+        for (const size of sizes) {
+          const huRu = quoteHuRuParcel({
+            weightKg: size.weightKg,
+            lengthCm: size.lengthCm,
+            widthCm: size.widthCm,
+            heightCm: size.heightCm,
+            boxSize: size.boxSize,
+            deliveryMode: mode,
+            settings,
+            monthlyShipments,
+            welcomeDiscountPercent,
+          });
+          quotes[size.boxSize] = {
+            total: huRu.amount,
+            currency: huRu.currency,
+            priceSource: huRu.priceSource,
+            breakdown: huRu.breakdown,
+            scheduledDeliveryDate: null,
+          };
+        }
+        const currency = { code: settings.currency || 'HUF', symbol: settings.currency || 'HUF' };
+        return res.json({
+          data: {
+            quotes,
+            currency,
+            priceSource: 'hu-ru',
+            fromCountry,
+            toCountry,
+          },
+        });
+      }
+
       const result = await calculateBatch({
         fromCountry,
         toCountry,
@@ -1150,6 +1212,12 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
       if (!order) return res.status(404).json({ error: 'Заказ не найден' });
 
       const bodyForCheck = order.payload || {};
+      const routeToCountryEarly = String(
+        bodyForCheck?.tariff?.toCountry || bodyForCheck?.receiver?.country || order.toCountry || '',
+      ).toUpperCase();
+      if (routeToCountryEarly === 'RU' && order.status === 'waiting_from_you') {
+        return res.json({ data: publicOrder(order) });
+      }
       const needsPickup = orderNeedsCourierPickup(bodyForCheck);
       const pickupDone = hasFinalizedCourierPickup(order);
 
@@ -1241,6 +1309,22 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           status: 'waiting_from_you',
           paidAt: paidOrder.paidAt || paidAt,
           npSnapshot: snap,
+          ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
+        });
+        return res.json({ data: publicOrder(updated) });
+      }
+
+      const routeToCountry = String(
+        body?.tariff?.toCountry || body?.receiver?.country || paidOrder.toCountry || '',
+      ).toUpperCase();
+      if (routeToCountry === 'RU') {
+        const updated = await updateOrder(paidOrder.id, {
+          status: 'waiting_from_you',
+          paidAt: paidOrder.paidAt || paidAt,
+          npSnapshot: {
+            provider: 'hu-ru',
+            manualFulfillment: true,
+          },
           ...(Object.keys(paymentMeta).length ? { payload: nextPayload } : {}),
         });
         return res.json({ data: publicOrder(updated) });

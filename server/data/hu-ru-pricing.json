@@ -1,0 +1,361 @@
+{
+  "version": "2026-2",
+  "deliveryDays": {
+    "min": 10,
+    "max": 20
+  },
+  "branch": [
+    {
+      "minKg": 0,
+      "maxKg": 1,
+      "priceEur": 36
+    },
+    {
+      "minKg": 1,
+      "maxKg": 2,
+      "priceEur": 39
+    },
+    {
+      "minKg": 2,
+      "maxKg": 3,
+      "priceEur": 43
+    },
+    {
+      "minKg": 3,
+      "maxKg": 4,
+      "priceEur": 46
+    },
+    {
+      "minKg": 4,
+      "maxKg": 5,
+      "priceEur": 48
+    },
+    {
+      "minKg": 5,
+      "maxKg": 6,
+      "priceEur": 51
+    },
+    {
+      "minKg": 6,
+      "maxKg": 7,
+      "priceEur": 53
+    },
+    {
+      "minKg": 7,
+      "maxKg": 8,
+      "priceEur": 56
+    },
+    {
+      "minKg": 8,
+      "maxKg": 9,
+      "priceEur": 58
+    },
+    {
+      "minKg": 9,
+      "maxKg": 10,
+      "priceEur": 60
+    },
+    {
+      "minKg": 10,
+      "maxKg": 11,
+      "priceEur": 74
+    },
+    {
+      "minKg": 11,
+      "maxKg": 12,
+      "priceEur": 76
+    },
+    {
+      "minKg": 12,
+      "maxKg": 13,
+      "priceEur": 78
+    },
+    {
+      "minKg": 13,
+      "maxKg": 14,
+      "priceEur": 80
+    },
+    {
+      "minKg": 14,
+      "maxKg": 15,
+      "priceEur": 82
+    },
+    {
+      "minKg": 15,
+      "maxKg": 16,
+      "priceEur": 86
+    },
+    {
+      "minKg": 16,
+      "maxKg": 17,
+      "priceEur": 88
+    },
+    {
+      "minKg": 17,
+      "maxKg": 18,
+      "priceEur": 90
+    },
+    {
+      "minKg": 18,
+      "maxKg": 19,
+      "priceEur": 92
+    },
+    {
+      "minKg": 19,
+      "maxKg": 20,
+      "priceEur": 94
+    },
+    {
+      "minKg": 21,
+      "maxKg": 22,
+      "priceEur": 139
+    },
+    {
+      "minKg": 22,
+      "maxKg": 23,
+      "priceEur": 140
+    },
+    {
+      "minKg": 23,
+      "maxKg": 24,
+      "priceEur": 140
+    },
+    {
+      "minKg": 24,
+      "maxKg": 25,
+      "priceEur": 141
+    },
+    {
+      "minKg": 25,
+      "maxKg": 26,
+      "priceEur": 142
+    },
+    {
+      "minKg": 26,
+      "maxKg": 27,
+      "priceEur": 145
+    },
+    {
+      "minKg": 27,
+      "maxKg": 28,
+      "priceEur": 146
+    },
+    {
+      "minKg": 28,
+      "maxKg": 29,
+      "priceEur": 147
+    },
+    {
+      "minKg": 29,
+      "maxKg": 30,
+      "priceEur": 147
+    },
+    {
+      "minKg": 30,
+      "maxKg": 31,
+      "priceEur": 148
+    }
+  ],
+  "home": [
+    {
+      "minKg": 0,
+      "maxKg": 0.5,
+      "priceEur": 27
+    },
+    {
+      "minKg": 0.5,
+      "maxKg": 1,
+      "priceEur": 30
+    },
+    {
+      "minKg": 1,
+      "maxKg": 1.5,
+      "priceEur": 33
+    },
+    {
+      "minKg": 1.5,
+      "maxKg": 2,
+      "priceEur": 36
+    },
+    {
+      "minKg": 2,
+      "maxKg": 2.5,
+      "priceEur": 40
+    },
+    {
+      "minKg": 2.5,
+      "maxKg": 3,
+      "priceEur": 43
+    },
+    {
+      "minKg": 3,
+      "maxKg": 3.5,
+      "priceEur": 46
+    },
+    {
+      "minKg": 3.5,
+      "maxKg": 4,
+      "priceEur": 49
+    },
+    {
+      "minKg": 4,
+      "maxKg": 4.5,
+      "priceEur": 51
+    },
+    {
+      "minKg": 4.5,
+      "maxKg": 5,
+      "priceEur": 54
+    },
+    {
+      "minKg": 5,
+      "maxKg": 5.5,
+      "priceEur": 58
+    },
+    {
+      "minKg": 5.5,
+      "maxKg": 6,
+      "priceEur": 60
+    },
+    {
+      "minKg": 6,
+      "maxKg": 6.5,
+      "priceEur": 63
+    },
+    {
+      "minKg": 6.5,
+      "maxKg": 7,
+      "priceEur": 65
+    },
+    {
+      "minKg": 7,
+      "maxKg": 7.5,
+      "priceEur": 68
+    },
+    {
+      "minKg": 7.5,
+      "maxKg": 8,
+      "priceEur": 72
+    },
+    {
+      "minKg": 8,
+      "maxKg": 8.5,
+      "priceEur": 74
+    },
+    {
+      "minKg": 8.5,
+      "maxKg": 9,
+      "priceEur": 77
+    },
+    {
+      "minKg": 9,
+      "maxKg": 9.5,
+      "priceEur": 79
+    },
+    {
+      "minKg": 9.5,
+      "maxKg": 10,
+      "priceEur": 82
+    },
+    {
+      "minKg": 10,
+      "maxKg": 11,
+      "priceEur": 99
+    },
+    {
+      "minKg": 11,
+      "maxKg": 12,
+      "priceEur": 104
+    },
+    {
+      "minKg": 12,
+      "maxKg": 13,
+      "priceEur": 110
+    },
+    {
+      "minKg": 13,
+      "maxKg": 14,
+      "priceEur": 115
+    },
+    {
+      "minKg": 14,
+      "maxKg": 15,
+      "priceEur": 121
+    },
+    {
+      "minKg": 15,
+      "maxKg": 16,
+      "priceEur": 129
+    },
+    {
+      "minKg": 16,
+      "maxKg": 17,
+      "priceEur": 134
+    },
+    {
+      "minKg": 17,
+      "maxKg": 18,
+      "priceEur": 140
+    },
+    {
+      "minKg": 18,
+      "maxKg": 19,
+      "priceEur": 145
+    },
+    {
+      "minKg": 19,
+      "maxKg": 20,
+      "priceEur": 151
+    },
+    {
+      "minKg": 20,
+      "maxKg": 21,
+      "priceEur": 159
+    },
+    {
+      "minKg": 21,
+      "maxKg": 22,
+      "priceEur": 165
+    },
+    {
+      "minKg": 22,
+      "maxKg": 23,
+      "priceEur": 170
+    },
+    {
+      "minKg": 23,
+      "maxKg": 24,
+      "priceEur": 176
+    },
+    {
+      "minKg": 24,
+      "maxKg": 25,
+      "priceEur": 181
+    },
+    {
+      "minKg": 25,
+      "maxKg": 26,
+      "priceEur": 189
+    },
+    {
+      "minKg": 26,
+      "maxKg": 27,
+      "priceEur": 195
+    },
+    {
+      "minKg": 27,
+      "maxKg": 28,
+      "priceEur": 200
+    },
+    {
+      "minKg": 28,
+      "maxKg": 29,
+      "priceEur": 206
+    },
+    {
+      "minKg": 29,
+      "maxKg": 30,
+      "priceEur": 211
+    }
+  ]
+}

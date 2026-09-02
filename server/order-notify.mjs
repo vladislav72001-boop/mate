@@ -1,6 +1,7 @@
 import {
   sendOrderStatusEmail,
 } from './mail.mjs';
+import { isHuRuOrder, notifyTelegramHuRuOrder } from './telegram-notify.mjs';
 
 /**
  * Order transactional mail policy:
@@ -29,5 +30,17 @@ export async function notifyOrderUpdated(before, after) {
 
   if (MAIL_ON_STATUS.has(after.status)) {
     await sendOrderStatusEmail(after, before.status);
+  }
+
+  if (
+    statusChanged
+    && after.status === 'waiting_from_you'
+    && isHuRuOrder(after)
+  ) {
+    try {
+      await notifyTelegramHuRuOrder(after);
+    } catch (err) {
+      console.error('[telegram] order notify failed:', err?.message || err);
+    }
   }
 }

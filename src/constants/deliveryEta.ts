@@ -15,6 +15,9 @@ const FAR = new Set(['FR', 'NL', 'BE', 'ES', 'GB', 'PT', 'IE', 'UA', 'MD']);
 
 export function deliveryEtaForCountry(toCountry?: string | null): DeliveryEtaBand {
   const code = String(toCountry || '').trim().toUpperCase();
+  if (code === 'RU') {
+    return { minDays: 10, maxDays: 20, zone: 'far' };
+  }
   if (!code || code === 'HU') {
     return { minDays: 1, maxDays: 3, zone: 'domestic' };
   }
