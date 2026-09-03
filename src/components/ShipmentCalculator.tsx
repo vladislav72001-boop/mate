@@ -161,14 +161,14 @@ const CUSTOM_WEIGHT_TIERS = [
   {
     key: 'XS',
     maxKg: 2,
-    // Courier-only small parcel — not document/envelope dims (those underprice ≤2 kg customs).
-    dims: { lengthCm: 5, widthCm: 35, heightCm: 50, weightKg: 2 },
+    // Match envelope tile — 5×35×50 inflated NP quotes vs Конверт (35×25×2).
+    dims: { ...PARCEL_PRESETS.XS, weightKg: 2 },
     title: { ru: 'XS · до 2 кг', en: 'XS · up to 2 kg', hu: 'XS · 2 kg-ig', uk: 'XS · до 2 кг' },
     dimsLabel: {
-      ru: 'до 5 × 35 × 50 см · только курьер',
-      en: 'up to 5 × 35 × 50 cm · courier only',
-      hu: 'max. 5 × 35 × 50 cm · csak futár',
-      uk: 'до 5 × 35 × 50 см · тільки курʼєр',
+      ru: 'конверт · до 35 × 25 × 2 см',
+      en: 'envelope · up to 35 × 25 × 2 cm',
+      hu: 'boríték · max. 35 × 25 × 2 cm',
+      uk: 'конверт · до 35 × 25 × 2 см',
     },
   },
   {
@@ -578,6 +578,37 @@ function normalizeSizeKey(sizeKey: SizeKey): SizeKey {
 
 function customTierByWeight(weightKg: number) {
   return CUSTOM_WEIGHT_TIERS.find((tier) => weightKg <= tier.maxKg) ?? CUSTOM_WEIGHT_TIERS[CUSTOM_WEIGHT_TIERS.length - 1];
+}
+
+/** When slider/custom dims match a catalog preset exactly, reuse its cached NP quote. */
+function customQuoteFromPresetCache(
+  custom: { l: string; w: string; h: string; kg: string },
+  parcelQuotes: Partial<Record<ParcelKey, number>>,
+): number | null {
+  const lengthCm = Number(custom.l);
+  const widthCm = Number(custom.w);
+  const heightCm = Number(custom.h);
+  const weightKg = Number(custom.kg);
+  if (
+    !Number.isFinite(lengthCm) || lengthCm <= 0
+    || !Number.isFinite(widthCm) || widthCm <= 0
+    || !Number.isFinite(heightCm) || heightCm <= 0
+    || !Number.isFinite(weightKg) || weightKg < 0.1
+  ) return null;
+
+  for (const key of STEP3_QUOTE_KEYS) {
+    const preset = PARCEL_PRESETS[key];
+    if (
+      lengthCm === preset.lengthCm
+      && widthCm === preset.widthCm
+      && heightCm === preset.heightCm
+      && weightKg === preset.weightKg
+      && parcelQuotes[key] != null
+    ) {
+      return parcelQuotes[key] ?? null;
+    }
+  }
+  return null;
 }
 
 function buildCustomSizeFromWeight(weightKg: number) {
@@ -1362,9 +1393,14 @@ export function CalcForm({
         ?? (Object.entries(data.quotes || {}).find(([k]) => k.startsWith('CUSTOM:'))?.[1])
         ?? null;
       const total = typeof q === 'number' ? q : (q?.total ?? null);
+      const quoteSource = typeof q === 'object' && q?.priceSource
+        ? q.priceSource
+        : data.priceSource;
+      const isTrustedCustomQuote = quoteSource === 'novapost'
+        || quoteSource === 'hu-ru';
       const hasLiveLikePrice = total != null
-        && data.priceSource !== 'estimate'
-        && data.priceSource !== 'mock';
+        && isTrustedCustomQuote
+        && quoteSource !== 'blocked';
       setCustomQuote(hasLiveLikePrice ? total : null);
 
       if (typeof q === 'object' && q?.breakdown?.welcomeDiscountPercent) {
@@ -1374,9 +1410,13 @@ export function CalcForm({
         typeof q === 'object' && q?.scheduledDeliveryDate ? q.scheduledDeliveryDate : null,
       );
 
-      setQuotesFromNp(data.priceSource === 'novapost' || data.priceSource === 'mate');
+      setQuotesFromNp(isTrustedCustomQuote);
       if (!hasLiveLikePrice) {
-        setQuoteWarning(t('calc.quoteNpFail'));
+        if (quoteSource === 'blocked' || q?.breakdown?.code === 'NP_DIMENSIONS') {
+          setQuoteWarning(t('calc.quoteDimsBlocked'));
+        } else {
+          setQuoteWarning(t('calc.quoteNpFail'));
+        }
         return false;
       }
       setQuoteWarning(null);
@@ -1480,8 +1520,22 @@ export function CalcForm({
 
         if (sizeKey === 'custom') {
           const weightKg = Number(customSize.kg);
+          const lengthCm = Number(customSize.l);
+          const widthCm = Number(customSize.w);
+          const heightCm = Number(customSize.h);
           if (!Number.isFinite(weightKg) || weightKg < 0.1) return;
           if (weightKg > MAX_CUSTOM_WEIGHT_KG) return;
+          if (
+            !isHuRuRoute(toCountry)
+            && Number.isFinite(lengthCm) && lengthCm > 0
+            && Number.isFinite(widthCm) && widthCm > 0
+            && Number.isFinite(heightCm) && heightCm > 0
+            && !fitsNpCustomParcelRules(lengthCm, widthCm, heightCm, weightKg)
+          ) {
+            setCustomQuote(null);
+            setQuoteWarning(t('calc.quoteDimsBlocked'));
+            return;
+          }
           await fetchCustomQuote(sizeToPreset('custom', customSize), {
             deliveryMode: quoteDeliveryMode,
             pickupMode: quotePickupMode,
@@ -1540,6 +1594,25 @@ export function CalcForm({
     }
     if (Number(customSize.kg) > MAX_CUSTOM_WEIGHT_KG) {
       setCustomQuote(null);
+      return;
+    }
+
+    setCustomQuote(null);
+
+    const lengthCm = Number(customSize.l);
+    const widthCm = Number(customSize.w);
+    const heightCm = Number(customSize.h);
+    const weightKg = Number(customSize.kg);
+    if (
+      !isHuRuRoute(toCountry)
+      && Number.isFinite(lengthCm) && lengthCm > 0
+      && Number.isFinite(widthCm) && widthCm > 0
+      && Number.isFinite(heightCm) && heightCm > 0
+      && Number.isFinite(weightKg) && weightKg >= 0.1
+      && !fitsNpCustomParcelRules(lengthCm, widthCm, heightCm, weightKg)
+    ) {
+      setCustomQuote(null);
+      setQuoteWarning(t('calc.quoteDimsBlocked'));
       return;
     }
 
@@ -1605,6 +1678,23 @@ export function CalcForm({
     if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
 
     if (sizeKey === 'custom') {
+      const lengthCm = Number(customSize.l);
+      const widthCm = Number(customSize.w);
+      const heightCm = Number(customSize.h);
+      const weightKg = Number(customSize.kg);
+      if (
+        !isHuRuRoute(toCountry)
+        && Number.isFinite(lengthCm) && lengthCm > 0
+        && Number.isFinite(widthCm) && widthCm > 0
+        && Number.isFinite(heightCm) && heightCm > 0
+        && Number.isFinite(weightKg) && weightKg >= 0.1
+        && !fitsNpCustomParcelRules(lengthCm, widthCm, heightCm, weightKg)
+      ) {
+        setCustomQuote(null);
+        setQuoteWarning(t('calc.quoteDimsBlocked'));
+        setQuoteRefreshing(false);
+        return;
+      }
       setCustomQuote(null);
       setQuoteRefreshing(true);
       const preset = sizeToPreset(sizeKey, customSize);
@@ -1628,9 +1718,9 @@ export function CalcForm({
       if (quoteDebounce.current) clearTimeout(quoteDebounce.current);
     };
   }, [
-    step, exactQuoteKey, sizeKey, quoteLocationsReady, apiParcelKey,
+    step, exactQuoteKey, sizeKey, quoteLocationsReady, apiParcelKey, toCountry,
     customSize.l, customSize.w, customSize.h, customSize.kg,
-    applyCachedRouteQuotes, fetchQuoteKeys, fetchCustomQuote,
+    applyCachedRouteQuotes, fetchQuoteKeys, fetchCustomQuote, t,
   ]);
 
   // If exact quote failed once (network / NP), retry while user is on steps 6–9.
@@ -1679,10 +1769,16 @@ export function CalcForm({
   }, [parcelQuotes]);
   // Before size is chosen, summary shows the cheapest size ("от …").
   const priceIsMinimum = step < 3;
+  const resolvedCustomQuote = useMemo(() => {
+    if (sizeKey !== 'custom') return null;
+    if (!quoteRefreshing && customQuote != null) return customQuote;
+    return customQuoteFromPresetCache(customSize, parcelQuotes);
+  }, [sizeKey, quoteRefreshing, customQuote, customSize, parcelQuotes]);
+
   const basePrice = priceIsMinimum
     ? minQuote
     : (sizeKey === 'custom'
-      ? customQuote
+      ? resolvedCustomQuote
       : (parcelQuotes[apiParcelKey] ?? null));
 
   const extras = useMemo(() => {
@@ -2675,6 +2771,25 @@ export function CalcForm({
     Math.max(CUSTOM_WEIGHT_MIN_KG, Number(customSize.kg) || CUSTOM_WEIGHT_MIN_KG),
   );
 
+  const customBillableWeightHint = useMemo(() => {
+    if (sizeKey !== 'custom' || isHuRuRoute(toCountry)) return null;
+    const lengthCm = Number(customSize.l);
+    const widthCm = Number(customSize.w);
+    const heightCm = Number(customSize.h);
+    const weightKg = Number(customSize.kg);
+    if (
+      !Number.isFinite(lengthCm) || lengthCm <= 0
+      || !Number.isFinite(widthCm) || widthCm <= 0
+      || !Number.isFinite(heightCm) || heightCm <= 0
+      || !Number.isFinite(weightKg) || weightKg < 0.1
+    ) return null;
+    if (!fitsNpCustomParcelRules(lengthCm, widthCm, heightCm, weightKg)) return null;
+    const volumetricKg = (lengthCm * widthCm * heightCm) / 4000;
+    if (volumetricKg <= weightKg + 0.05) return null;
+    const billed = Math.ceil(volumetricKg * 10) / 10;
+    return t('calc.billableWeightHint', { kg: billed });
+  }, [sizeKey, toCountry, customSize.l, customSize.w, customSize.h, customSize.kg, t]);
+
   const modeHint = useCallback((side: CoverageSide | null | undefined, key: DeliveryMode) => {
     if (!sizeAllowedModes.includes(key)) return t('calc.sizeModeUnavailable');
     if (!side || side[key]?.available) return undefined;
@@ -2838,9 +2953,19 @@ export function CalcForm({
               />
               <div className="calc-form__sizes">
                 {sizeOptions.map((s) => {
+                  const cachedCustomPrice = s.key === 'custom'
+                    ? customQuoteFromPresetCache(customSize, parcelQuotes)
+                    : null;
+                  const liveCustomPrice = sizeKey === 'custom'
+                    ? (quoteRefreshing ? null : customQuote)
+                    : null;
                   const price = s.key === 'custom'
-                    ? (sizeKey === 'custom' ? customQuote : null)
+                    ? (liveCustomPrice ?? cachedCustomPrice)
                     : parcelQuotes[s.key];
+                  const customPricePending = s.key === 'custom'
+                    && sizeKey === 'custom'
+                    && quoteRefreshing
+                    && price == null;
                   return (
                     <button
                       key={s.key}
@@ -2892,6 +3017,8 @@ export function CalcForm({
                         <em className={quoteRefreshing && !quotesFromNp ? 'calc-form__price-est' : ''}>
                           {formatMoney(price)}
                         </em>
+                      ) : customPricePending || (s.key === 'custom' && quoteRefreshing) ? (
+                        <em className="calc-form__price-est">{t('calc.summaryCalculating')}</em>
                       ) : s.key === 'custom' ? (
                         <em className="calc-form__price-est">{t('calc.sizeCustomPrice')}</em>
                       ) : quoteRefreshing ? (
@@ -2929,6 +3056,7 @@ export function CalcForm({
                       onChange={(e) => {
                         const n = Math.round(Number(e.target.value) * 10) / 10;
                         setSizeKey('custom');
+                        setCustomQuote(null);
                         setCustomSize(buildCustomSizeFromWeight(n));
                       }}
                       style={{
@@ -3035,6 +3163,9 @@ export function CalcForm({
                   </div>
                 </div>
                 <p className="calc-form__hint">{t('calc.sizeNonstandardNote')}</p>
+                {customBillableWeightHint && (
+                  <p className="calc-form__hint">{customBillableWeightHint}</p>
+                )}
               </div>
               )}
               <label className="calc-form__check">

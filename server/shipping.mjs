@@ -52,6 +52,7 @@ import {
   tiersForLiveNovaPost,
 } from './pricing-config.mjs';
 import { reconcileParcelPrice } from './pricing-reconcile.mjs';
+import { allowMatrixFallback, novaPostParcelBlockedReason } from './pricing-quote-guard.mjs';
 import { countNovaPostCoverage, fetchNovaPostDivisions, mapDivisionToPoint } from './novapost/divisions.mjs';
 import { MATE_BRANCHES, FALLBACK_LOCKERS, filterCatalogPoints } from './points-catalog.mjs';
 import { isNovaPostMock } from './novapost/client.mjs';
@@ -255,7 +256,7 @@ export async function resolveCheckoutAmount(body, userId = null) {
   });
 
   if (reconciled.amount == null) {
-    throw new Error('Не удалось рассчитать стоимость');
+    throw new Error(reconciled.breakdown?.error || 'Не удалось рассчитать стоимость');
   }
 
   let currency = reconciled.currency;
@@ -852,10 +853,38 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
           continue;
         }
 
-        // NP missing — matrix cell (net + VAT via finalize), not mock EUR.
+        // NP missing — matrix cell only when parcel fits NP rules (API/network failure).
+        const npDimBlock = novaPostParcelBlockedReason(
+          size.lengthCm,
+          size.widthCm,
+          size.heightCm,
+          size.weightKg,
+        );
+        if (npDimBlock) {
+          quotes[key] = {
+            ...(typeof raw === 'object' && raw ? raw : {}),
+            total: null,
+            currency: settings.currency || 'HUF',
+            priceSource: 'blocked',
+            breakdown: { error: npDimBlock, code: 'NP_DIMENSIONS' },
+            scheduledDeliveryDate: typeof raw === 'object' ? (raw.scheduledDeliveryDate || null) : null,
+          };
+          continue;
+        }
+
+        if (!allowMatrixFallback({
+          lengthCm: size.lengthCm,
+          widthCm: size.widthCm,
+          heightCm: size.heightCm,
+          weightKg: size.weightKg,
+        })) {
+          continue;
+        }
+
+        const actualKg = Math.max(0.1, Number(size.weightKg) || 0.1);
         const matrixFallback = matrixCostNet(pricing, {
           toCountry,
-          weightKg,
+          weightKg: actualKg,
           deliveryMode: mode,
         });
         if (matrixFallback != null) {
@@ -865,7 +894,7 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
             settings,
             weightMarkups: pricing.weightMarkups,
             tiers: pricing.tiers,
-            weightKg,
+            weightKg: actualKg,
             monthlyShipments,
             welcomeDiscountPercent,
             source: 'mate',
@@ -995,7 +1024,11 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
         payerType: payerType || req.body.tariff?.payerType,
       });
       if (result.amount == null) {
-        return res.status(422).json({ error: 'Не удалось рассчитать стоимость' });
+        const msg = result.breakdown?.error || 'Не удалось рассчитать стоимость';
+        return res.status(422).json({
+          error: msg,
+          code: result.breakdown?.code || result.priceSource || 'QUOTE_FAILED',
+        });
       }
       if (process.env.PRICING_LOG !== 'false' && result.breakdown?.log) {
         console.log(
