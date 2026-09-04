@@ -70,6 +70,18 @@ export function validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits) 
 }
 
 /** Fail closed against official NP parcel rules (used at shipment create). */
+/** Official NP documents: ≤35×25×2 cm and ≤1 kg (any boxSize key). */
+export function isNovaPostDocumentsParcel(lengthCm, widthCm, heightCm, weightKg, boxSize) {
+  const key = String(boxSize || '').toUpperCase();
+  if (['XS', 'ENVELOPE', 'DOCUMENTS'].includes(key)) return true;
+  const docs = NOVAPOST_PARCEL_RULES.documents;
+  if (Number(weightKg) > docs.maxWeightKg) return false;
+  const [longest, middle, shortest] = sortedSidesCm(lengthCm, widthCm, heightCm);
+  return longest <= docs.lengthCm
+    && middle <= docs.widthCm
+    && shortest <= docs.heightCm;
+}
+
 export function validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg) {
   const rules = NOVAPOST_PARCEL_RULES;
   if (weightKg > rules.maxWeightKg) {

@@ -7,6 +7,7 @@ import {
   novaPostAuthHeader,
 } from './client.mjs';
 import {
+  isNovaPostDocumentsParcel,
   normalizeParcelDimensionsMm,
   resolveParcelLimits,
   validateNovaPostParcelRules,
@@ -72,10 +73,14 @@ function validateParcelInput(input) {
   const dimError = validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits);
   if (dimError) throw new Error(dimError);
 
+  const isDocuments = isNovaPostDocumentsParcel(
+    lengthCm, widthCm, heightCm, weightKg, input.boxSize,
+  );
+
   // Courier-only “label fits” minimum: 5 × 15 × 15 cm (order-independent).
-  // Nova Post will reject smaller faces for custom items, so we fail early on our side too.
+  // Documents (≤35×25×2) are exempt — official NP envelope category.
   const isCustom = String(input.boxSize || '').toUpperCase().startsWith('CUSTOM');
-  if (isCustom) {
+  if (isCustom && !isDocuments) {
     const sidesAsc = [lengthCm, widthCm, heightCm]
       .map((cm) => Math.max(0, Number(cm) || 0))
       .sort((a, b) => a - b);
@@ -91,7 +96,6 @@ function validateParcelInput(input) {
   }
 
   // Official Nova Post parcel rules for every quote (docs: ≤30 kg, side ≤120, sum ≤150).
-  const isDocuments = ['XS', 'ENVELOPE', 'DOCUMENTS'].includes(String(input.boxSize || '').toUpperCase());
   if (!isDocuments) {
     const npErr = validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg);
     if (npErr) throw new Error(npErr);
@@ -143,11 +147,17 @@ function extractCalculationEta(response) {
 }
 
 async function calculateWithSession(jwt, fromCountryCode, toCountryCode, fromDivisionId, toDivisionId, input) {
-  const isDocuments = ['XS', 'ENVELOPE', 'DOCUMENTS'].includes(String(input.boxSize || '').toUpperCase());
+  const rawLength = Math.max(1, Number(input.lengthCm) || 30);
+  const rawWidth = Math.max(1, Number(input.widthCm) || 20);
+  const rawHeight = Math.max(1, Number(input.heightCm) || 15);
+  const rawWeight = Math.max(0.1, Number(input.weightKg) || 1);
+  const isDocuments = isNovaPostDocumentsParcel(
+    rawLength, rawWidth, rawHeight, rawWeight, input.boxSize,
+  );
   // Documents must go to NP as a real envelope. Placeholder 1x1x1 cm gets parcel-like tariffs.
-  const lengthCm = isDocuments ? 35 : Math.max(1, Number(input.lengthCm) || 30);
-  const widthCm = isDocuments ? 25 : Math.max(1, Number(input.widthCm) || 20);
-  const heightCm = isDocuments ? 2 : Math.max(1, Number(input.heightCm) || 15);
+  const lengthCm = isDocuments ? 35 : rawLength;
+  const widthCm = isDocuments ? 25 : rawWidth;
+  const heightCm = isDocuments ? 2 : rawHeight;
   // my.novapost UI allows empty declared; API requires insuranceCost > 0.
   const declaredRaw = Number(input.declaredValue);
   const insuranceCost = Number.isFinite(declaredRaw) && declaredRaw > 0

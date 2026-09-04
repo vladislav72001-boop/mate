@@ -10,6 +10,7 @@ import {
 import {
   capParcelDimensionsMmForShipment,
   capWeightGramsForShipment,
+  isNovaPostDocumentsParcel,
   resolveParcelLimits,
   validateNovaPostParcelRules,
   validateParcelDimensionsCm,
@@ -164,11 +165,14 @@ function formatNovaPostShipmentError(err) {
 export async function createInternationalShipment(body, clientOrder) {
   const parcel = body.parcel || {};
   const weightKg = Math.max(0.1, Number(parcel.weightKg ?? 1));
-  const isDocuments = ['XS', 'ENVELOPE', 'DOCUMENTS'].includes(String(parcel.boxSize || '').toUpperCase());
-  const lengthCm = isDocuments ? 35 : Number(parcel.lengthCm ?? 30);
-  const widthCm = isDocuments ? 25 : Number(parcel.widthCm ?? 20);
-  const heightCm = isDocuments ? 2 : Number(parcel.heightCm ?? 15);
+  const rawLength = Number(parcel.lengthCm ?? 30);
+  const rawWidth = Number(parcel.widthCm ?? 20);
+  const rawHeight = Number(parcel.heightCm ?? 15);
   const boxSize = String(parcel.boxSize || '');
+  const isDocuments = isNovaPostDocumentsParcel(rawLength, rawWidth, rawHeight, weightKg, boxSize);
+  const lengthCm = isDocuments ? 35 : rawLength;
+  const widthCm = isDocuments ? 25 : rawWidth;
+  const heightCm = isDocuments ? 2 : rawHeight;
   const limits = resolveParcelLimits(lengthCm, widthCm, heightCm, weightKg, boxSize);
   const dimErr = validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits);
   if (dimErr) throw new Error(dimErr);
@@ -176,7 +180,9 @@ export async function createInternationalShipment(body, clientOrder) {
     throw new Error(`Weight ${weightKg} kg exceeds limit ${limits.maxWeightKg} kg`);
   }
 
-  const npRuleErr = validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg);
+  const npRuleErr = isDocuments
+    ? null
+    : validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg);
   if (npRuleErr) throw new Error(npRuleErr);
 
   const maxNpKg = Number(process.env.NOVAPOST_MAX_WEIGHT_KG ?? NOVAPOST_PARCEL_RULES.maxWeightKg);

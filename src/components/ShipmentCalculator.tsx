@@ -160,10 +160,10 @@ const CUSTOM_WEIGHT_MIN_KG = 0.1;
 const CUSTOM_WEIGHT_TIERS = [
   {
     key: 'XS',
-    maxKg: 2,
-    // Match envelope tile — 5×35×50 inflated NP quotes vs Конверт (35×25×2).
-    dims: { ...PARCEL_PRESETS.XS, weightKg: 2 },
-    title: { ru: 'XS · до 2 кг', en: 'XS · up to 2 kg', hu: 'XS · 2 kg-ig', uk: 'XS · до 2 кг' },
+    // Official NP documents: ≤1 kg at 35×25×2. Heavier → S parcel dims.
+    maxKg: 1,
+    dims: { ...PARCEL_PRESETS.XS },
+    title: { ru: 'XS · до 1 кг', en: 'XS · up to 1 kg', hu: 'XS · 1 kg-ig', uk: 'XS · до 1 кг' },
     dimsLabel: {
       ru: 'конверт · до 35 × 25 × 2 см',
       en: 'envelope · up to 35 × 25 × 2 cm',
@@ -200,7 +200,7 @@ const CUSTOM_WEIGHT_TIERS = [
 /** Slider scale labels (kg), aligned with CUSTOM_WEIGHT_TIERS. */
 const CUSTOM_WEIGHT_SCALE = [
   { w: 0.1, labelKey: 'xs' as const },
-  { w: 2, labelKey: '2' as const },
+  { w: 1, labelKey: '2' as const },
   { w: 5, labelKey: 's5' as const },
   { w: 10, labelKey: 'm10' as const },
   { w: 20, labelKey: 'l20' as const },
@@ -3075,7 +3075,7 @@ export function CalcForm({
                         const label = m.labelKey === 'xs'
                           ? 'XS'
                           : m.labelKey === '2'
-                            ? '2'
+                            ? '1'
                             : m.labelKey === 's5'
                               ? 'S · 5'
                               : m.labelKey === 'm10'
