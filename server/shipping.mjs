@@ -63,6 +63,7 @@ import { sendArrivedAtPointEmail } from './mail.mjs';
 import { geocodeAddressSuggestions } from './geocode.mjs';
 import { buildWaybillPdf, waybillFilename } from './waybill-pdf.mjs';
 import { isHuRuRoute, quoteHuRuParcel } from './hu-ru-pricing.mjs';
+import { buildRepeatDraftFromOrder } from './order-repeat-draft.mjs';
 
 function buildSideCoverage({ country, city, npCounts, useFallback }) {
   const mateBranches = filterCatalogPoints(MATE_BRANCHES, country, city);
@@ -1492,6 +1493,26 @@ export function createShippingRouter({ authMiddleware, optionalAuth }) {
     } catch (err) {
       console.error('[shipping] cancel:', err);
       res.status(500).json({ error: err.message || 'Не удалось отменить заказ' });
+    }
+  });
+
+  /** Prefill calculator with the same data as an existing order (new TTN / new payment). */
+  router.get('/orders/:publicToken/repeat-draft', authMiddleware, async (req, res) => {
+    try {
+      const user = await findById(req.userId);
+      if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+      const order = await findByPublicToken(req.params.publicToken);
+      if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+      if (!orderBelongsToUser(order, user)) {
+        return res.status(403).json({ error: 'Нет доступа к этому заказу' });
+      }
+      if (!order.payload || typeof order.payload !== 'object') {
+        return res.status(422).json({ error: 'В заказе недостаточно данных для повтора' });
+      }
+      res.json({ data: buildRepeatDraftFromOrder(order) });
+    } catch (err) {
+      console.error('[shipping] repeat-draft:', err);
+      res.status(500).json({ error: err.message || 'Не удалось подготовить повтор отправки' });
     }
   });
 

@@ -295,6 +295,25 @@ export function saveCalcDraft(
   }
 }
 
+/** Overwrite cart with a full draft (e.g. “repeat shipment”) — ignores suppress/merge guards. */
+export function replaceCalcDraft(
+  draft: Omit<CalcDraft, 'v' | 'savedAt'>,
+  userId?: string | null,
+) {
+  try {
+    calcDraftWritesSuppressed = false;
+    const payload = { ...draft, step: Math.min(9, Math.max(MIN_DRAFT_BANNER_STEP, draft.step || 8)) };
+    if (userId) {
+      writePayload(localStorage, calcCartKey(userId), payload);
+    }
+    writePayload(sessionStorage, calcDraftKey(true), payload);
+    writePayload(sessionStorage, calcDraftKey(false), payload);
+    notifyCalcDraftChange();
+  } catch {
+    /* quota / private mode */
+  }
+}
+
 export function clearCalcDraft(inModal: boolean, userId?: string | null) {
   try {
     if (userId) {

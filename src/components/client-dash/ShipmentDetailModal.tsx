@@ -12,8 +12,10 @@ type Props = {
   onPay?: (order: ShippingOrder) => void;
   onCancel?: (order: ShippingOrder) => void;
   onTrack?: (order: ShippingOrder) => void;
+  onRepeat?: (order: ShippingOrder) => void;
   paying?: boolean;
   cancelling?: boolean;
+  repeating?: boolean;
   /** When false, hide Pay even if status is pending_payment (sender waiting for recipient). */
   canPayOverride?: boolean;
 };
@@ -65,14 +67,18 @@ export function ShipmentDetailModal({
   onPay,
   onCancel,
   onTrack,
+  onRepeat,
   paying = false,
   cancelling = false,
+  repeating = false,
   canPayOverride,
 }: Props) {
   const { t, locale, intlLocale } = useI18n();
   const canPay = canPayOverride ?? (order.status === 'pending_payment');
   const canCancel = order.status === 'pending_payment';
   const canTrack = ['submitted', 'waiting_from_you', 'delivered'].includes(order.status) || Boolean(order.npTtn);
+  const canRepeat = ['waiting_from_you', 'submitted', 'delivered', 'paid'].includes(order.status)
+    && Boolean(onRepeat);
   const awaitingRecipient = order.status === 'pending_payment' && !canPay;
   const deliveryEta = formatScheduledDelivery(order.scheduledDeliveryDate, locale);
 
@@ -166,12 +172,22 @@ export function ShipmentDetailModal({
 
         <div className="ship-detail__actions">
           {canPay && onPay && (
-            <button className="btn btn-lime" type="button" disabled={paying || cancelling} onClick={() => onPay(order)}>
+            <button className="btn btn-lime" type="button" disabled={paying || cancelling || repeating} onClick={() => onPay(order)}>
               {paying ? t('dash.redirecting') : t('dash.pay')}
             </button>
           )}
+          {canRepeat && (
+            <button
+              className="btn btn-lime"
+              type="button"
+              disabled={paying || cancelling || repeating}
+              onClick={() => onRepeat?.(order)}
+            >
+              {repeating ? t('dash.repeatingShipment') : t('dash.repeatShipment')}
+            </button>
+          )}
           {canCancel && onCancel && (
-            <button className="btn btn-outline ship-detail__cancel" type="button" disabled={paying || cancelling} onClick={() => onCancel(order)}>
+            <button className="btn btn-outline ship-detail__cancel" type="button" disabled={paying || cancelling || repeating} onClick={() => onCancel(order)}>
               {cancelling ? t('dash.cancelling') : t('dash.cancelOrder')}
             </button>
           )}

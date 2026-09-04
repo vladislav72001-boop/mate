@@ -355,6 +355,61 @@ export async function cancelOrder(publicToken: string) {
   return res.data;
 }
 
+export type RepeatCalcDraft = {
+  step: number;
+  toCountry: string;
+  pickupType: 'home' | 'branch' | 'locker' | 'pudo';
+  deliveryType: 'home' | 'branch' | 'locker' | 'pudo';
+  sizeKey: string;
+  customSize: { l: string; w: string; h: string; kg: string };
+  contents: string;
+  contentsNote: string;
+  contentValue: string;
+  payer: 'sender' | 'receiver';
+  pickupStreet: string;
+  pickupAddressQuery: string;
+  pickupCity: string;
+  pickupPostal: string;
+  destStreet: string;
+  destCity: string;
+  destPostal: string;
+  destAddressQuery: string;
+  destAddressFocus: { lat: number; lng: number } | null;
+  destAddressReady: boolean;
+  pickupAddressFocus: { lat: number; lng: number } | null;
+  pickupAddressReady: boolean;
+  geoPickupCity: string;
+  pickupCityFromGeo: boolean;
+  pickupCityTouched: boolean;
+  pickupDate: string;
+  pickupTime: string;
+  pickupLocker: string;
+  pickupBranch: string;
+  destLocker: string;
+  destBranch: string;
+  fragile: boolean;
+  insurance: boolean;
+  senderFirst: string;
+  senderLast: string;
+  senderEmail: string;
+  senderDial: string;
+  senderPhone: string;
+  receiverFirst: string;
+  receiverLast: string;
+  receiverEmail: string;
+  receiverDial: string;
+  receiverPhone: string;
+  termsAccepted: boolean;
+  sourceOrderNumber?: string | null;
+};
+
+export async function fetchRepeatDraft(publicToken: string) {
+  const res = await shippingRequest<ApiData<RepeatCalcDraft>>(
+    `/api/shipping/orders/${encodeURIComponent(publicToken)}/repeat-draft`,
+  );
+  return res.data;
+}
+
 export function waybillPdfUrl(publicToken: string) {
   const base = typeof window !== 'undefined' ? window.location.origin : '';
   return `${base}/api/shipping/orders/${encodeURIComponent(publicToken)}/waybill.pdf`;

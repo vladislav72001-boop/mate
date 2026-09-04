@@ -8,6 +8,7 @@ import {
   clearAllCalcDrafts,
   mergeGuestDraftIntoCart,
   suppressCalcDraftWrites,
+  replaceCalcDraft,
   CALC_DRAFT_EVENT,
 } from './components/calc/calcDraft';
 import { CalcDraftCart } from './components/calc/CalcDraftCart';
@@ -21,7 +22,8 @@ import { PartnerLogo, PARTNER_IDS } from './components/PartnerLogo';
 import { LanguageSelect } from './components/LanguageSelect';
 import { useI18n } from './i18n/context';
 import type { ShippingOrder } from './api/shipping';
-import { resumeCheckout } from './api/shipping';
+import { fetchRepeatDraft, resumeCheckout } from './api/shipping';
+import type { CalcDraft } from './components/calc/calcDraft';
 import {
   clearPaymentReturnToken,
   consumePaymentReturnExpected,
@@ -419,6 +421,18 @@ function App() {
     setCalcModalResume(false);
     setCalcOpen(true);
   }, []);
+
+  const openCalcRepeatShipment = useCallback(async (order: ShippingOrder) => {
+    const draft = await fetchRepeatDraft(order.publicToken);
+    const {
+      sourceOrderNumber: _source,
+      ...calcDraft
+    } = draft;
+    replaceCalcDraft(calcDraft as Omit<CalcDraft, 'v' | 'savedAt'>, user?.id);
+    setCalcModalResume(true);
+    setCalcModalKey((n) => n + 1);
+    setCalcOpen(true);
+  }, [user?.id]);
 
   const handleDismissDraft = useCallback(() => {
     clearAllCalcDrafts(user?.id);
@@ -1455,6 +1469,7 @@ function App() {
           onExit={() => goPage('home')}
           onLogout={handleLogout}
           onCreateShipment={openCalcFresh}
+          onRepeatShipment={openCalcRepeatShipment}
           onUserUpdate={setUser}
           ordersRefresh={ordersRefresh}
           initialTab={dashNav?.tab}

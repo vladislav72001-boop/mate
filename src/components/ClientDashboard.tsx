@@ -39,6 +39,7 @@ type Props = {
   onExit: () => void;
   onLogout: () => void;
   onCreateShipment: () => void;
+  onRepeatShipment?: (order: ShippingOrder) => void | Promise<void>;
   onUserUpdate?: (user: AuthUser) => void;
   ordersRefresh?: number;
   initialTab?: Tab;
@@ -162,6 +163,7 @@ export function ClientDashboard({
   onExit,
   onLogout,
   onCreateShipment,
+  onRepeatShipment,
   onUserUpdate,
   ordersRefresh = 0,
   initialTab,
@@ -240,6 +242,7 @@ export function ClientDashboard({
   const [detailOrder, setDetailOrder] = useState<ShippingOrder | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [repeatingId, setRepeatingId] = useState<string | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => loadReadNotifIds(user.id));
@@ -581,6 +584,20 @@ export function ClientDashboard({
       setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.cancelError'));
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const handleRepeatOrder = async (order: ShippingOrder) => {
+    if (!onRepeatShipment) return;
+    setError(null);
+    setRepeatingId(order.id);
+    try {
+      await onRepeatShipment(order);
+      setDetailOrder(null);
+    } catch (err) {
+      setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.repeatShipmentError'));
+    } finally {
+      setRepeatingId(null);
     }
   };
 
@@ -1289,8 +1306,10 @@ export function ClientDashboard({
           onPay={handlePayOrder}
           onCancel={handleCancelOrder}
           onTrack={(o) => { openTracking(o); }}
+          onRepeat={onRepeatShipment ? handleRepeatOrder : undefined}
           paying={payingId === detailOrder.id}
           cancelling={cancellingId === detailOrder.id}
+          repeating={repeatingId === detailOrder.id}
           canPayOverride={userCanPayOrder(detailOrder, user)}
         />
       )}
