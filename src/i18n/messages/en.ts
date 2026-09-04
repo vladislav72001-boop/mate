@@ -296,6 +296,8 @@ export const en: MessageTree = {
     errorTitle: 'Payment error',
     cancelMsg: 'Payment cancelled. Your order is saved — you can pay in your dashboard.',
     confirmError: 'Could not confirm payment',
+    confirmingTitle: 'Confirming payment',
+    confirming: 'Please wait a few seconds — we are creating the shipment and preparing your order details.',
     awaitingRecipientTitle: 'Invoice sent to recipient',
     awaitingRecipient: 'Order {{order}} created. Payment link sent to {{email}}. After payment the order will appear in your personal account.',
     paidNpPendingTitle: 'Payment received',

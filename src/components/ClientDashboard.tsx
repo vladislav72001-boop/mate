@@ -28,6 +28,7 @@ import { TrackingMap } from './client-dash/TrackingMap';
 import { LoyaltyCard, loyaltyTierLabel } from './client-dash/LoyaltyCard';
 import { trackingEventLabel } from './client-dash/trackingLabels';
 import { clearAllCalcDrafts } from './calc/calcDraft';
+import { stashPaymentReturnToken } from '../utils/paymentReturn';
 
 type Tab = 'home' | 'shipments' | 'tracking' | 'address' | 'payments' | 'settings';
 export type ClientDashTab = Tab;
@@ -559,6 +560,7 @@ export function ClientDashboard({
     setPayingId(order.id);
     try {
       const result = await resumeCheckout(order.publicToken);
+      stashPaymentReturnToken(order.publicToken);
       window.location.assign(result.checkoutUrl);
     } catch (err) {
       setError(localizeApiError(err instanceof Error ? err.message : undefined, t, 'dash.payError'));

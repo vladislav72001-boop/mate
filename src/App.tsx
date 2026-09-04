@@ -23,6 +23,12 @@ import { useI18n } from './i18n/context';
 import type { ShippingOrder } from './api/shipping';
 import { resumeCheckout } from './api/shipping';
 import {
+  clearPaymentReturnToken,
+  consumePaymentReturnExpected,
+  resolvePaymentReturnToken,
+  stashPaymentReturnToken,
+} from './utils/paymentReturn';
+import {
   clearSession,
   fetchMe,
   getStoredToken,
@@ -360,7 +366,7 @@ function App() {
   const [clientAuthResetToken, setClientAuthResetToken] = useState('');
   const [dashboardType, setDashboardType] = useState<'client' | 'corp'>('client');
   const [paymentNotice, setPaymentNotice] = useState<{
-    type: 'success' | 'cancel' | 'error' | 'awaiting_recipient' | 'paid_np_pending';
+    type: 'success' | 'cancel' | 'error' | 'awaiting_recipient' | 'paid_np_pending' | 'confirming';
     order?: ShippingOrder;
     message?: string;
   } | null>(null);
@@ -577,15 +583,18 @@ function App() {
           if (result.checkoutUrl) {
             suppressCalcDraftWrites(true);
             clearAllCalcDrafts();
+            stashPaymentReturnToken(result.publicToken || payToken);
             window.location.assign(result.checkoutUrl);
             return;
           }
+          clearPaymentReturnToken();
           setPaymentNotice({
             type: 'error',
             message: t('payment.confirmError'),
           });
         })
         .catch((err) => {
+          clearPaymentReturnToken();
           setPaymentNotice({
             type: 'error',
             message: err instanceof Error ? err.message : t('payment.confirmError'),
@@ -608,16 +617,47 @@ function App() {
       window.history.replaceState({}, '', '/cabinet');
     }
 
-    if (payment === 'success' && token) {
+    const returnExpected = !payToken && consumePaymentReturnExpected(payment === 'success');
+    const returnToken = resolvePaymentReturnToken(
+      payment === 'success' ? token : null,
+    );
+
+    if (returnExpected && returnToken) {
       // Paid shipment is done — never show unfinished draft cart on return.
       suppressCalcDraftWrites(true);
       clearAllCalcDrafts();
-      resumePaymentFromUrl(token)
+      setPage('home');
+      setPaymentNotice({ type: 'confirming', message: t('payment.confirming') });
+      // Strip URL early so refresh does not double-fire; token lives in sessionStorage.
+      window.history.replaceState({}, '', '/');
+
+      const confirmWithRetry = async () => {
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          try {
+            return await resumePaymentFromUrl(returnToken);
+          } catch (err) {
+            lastErr = err;
+            const status = (err as { status?: number })?.status;
+            const captured = Boolean((err as { paymentCaptured?: boolean })?.paymentCaptured)
+              || (err as { code?: string })?.code === 'NP_AFTER_PAYMENT_FAILED'
+              || (err as { code?: string })?.code === 'NP_PICKUP_FAILED';
+            if (captured) throw err;
+            // Stripe/webhook race right after redirect — retry briefly.
+            if (status === 402 || status === 404 || status === 502 || status === 503) {
+              await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw lastErr;
+      };
+
+      confirmWithRetry()
         .then(async (order) => {
+          clearPaymentReturnToken();
           clearAllCalcDrafts();
-          // Keep success overlay on home until the user dismisses it —
-          // auto-jump to /cabinet made the order number flash and disappear.
-          setPage('home');
           setPaymentNotice({ type: 'success', order });
           setOrdersRefresh((n) => n + 1);
           const sessionToken = getStoredToken();
@@ -633,11 +673,12 @@ function App() {
         })
         .catch((err) => {
           const captured = Boolean((err as { paymentCaptured?: boolean })?.paymentCaptured)
-            || (err as { code?: string })?.code === 'NP_AFTER_PAYMENT_FAILED';
+            || (err as { code?: string })?.code === 'NP_AFTER_PAYMENT_FAILED'
+            || (err as { code?: string })?.code === 'NP_PICKUP_FAILED';
           const order = (err as { data?: ShippingOrder })?.data;
           if (captured) {
+            clearPaymentReturnToken();
             clearAllCalcDrafts();
-            setPage('home');
             setPaymentNotice({
               type: 'paid_np_pending',
               order,
@@ -646,17 +687,14 @@ function App() {
             setOrdersRefresh((n) => n + 1);
             return;
           }
+          // Keep token so refresh / "try again" can recover.
           setPaymentNotice({
             type: 'error',
             message: err instanceof Error ? err.message : t('payment.confirmError'),
           });
-        })
-        .finally(() => {
-          // Stay on `/` while the success/error overlay is up (cabinet boot
-          // early-return would hide paymentNotice if we jumped to /cabinet).
-          window.history.replaceState({}, '', '/');
         });
     } else if (payment === 'cancel') {
+      clearPaymentReturnToken();
       setPaymentNotice({ type: 'cancel', message: t('payment.cancelMsg') });
       window.history.replaceState({}, '', '/');
       setPage('home');
@@ -1347,6 +1385,13 @@ function App() {
       ) : paymentNotice && (
         <div className="payment-notice-overlay" role="dialog" aria-modal="true">
           <div className={`payment-notice card payment-notice--${paymentNotice.type}`}>
+            {paymentNotice.type === 'confirming' && (
+              <>
+                <div className="payment-notice__icon">…</div>
+                <h2>{t('payment.confirmingTitle')}</h2>
+                <p>{paymentNotice.message || t('payment.confirming')}</p>
+              </>
+            )}
             {paymentNotice.type === 'cancel' && (
               <>
                 <div className="payment-notice__icon payment-notice__icon--muted">!</div>
@@ -1387,6 +1432,7 @@ function App() {
             <button
               className="btn btn-lime"
               type="button"
+              hidden={paymentNotice.type === 'confirming'}
               onClick={() => {
                 setPaymentNotice(null);
                 if (user) setPage('client-dashboard');

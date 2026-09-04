@@ -74,6 +74,7 @@ import {
 } from './calc/calcDraft';
 import { useCalcDraftPersistence } from './calc/useCalcDraft';
 import { trackAnalytics } from '../utils/analytics';
+import { stashPaymentReturnToken } from '../utils/paymentReturn';
 import { useI18n } from '../i18n/context';
 import { localizeApiError } from '../i18n/localizeApiError';
 import { localeToIntl } from '../i18n/config';
@@ -2618,6 +2619,7 @@ export function CalcForm({
         skipDraftFlushRef.current = true;
         suppressCalcDraftWrites(true);
         clearAllCalcDrafts(user?.id);
+        stashPaymentReturnToken(result.publicToken);
         window.location.assign(result.checkoutUrl);
         return;
       }

@@ -296,6 +296,8 @@ export const hu: MessageTree = {
     errorTitle: 'Fizetési hiba',
     cancelMsg: 'Fizetés megszakítva. A rendelés mentve — a fiókjában kifizetheti.',
     confirmError: 'Nem sikerült megerősíteni a fizetést',
+    confirmingTitle: 'Fizetés megerősítése',
+    confirming: 'Kérjük, várjon néhány másodpercet — létrehozzuk a küldeményt és előkészítjük a rendelés adatait.',
     awaitingRecipientTitle: 'Számla elküldve a címzettnek',
     awaitingRecipient: 'A {{order}} rendelés létrejött. A fizetési linket elküldtük ide: {{email}}. Fizetés után a rendelés megjelenik a személyes fiókjában.',
     paidNpPendingTitle: 'Fizetés megérkezett',
