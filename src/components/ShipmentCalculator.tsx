@@ -27,6 +27,7 @@ import {
   NONSTANDARD_LIMITS,
   PARCEL_PRESETS,
   PICKUP_COUNTRY,
+  PICKUP_TIMES,
   PICKUP_WITHIN_DAY,
   SIZE_ALLOWED_MODES,
   coerceCourierPickupDate,
@@ -819,7 +820,7 @@ export function CalcForm({
   const [pickupDate, setPickupDate] = useState(
     coerceCourierPickupDate(saved?.pickupDate || nextCourierPickupDateIso()),
   );
-  const [pickupTime] = useState(saved?.pickupTime ?? PICKUP_WITHIN_DAY);
+  const [pickupTime, setPickupTime] = useState(saved?.pickupTime ?? PICKUP_WITHIN_DAY);
   const [pickupLocker, setPickupLocker] = useState(sanitizeDivisionId(saved?.pickupLocker));
   const [pickupBranch, setPickupBranch] = useState(sanitizeDivisionId(saved?.pickupBranch));
   const [destLocker, setDestLocker] = useState(sanitizeDivisionId(saved?.destLocker));
@@ -2287,7 +2288,13 @@ export function CalcForm({
     },
     { key: 'sender', label: t('calc.summarySender'), value: [senderFirst, senderLast].filter(Boolean).join(' ') || pickupLocationObj?.provider || '—', onEdit: () => goTo(5) },
     { key: 'recipient', label: t('calc.summaryRecipient'), value: receiverFirst ? `${receiverFirst} ${receiverLast}`.trim() : destLocationObj?.provider || '—', onEdit: () => goTo(6) },
-    { key: 'when', label: t('calc.summaryWhen'), value: pickupDate ? `${pickupDate}, ${t('calc.pickupWithinDay')}` : '—' },
+    {
+      key: 'when',
+      label: t('calc.summaryWhen'),
+      value: pickupDate
+        ? `${pickupDate}, ${pickupTime && pickupTime !== PICKUP_WITHIN_DAY ? pickupTime : t('calc.pickupWithinDay')}`
+        : '—',
+    },
   ], [
     t, toCountry, pickupCity, destCity, pickupType, deliveryType, sizeKey, sizeLabel, contents, contentsNote, contentValue, payer,
     senderFirst, senderLast, pickupLocationObj, receiverFirst, receiverLast, destLocationObj, pickupDate, pickupTime,
@@ -3432,7 +3439,23 @@ export function CalcForm({
                         onBlur={() => setPickupDate((prev) => coerceCourierPickupDate(prev))}
                       />
                       <p className="calc-form__hint calc-form__hint--inline">{t('calc.pickupWeekdaysHint')}</p>
-                      <p className="calc-form__hint calc-form__hint--inline">{t('calc.pickupWithinDayHint')}</p>
+                    </div>
+                    <div className="field-block">
+                      <label>{t('calc.pickupTime')}</label>
+                      <select
+                        value={pickupTime}
+                        onChange={(e) => setPickupTime(e.target.value)}
+                        name="pickup_time"
+                      >
+                        {PICKUP_TIMES.map((v) => (
+                          <option key={v} value={v}>
+                            {v === PICKUP_WITHIN_DAY ? t('calc.pickupWithinDay') : v}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="calc-form__hint calc-form__hint--inline">
+                        {pickupTime === PICKUP_WITHIN_DAY ? t('calc.pickupWithinDayHint') : t('calc.pickupWeekdaysHint')}
+                      </p>
                     </div>
                   </div>
                 </>

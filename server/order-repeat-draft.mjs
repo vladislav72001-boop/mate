@@ -147,7 +147,7 @@ export function buildRepeatDraftFromOrder(order) {
     pickupCityFromGeo: false,
     pickupCityTouched: true,
     pickupDate: nextPickupDateIso(),
-    pickupTime: 'within_day',
+    pickupTime: String(tariff.pickupTime || 'within_day'),
     pickupLocker: pickupType === 'locker' || pickupType === 'pudo' ? pickupDivisionId : '',
     pickupBranch: pickupType === 'branch' ? pickupDivisionId : '',
     destLocker: deliveryType === 'locker' || deliveryType === 'pudo' ? deliveryDivisionId : '',

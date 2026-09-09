@@ -77,9 +77,14 @@ export function isHuRuRoute(toCountry?: string | null): boolean {
 
 export const PICKUP_WITHIN_DAY = 'within_day';
 
-/** @deprecated Use PICKUP_WITHIN_DAY — courier picks up any time during working hours. */
+/** Courier pickup time windows (Budapest courier + mapped to NP pickup slots when needed). */
 export const PICKUP_TIMES = [
   PICKUP_WITHIN_DAY,
+  '10:00-11:30',
+  '11:30-13:00',
+  '13:00-14:30',
+  '14:30-16:00',
+  '16:00-18:00',
 ];
 
 /** Local calendar YYYY-MM-DD (avoid UTC shift from toISOString). */

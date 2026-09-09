@@ -57,6 +57,13 @@ function line(label, value) {
   return `<b>${escapeHtml(label)}:</b> ${escapeHtml(v)}`;
 }
 
+function pickupTimeText(raw) {
+  const v = String(raw ?? '').trim();
+  if (!v) return '';
+  if (v === 'within_day') return 'в течение дня';
+  return v;
+}
+
 function locationText(loc) {
   if (!loc || typeof loc !== 'object') return '';
   if (loc.kind === 'division' && loc.divisionId) {
@@ -121,7 +128,7 @@ export function formatHuRuOrderMessage(order, { event = 'paid' } = {}) {
     '<b>Забор (Венгрия)</b>',
     line('Способ', MODE_LABELS[String(pickupMode).toLowerCase()] || pickupMode),
     line('Дата', tariff.pickupDate),
-    line('Время', tariff.pickupTime),
+    line('Время', pickupTimeText(tariff.pickupTime)),
     line('Адрес', sender.line || locationText(tariff.pickupLocation)),
     line('Город', tariff.pickupCity || sender.city),
     line('Индекс', sender.postal || tariff.pickupPostal),
