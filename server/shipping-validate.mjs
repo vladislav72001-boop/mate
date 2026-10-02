@@ -1,3 +1,4 @@
+import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { normalizeCountryCode } from './novapost/calculate.mjs';
 import {
   inferParcelTier,
@@ -7,15 +8,19 @@ import {
   NOVAPOST_PARCEL_RULES,
 } from './novapost/parcel.mjs';
 
+/** Calling codes for all Mate destination/origin countries (incl. HU→RU). */
 const CALLING_CODE_BY_ISO2 = {
-  CZ: '420', DE: '49', EE: '372', ES: '34', FR: '33', GB: '44',
-  HU: '36', IT: '39', LT: '370', LV: '371', MD: '373', NL: '31',
-  PL: '48', RO: '40', SK: '421', UA: '380',
+  AT: '43', BE: '32', CZ: '420', DE: '49', EE: '372', ES: '34',
+  FR: '33', GB: '44', HU: '36', IT: '39', LT: '370', LV: '371',
+  MD: '373', NL: '31', PL: '48', RO: '40', RU: '7', SK: '421', UA: '380',
 };
 
+/** National number length caps (without country calling code). */
 const MAX_NATIONAL_DIGITS = {
-  HU: 9, DE: 11, PL: 9, CZ: 9, SK: 9, RO: 9, UA: 9,
+  AT: 13, BE: 9, HU: 9, DE: 11, PL: 9, CZ: 9, SK: 9, RO: 9, UA: 9,
   FR: 9, ES: 9, IT: 10, GB: 10, NL: 9, LT: 8, LV: 8, EE: 8, MD: 8,
+  // Russia mobile/landline national number is 10 digits (e.g. 9XX XXX-XX-XX).
+  RU: 10,
 };
 
 const MAX_NP_WEIGHT_KG = Number(process.env.NOVAPOST_MAX_WEIGHT_KG ?? NOVAPOST_PARCEL_RULES.maxWeightKg);
@@ -72,14 +77,17 @@ function inferPhoneCountry(raw, fallbackCountry) {
 }
 
 function validatePhone(raw, countryCode, label) {
-  const country = inferPhoneCountry(raw, countryCode);
-  const cc = CALLING_CODE_BY_ISO2[country] || '48';
-  const maxNational = MAX_NATIONAL_DIGITS[country] || 10;
+  const fallbackCountry = normalizeCountryCode(countryCode) || 'HU';
+  const country = inferPhoneCountry(raw, fallbackCountry);
+  const cc = CALLING_CODE_BY_ISO2[country] || CALLING_CODE_BY_ISO2[fallbackCountry] || '';
+  const maxNational = MAX_NATIONAL_DIGITS[country]
+    || MAX_NATIONAL_DIGITS[fallbackCountry]
+    || 12;
 
   let digits = String(raw ?? '').trim().replace(/[\s\u00A0\-().]/g, '').replace(/^\+/, '');
   digits = digits.replace(/\D/g, '');
   if (digits.startsWith('00')) digits = digits.slice(2);
-  if (digits.startsWith(cc)) digits = digits.slice(cc.length);
+  if (cc && digits.startsWith(cc)) digits = digits.slice(cc.length);
   digits = digits.replace(/^0+/, '');
 
   if (!digits) {
@@ -89,7 +97,16 @@ function validatePhone(raw, countryCode, label) {
     return `${label}: слишком короткий номер`;
   }
   if (digits.length > maxNational) {
-    return `${label}: слишком много цифр для ${country} (максимум ${maxNational} без кода страны +${cc})`;
+    const ccLabel = cc ? `+${cc}` : 'кода страны';
+    return `${label}: слишком много цифр для ${country} (максимум ${maxNational} без кода страны ${ccLabel})`;
+  }
+
+  // Prefer libphonenumber when we know the region (catches RU 10-digit mobiles correctly).
+  const e164 = cc ? `+${cc}${digits}` : String(raw || '').trim();
+  const parsed = parsePhoneNumberFromString(e164, country)
+    || parsePhoneNumberFromString(String(raw || '').trim(), country);
+  if (parsed && !parsed.isPossible()) {
+    return `${label}: некорректный номер для ${country}`;
   }
   return null;
 }
