@@ -13,7 +13,11 @@ export function trackingEventLabel(
   ev: TrackingEvent,
   t: (key: string) => string,
 ) {
-  if (ev.source === 'novapost' || String(ev.id || '').startsWith('np-')) {
+  if (
+    ev.source === 'novapost'
+    || ev.source === 'manual'
+    || String(ev.id || '').startsWith('np-')
+  ) {
     return ev.title;
   }
   if (ev.id === 'payment') {

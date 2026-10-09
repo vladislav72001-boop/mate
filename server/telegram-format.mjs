@@ -1,3 +1,4 @@
+import { HU_RU_STAGES, resolveHuRuStageKey } from './hu-ru-status.mjs';
 import { isTelegramAdmin } from './telegram-store.mjs';
 
 function escapeHtml(value) {
@@ -116,6 +117,11 @@ export function formatHuRuOrderMessage(order, { event = 'paid' } = {}) {
     `<b>${title}</b>`,
     line('Номер', order.orderNumber),
     line('Статус', STATUS_LABELS[order.status] || order.status),
+    (() => {
+      const stageKey = resolveHuRuStageKey(order);
+      const stage = stageKey ? HU_RU_STAGES[stageKey] : null;
+      return stage ? line('Этап (ручной)', stage.label) : null;
+    })(),
     line('Создан', fmtDate(order.createdAt)),
     order.paidAt ? line('Оплачен', fmtDate(order.paidAt)) : null,
     line('Сумма', amount),

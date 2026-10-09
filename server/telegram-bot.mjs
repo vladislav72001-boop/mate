@@ -1,4 +1,10 @@
-import { findById, listAllOrders } from './orders.mjs';
+import { findById, listAllOrders, updateOrder } from './orders.mjs';
+import {
+  HU_RU_STAGE_ORDER,
+  HU_RU_STAGES,
+  buildHuRuStatusPatch,
+  resolveHuRuStageKey,
+} from './hu-ru-status.mjs';
 import {
   findTelegramUser,
   getTelegramSubscriberChatIds,
@@ -88,7 +94,29 @@ function welcomeText() {
     `• ${MAIN_MENU_BUTTONS.profile} — ваш профиль`,
     `• ${MAIN_MENU_BUTTONS.users} — кто подключён к боту`,
     `• ${MAIN_MENU_BUTTONS.home} — вернуться сюда`,
+    '',
+    'В карточке заказа можно вручную менять этапы: курьер забрал, сортировка, в пути, доставлен.',
   ].join('\n');
+}
+
+function orderStatusKeyboard(order) {
+  const current = resolveHuRuStageKey(order);
+  const rows = [];
+  const stageKeys = [...HU_RU_STAGE_ORDER, 'cancel'];
+  for (let i = 0; i < stageKeys.length; i += 2) {
+    const chunk = stageKeys.slice(i, i + 2).map((key) => {
+      const stage = HU_RU_STAGES[key];
+      const mark = key === current ? ' ✓' : '';
+      return {
+        text: `${stage.button}${mark}`,
+        callback_data: `st:${order.id}:${key}`,
+      };
+    });
+    rows.push(chunk);
+  }
+  rows.push([{ text: '← К списку заказов', callback_data: 'menu:orders:0' }]);
+  rows.push([{ text: '← Главное меню', callback_data: 'menu:home' }]);
+  return { inline_keyboard: rows };
 }
 
 async function sendMainMenu(token, chatId) {
@@ -141,15 +169,79 @@ async function sendOrderDetails(token, chatId, orderId) {
     });
     return;
   }
-  const event = order.status === 'pending_payment' ? 'created' : 'paid';
+  const event = order.status === 'pending_payment' ? 'created' : 'status';
+  const unpaid = order.status === 'pending_payment';
   await sendTelegramMessage(token, chatId, formatHuRuOrderMessage(order, { event }), {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '← К списку заказов', callback_data: 'menu:orders:0' }],
-        [{ text: '← Главное меню', callback_data: 'menu:home' }],
-      ],
-    },
+    reply_markup: unpaid
+      ? {
+        inline_keyboard: [
+          [{ text: '← К списку заказов', callback_data: 'menu:orders:0' }],
+          [{ text: '← Главное меню', callback_data: 'menu:home' }],
+        ],
+      }
+      : orderStatusKeyboard(order),
   });
+}
+
+async function applyHuRuStage(token, chatId, orderId, stageKey, callbackQueryId, { confirmed = false } = {}) {
+  const order = await findById(orderId);
+  if (!order || !isHuRuOrder(order)) {
+    await answerCallback(token, callbackQueryId, 'Заказ не найден');
+    return;
+  }
+  if (order.status === 'pending_payment') {
+    await answerCallback(token, callbackQueryId, 'Сначала нужна оплата');
+    return;
+  }
+
+  const current = resolveHuRuStageKey(order);
+  if (current === stageKey) {
+    await answerCallback(token, callbackQueryId, 'Уже этот статус');
+    await sendOrderDetails(token, chatId, orderId);
+    return;
+  }
+
+  if (stageKey === 'cancel' && !confirmed) {
+    await answerCallback(token, callbackQueryId, 'Подтвердите отмену');
+    await sendTelegramMessage(
+      token,
+      chatId,
+      `<b>Отменить заказ ${escapeHtml(order.orderNumber)}?</b>\nСтатус у клиента станет «Отменён».`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'Да, отменить', callback_data: `stc:${order.id}:yes` },
+              { text: 'Нет', callback_data: `order:${order.id}` },
+            ],
+          ],
+        },
+      },
+    );
+    return;
+  }
+
+  const built = buildHuRuStatusPatch(order, stageKey, { actorChatId: chatId });
+  if (built.error) {
+    await answerCallback(token, callbackQueryId, built.error);
+    return;
+  }
+
+  const updated = await updateOrder(order.id, built.patch);
+  await answerCallback(token, callbackQueryId, built.stage.label);
+  await sendTelegramMessage(
+    token,
+    chatId,
+    `✅ Статус обновлён: <b>${escapeHtml(built.stage.label)}</b>\nКлиент увидит это в личном кабинете.`,
+  );
+  await sendOrderDetails(token, chatId, updated?.id || orderId);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 async function sendProfile(token, chatId) {
@@ -230,6 +322,25 @@ async function handleCallback(token, callback) {
   }
 
   touchTelegramUser(chatId, callback.from);
+
+  if (data.startsWith('st:')) {
+    const rest = data.slice('st:'.length);
+    const sep = rest.lastIndexOf(':');
+    if (sep <= 0) {
+      await answerCallback(token, callback.id, 'Некорректная команда');
+      return;
+    }
+    const orderId = rest.slice(0, sep);
+    const stageKey = rest.slice(sep + 1);
+    await applyHuRuStage(token, chatId, orderId, stageKey, callback.id);
+    return;
+  }
+  if (data.startsWith('stc:') && data.endsWith(':yes')) {
+    const orderId = data.slice('stc:'.length, -':yes'.length);
+    await applyHuRuStage(token, chatId, orderId, 'cancel', callback.id, { confirmed: true });
+    return;
+  }
+
   await answerCallback(token, callback.id);
 
   if (data === 'menu:home') {
