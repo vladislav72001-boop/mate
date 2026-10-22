@@ -57,7 +57,7 @@ export function validateParcelDimensionsCm(lengthCm, widthCm, heightCm, limits) 
   if (limits.maxSumSidesCm != null) {
     const sum = parcelSumSidesCm(lengthCm, widthCm, heightCm);
     if (sum > limits.maxSumSidesCm) {
-      return `Sum of sides ${sum.toFixed(0)} cm exceeds Nova Post limit ${limits.maxSumSidesCm} cm`;
+      return `Sum of sides ${sum.toFixed(0)} cm exceeds limit ${limits.maxSumSidesCm} cm`;
     }
   }
   if (limits.maxGirthCm != null) {
@@ -85,7 +85,7 @@ export function isNovaPostDocumentsParcel(lengthCm, widthCm, heightCm, weightKg,
 export function validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg) {
   const rules = NOVAPOST_PARCEL_RULES;
   if (weightKg > rules.maxWeightKg) {
-    return `Weight ${weightKg} kg exceeds Nova Post limit ${rules.maxWeightKg} kg`;
+    return `Weight ${weightKg} kg exceeds limit ${rules.maxWeightKg} kg`;
   }
   return validateParcelDimensionsCm(lengthCm, widthCm, heightCm, {
     maxLongestCm: rules.maxLongestCm,

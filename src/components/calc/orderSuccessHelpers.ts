@@ -115,10 +115,8 @@ export function orderStatusHeadline(order: ShippingOrder, t: TFn) {
 }
 
 export function carrierLabel(order: ShippingOrder, t: TFn) {
-  if (order.npTtn || order.npValid) {
-    return { name: 'Nova Post', hint: t('orderSuccess.carrierNpHint') };
-  }
-  return { name: 'Mate AI', hint: t('orderSuccess.carrierMateHint') };
+  // Never expose partner brand names (e.g. Nova Post) to the customer UI.
+  return { name: 'Mate Delivery', hint: t('orderSuccess.carrierMateHint') };
 }
 
 export function trackingNumber(order: ShippingOrder) {

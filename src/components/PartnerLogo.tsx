@@ -119,7 +119,7 @@ export function PartnerLogo({ id, className = '' }: Props) {
 export type { PartnerId };
 
 export const PARTNER_IDS: PartnerId[] = [
-  'novapost',
+  // Keep Nova Post off the public partner strip — Mate-branded customer UI.
   'dpd',
   'gls',
   'foxpost',

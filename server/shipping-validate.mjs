@@ -140,18 +140,18 @@ function validateQuoteLocation(location, expectedCountry, label) {
   if (!location || typeof location !== 'object') {
     return isRu
       ? `${label}: укажите точный адрес доставки в России`
-      : `${label}: выберите точный адрес или точку Nova Post`;
+      : `${label}: выберите точный адрес или пункт выдачи`;
   }
   const country = normalizeCountryCode(location.countryCode);
   if (country !== dest) return `${label}: страна точки не совпадает с маршрутом`;
   if (location.kind === 'division') {
     if (isRu) {
-      return `${label}: для России укажите адрес (Nova Post в РФ не работает)`;
+      return `${label}: для России укажите адрес доставки`;
     }
     const divisionId = Number(location.divisionId);
     return Number.isInteger(divisionId) && divisionId > 0
       ? null
-      : `${label}: некорректный ID точки Nova Post`;
+      : `${label}: некорректный ID пункта выдачи`;
   }
   if (location.kind === 'address') {
     const p = location.addressParts || {};
@@ -217,7 +217,7 @@ export function validateCheckoutBody(body) {
       errors.push(`Посылка: вес ${weightKg} кг превышает лимит ${limits.maxWeightKg} кг для размера ${tierLabel}`);
     }
     if (weightKg > MAX_NP_WEIGHT_KG) {
-      errors.push(`Посылка: Nova Post принимает до ${MAX_NP_WEIGHT_KG} кг на одну отправку`);
+      errors.push(`Посылка: принимаем до ${MAX_NP_WEIGHT_KG} кг на одну отправку`);
     }
     const npRuleErr = validateNovaPostParcelRules(lengthCm, widthCm, heightCm, weightKg);
     if (npRuleErr) errors.push(`Посылка: ${npRuleErr}`);
