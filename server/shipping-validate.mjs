@@ -135,10 +135,19 @@ function validateEmail(email, label) {
 }
 
 function validateQuoteLocation(location, expectedCountry, label) {
-  if (!location || typeof location !== 'object') return `${label}: выберите точный адрес или точку Nova Post`;
+  const dest = normalizeCountryCode(expectedCountry);
+  const isRu = dest === 'RU';
+  if (!location || typeof location !== 'object') {
+    return isRu
+      ? `${label}: укажите точный адрес доставки в России`
+      : `${label}: выберите точный адрес или точку Nova Post`;
+  }
   const country = normalizeCountryCode(location.countryCode);
-  if (country !== normalizeCountryCode(expectedCountry)) return `${label}: страна точки не совпадает с маршрутом`;
+  if (country !== dest) return `${label}: страна точки не совпадает с маршрутом`;
   if (location.kind === 'division') {
+    if (isRu) {
+      return `${label}: для России укажите адрес (Nova Post в РФ не работает)`;
+    }
     const divisionId = Number(location.divisionId);
     return Number.isInteger(divisionId) && divisionId > 0
       ? null

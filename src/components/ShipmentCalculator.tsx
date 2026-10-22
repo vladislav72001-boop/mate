@@ -2402,7 +2402,12 @@ export function CalcForm({
         if (!destStreet || !destCity || !destPostal) return t('calc.valDeliveryAddress');
       }
       if (!deliveryQuoteLocation) {
-        return deliveryType === 'home' ? t('calc.valDeliveryAddress') : t('calc.valSelectDeliveryPointNp');
+        return (
+          deliveryType === 'home'
+          || (isHuRuRoute(toCountry) && deliveryType === 'branch')
+        )
+          ? t('calc.valDeliveryAddress')
+          : t('calc.valSelectDeliveryPointNp');
       }
     }
     if (step === 7) {
@@ -2418,7 +2423,12 @@ export function CalcForm({
         return pickupType === 'home' ? t('calc.valPickupAddress') : t('calc.valSelectPickupPointNp');
       }
       if (!deliveryQuoteLocation) {
-        return deliveryType === 'home' ? t('calc.valDeliveryAddress') : t('calc.valSelectDeliveryPointNp');
+        return (
+          deliveryType === 'home'
+          || (isHuRuRoute(toCountry) && deliveryType === 'branch')
+        )
+          ? t('calc.valDeliveryAddress')
+          : t('calc.valSelectDeliveryPointNp');
       }
       const firstErr = validatePersonName(senderFirst, t('calc.fieldSenderFirst'));
       const lastErr = validatePersonName(senderLast, t('calc.fieldSenderLast'));
@@ -2570,7 +2580,11 @@ export function CalcForm({
               isLockerLikeMode(pickupType) ? pickupLocker : pickupBranch,
               pointMeta(pickupLocationObj),
             ),
-          deliveryLocation: deliveryType === 'home'
+          // HU→RU "branch" is a free-text RU address (CDEK / post), not a Nova Post division.
+          deliveryLocation: (
+            deliveryType === 'home'
+            || (isHuRuRoute(toCountry) && deliveryType === 'branch')
+          )
             ? deliveryQuoteLocation
             : divisionQuoteLocation(
               toCountry,
@@ -3557,8 +3571,12 @@ export function CalcForm({
                 <>
                   <AddressSuggest
                     label={isHuRuRoute(toCountry) ? t('calc.deliveryAddress') : t('calc.receiverAddress')}
-                    value={destAddressQuery}
-                    onChange={onDestAddressQueryChange}
+                    value={isHuRuRoute(toCountry) ? (destAddressQuery || destStreet) : destAddressQuery}
+                    onChange={(v) => {
+                      onDestAddressQueryChange(v);
+                      // RU has no NP branch picker — typed address must populate destStreet for quote/checkout.
+                      if (isHuRuRoute(toCountry)) setDestStreet(v);
+                    }}
                     onSelect={applyDestAddress}
                     country={toCountry}
                     city={destCity}
