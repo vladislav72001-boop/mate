@@ -266,6 +266,22 @@ function addressQuoteLocation(
   postCode: string,
 ): QuoteLocation | undefined {
   const { street, building } = parseStreetAndBuilding(streetWithBuilding, { city, postCode });
+  const isRu = String(countryCode || '').toUpperCase() === 'RU';
+  // HU→RU: CDEK / post office lines often lack a clean house number — still accept.
+  if (isRu) {
+    if (!city.trim() || !street) return undefined;
+    return {
+      kind: 'address',
+      countryCode,
+      addressParts: {
+        city: city.trim(),
+        region: city.trim(),
+        street,
+        building: building || '1',
+        postCode: postCode.trim() || '000000',
+      },
+    };
+  }
   if (!city.trim() || !street || !building || !postCode.trim()) return undefined;
   return {
     kind: 'address',
@@ -1182,14 +1198,20 @@ export function CalcForm({
         isLockerLikeMode(pickupType) ? pickupLocker : pickupBranch,
       )
   ), [pickupType, pickupCity, pickupStreet, pickupPostal, pickupLocker, pickupBranch]);
-  const deliveryQuoteLocation = useMemo(() => (
-    deliveryType === 'home' || (isHuRuRoute(toCountry) && deliveryType === 'branch')
-      ? addressQuoteLocation(toCountry, destCity, destStreet, destPostal)
-      : divisionQuoteLocation(
-        toCountry,
-        isLockerLikeMode(deliveryType) ? destLocker : destBranch,
-      )
-  ), [deliveryType, toCountry, destCity, destStreet, destPostal, destLocker, destBranch]);
+  const deliveryQuoteLocation = useMemo(() => {
+    // Russia: always free-text address (home / CDEK / post) — never a Nova Post division.
+    if (isHuRuRoute(toCountry)) {
+      const street = destStreet.trim() || destAddressQuery.trim();
+      return addressQuoteLocation(toCountry, destCity, street, destPostal);
+    }
+    if (deliveryType === 'home') {
+      return addressQuoteLocation(toCountry, destCity, destStreet, destPostal);
+    }
+    return divisionQuoteLocation(
+      toCountry,
+      isLockerLikeMode(deliveryType) ? destLocker : destBranch,
+    );
+  }, [deliveryType, toCountry, destCity, destStreet, destPostal, destLocker, destBranch, destAddressQuery]);
   const quoteLocationsReady = Boolean(pickupQuoteLocation && deliveryQuoteLocation);
   // MATE's Nova Post contract is the carrier payer; the UI payer choice is
   // handled between customer and recipient and must not change NP contract billing.
@@ -2233,6 +2255,10 @@ export function CalcForm({
   };
 
   const buildDestLine = () => {
+    if (isHuRuRoute(toCountry)) {
+      const street = destStreet.trim() || destAddressQuery.trim();
+      return `${countryLabel(toCountry, locale)}, ${street}, ${destCity} ${destPostal}`.trim();
+    }
     if (isPointPickupMode(deliveryType)) {
       return `${countryLabel(toCountry, locale)}, ${destLocationObj?.address || t('calc.pointFallback')}`;
     }
@@ -2580,12 +2606,14 @@ export function CalcForm({
               isLockerLikeMode(pickupType) ? pickupLocker : pickupBranch,
               pointMeta(pickupLocationObj),
             ),
-          // HU→RU "branch" is a free-text RU address (CDEK / post), not a Nova Post division.
-          deliveryLocation: (
-            deliveryType === 'home'
-            || (isHuRuRoute(toCountry) && deliveryType === 'branch')
-          )
-            ? deliveryQuoteLocation
+          // HU→RU is always a free-text RU address (home / CDEK / post), never a Nova Post division.
+          deliveryLocation: isHuRuRoute(toCountry) || deliveryType === 'home'
+            ? (deliveryQuoteLocation || addressQuoteLocation(
+              toCountry,
+              destCity,
+              destStreet.trim() || destAddressQuery.trim() || buildDestLine(),
+              destPostal,
+            ))
             : divisionQuoteLocation(
               toCountry,
               isLockerLikeMode(deliveryType) ? destLocker : destBranch,

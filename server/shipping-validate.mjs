@@ -134,19 +134,56 @@ function validateEmail(email, label) {
   return null;
 }
 
+function coerceRuDeliveryLocation(body) {
+  const tariff = body?.tariff || {};
+  const receiver = body?.receiver || {};
+  const loc = tariff.deliveryLocation;
+  if (loc && typeof loc === 'object' && loc.kind === 'address') {
+    const p = loc.addressParts || {};
+    if (p.city && p.street) return loc;
+  }
+  const line = String(receiver.destinationLine || receiver.line || '').trim();
+  const city = String(tariff.destCity || receiver.city || '').trim();
+  const street = String(
+    loc?.addressParts?.street
+    || receiver.street
+    || line
+    || '',
+  ).trim();
+  const postCode = String(
+    loc?.addressParts?.postCode
+    || receiver.postal
+    || tariff.destPostal
+    || '000000',
+  ).trim();
+  const building = String(loc?.addressParts?.building || '1').trim() || '1';
+  if (!city || !street) return null;
+  return {
+    kind: 'address',
+    countryCode: 'RU',
+    addressParts: {
+      city,
+      region: city,
+      street: street.slice(0, 200),
+      building,
+      postCode: postCode || '000000',
+    },
+  };
+}
+
 function validateQuoteLocation(location, expectedCountry, label) {
   const dest = normalizeCountryCode(expectedCountry);
   const isRu = dest === 'RU';
   if (!location || typeof location !== 'object') {
     return isRu
-      ? `${label}: укажите точный адрес доставки в России`
+      ? `${label}: укажите адрес получателя или пункта СДЭК / почты`
       : `${label}: выберите точный адрес или пункт выдачи`;
   }
   const country = normalizeCountryCode(location.countryCode);
   if (country !== dest) return `${label}: страна точки не совпадает с маршрутом`;
   if (location.kind === 'division') {
     if (isRu) {
-      return `${label}: для России укажите адрес доставки`;
+      return `${label}: для России укажите адрес (пункт СДЭК / почта / дом)`;
     }
     const divisionId = Number(location.divisionId);
     return Number.isInteger(divisionId) && divisionId > 0
@@ -155,6 +192,12 @@ function validateQuoteLocation(location, expectedCountry, label) {
   }
   if (location.kind === 'address') {
     const p = location.addressParts || {};
+    if (isRu) {
+      // HU→RU is manual fulfillment — accept city + street (CDEK / post office text).
+      return p.city && p.street
+        ? null
+        : `${label}: укажите город и адрес пункта СДЭК / получателя`;
+    }
     return p.city && p.street && p.postCode && p.building
       ? null
       : `${label}: укажите город, улицу, дом и индекс`;
@@ -233,8 +276,18 @@ export function validateCheckoutBody(body) {
     'Забор',
   );
   if (pickupLocationErr) errors.push(pickupLocationErr);
+
+  let deliveryLocation = tariff.deliveryLocation;
+  if (toCountry === 'RU') {
+    // Always treat RU as free-text address (CDEK / post / home) — never Nova Post division.
+    const coerced = coerceRuDeliveryLocation(body);
+    if (coerced) {
+      deliveryLocation = coerced;
+      tariff.deliveryLocation = coerced;
+    }
+  }
   const deliveryLocationErr = validateQuoteLocation(
-    tariff.deliveryLocation,
+    deliveryLocation,
     tariff.toCountry || receiver.country,
     'Доставка',
   );
