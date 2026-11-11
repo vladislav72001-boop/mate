@@ -17,6 +17,7 @@ export type ShippingOrder = {
   currency: string;
   npTtn: string | null;
   npValid?: boolean;
+  trackingCarrier?: string | null;
   fromCountry?: string;
   toCountry?: string;
   parcelSize?: string;

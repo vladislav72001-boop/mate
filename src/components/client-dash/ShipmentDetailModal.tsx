@@ -151,7 +151,12 @@ export function ShipmentDetailModal({
               <div><dt>{t('dash.created')}</dt><dd>{formatDate(order.createdAt, intlLocale)}</dd></div>
               {order.paidAt && <div><dt>{t('dash.paidAt')}</dt><dd>{formatDate(order.paidAt, intlLocale)}</dd></div>}
               {order.cancelledAt && <div><dt>{t('dash.cancelledAt')}</dt><dd>{formatDate(order.cancelledAt, intlLocale)}</dd></div>}
-              {order.npTtn && <div><dt>{t('dash.ttnLabel')}</dt><dd><b>{order.npTtn}</b></dd></div>}
+              {order.npTtn && (
+                <div>
+                  <dt>{order.trackingCarrier === 'cdek' ? t('dash.ttnLabelCdek') : t('dash.ttnLabel')}</dt>
+                  <dd><b>{order.npTtn}</b></dd>
+                </div>
+              )}
             </dl>
             {Array.isArray(order.tracking) && order.tracking.length > 0 && (
               <ul className="client-dash__timeline ship-detail__timeline">

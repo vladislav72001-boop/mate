@@ -48,7 +48,11 @@ export function OrderCard({
           <b className="client-dash-order-card__number">{order.orderNumber}</b>
           {order.npTtn && (
             <small className={order.npValid === false ? 'client-dash__ttn-warn' : ''}>
-              {order.npValid === false ? t('dash.npNotCreated') : t('dash.ttnFmt', { ttn: order.npTtn })}
+              {order.npValid === false
+                ? t('dash.npNotCreated')
+                : order.trackingCarrier === 'cdek'
+                  ? t('dash.ttnCdekFmt', { ttn: order.npTtn })
+                  : t('dash.ttnFmt', { ttn: order.npTtn })}
             </small>
           )}        </div>
         <span className={`client-dash__badge client-dash__badge--${statusClass}`}>{statusLabel}</span>

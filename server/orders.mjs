@@ -198,7 +198,12 @@ export function publicOrder(order) {
     amount: order.amount,
     currency: order.currency,
     npTtn: order.npTtn,
-    npValid: !isMockNpOrder(order),
+    // HU→RU manual/CDEK track is valid for the client cabinet when npTtn is set.
+    npValid: order?.npSnapshot?.provider === 'hu-ru'
+      ? Boolean(order.npTtn)
+      : !isMockNpOrder(order),
+    trackingCarrier: order?.npSnapshot?.carrier
+      || (order?.npSnapshot?.provider === 'hu-ru' && order.npTtn ? 'cdek' : null),
     fromCountry: tariff.fromCountry || sender.country || 'HU',
     toCountry: tariff.toCountry || receiver.country,
     parcelSize: parcel.boxSize,
@@ -317,6 +322,20 @@ export async function findOrdersForUser(user) {
 export async function listAllOrders() {
   const rows = await prisma.order.findMany({ orderBy: { createdAt: 'desc' } });
   return rows.map(mapOrder);
+}
+
+/** Hard-delete — only for unpaid / cancelled cleanup in Telegram ops. */
+export async function deleteOrder(id) {
+  if (!id) return false;
+  const existing = await findById(id);
+  if (!existing) return false;
+  await prisma.order.delete({ where: { id } });
+  return true;
+}
+
+export function canHardDeleteOrder(order) {
+  const status = String(order?.status || '');
+  return status === 'pending_payment' || status === 'cancelled';
 }
 
 export async function findByTtn(ttn) {

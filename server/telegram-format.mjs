@@ -130,6 +130,7 @@ export function formatHuRuOrderMessage(order, { event = 'paid' } = {}) {
     line('Создан', fmtDate(order.createdAt)),
     order.paidAt ? line('Оплачен', fmtDate(order.paidAt)) : null,
     line('Сумма', amount),
+    order.npTtn ? line('Трек СДЭК', order.npTtn) : null,
     order.priceSource ? line('Источник цены', order.priceSource) : null,
     '',
     '<b>Маршрут</b>',

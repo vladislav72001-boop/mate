@@ -1,4 +1,10 @@
-import { findById, listAllOrders, updateOrder } from './orders.mjs';
+import {
+  canHardDeleteOrder,
+  deleteOrder,
+  findById,
+  listAllOrders,
+  updateOrder,
+} from './orders.mjs';
 import {
   HU_RU_FOLDER_ORDER,
   HU_RU_FOLDERS,
@@ -28,6 +34,8 @@ import {
 } from './telegram-format.mjs';
 
 const awaitingPassword = new Set();
+/** @type {Map<number, { type: string, orderId?: string, folderKey?: string }>} */
+const awaitingInput = new Map();
 const ORDERS_PAGE_SIZE = 8;
 
 export { getTelegramSubscriberChatIds };
@@ -80,6 +88,7 @@ export async function sendTelegramMessage(token, chatId, text, options = {}) {
 }
 
 async function answerCallback(token, callbackQueryId, text) {
+  if (!callbackQueryId || callbackQueryId === 'noop') return;
   await tgApi(token, 'answerCallbackQuery', {
     callback_query_id: callbackQueryId,
     text: text || '',
@@ -99,7 +108,7 @@ function welcomeText() {
     `• ${MAIN_MENU_BUTTONS.users} — кто подключён к боту`,
     `• ${MAIN_MENU_BUTTONS.home} — вернуться сюда`,
     '',
-    'В карточке заказа можно вручную менять этапы: курьер забрал, сортировка, в пути, доставлен.',
+    'В карточке заказа: этапы, трек СДЭК при «В пути», удаление без оплаты / отменённых.',
   ].join('\n');
 }
 
@@ -118,6 +127,13 @@ function orderStatusKeyboard(order) {
       };
     });
     rows.push(chunk);
+  }
+  rows.push([{
+    text: order.npTtn ? `📋 Трек СДЭК: ${String(order.npTtn).slice(0, 18)}` : '📋 Указать трек СДЭК',
+    callback_data: `trkask:${order.id}`,
+  }]);
+  if (canHardDeleteOrder(order)) {
+    rows.push([{ text: '🗑 Удалить заказ', callback_data: `del:${order.id}` }]);
   }
   rows.push([{ text: '← К папке', callback_data: `folder:${folderKey}:0` }]);
   rows.push([{ text: '📂 Все папки', callback_data: 'menu:orders' }]);
@@ -220,6 +236,12 @@ async function sendFolderOrders(token, chatId, folderKey, page = 0) {
   if (safePage > 0) nav.push({ text: '← Раньше', callback_data: `folder:${folderKey}:${safePage - 1}` });
   if (safePage < totalPages - 1) nav.push({ text: 'Дальше →', callback_data: `folder:${folderKey}:${safePage + 1}` });
   if (nav.length) rows.push(nav);
+  if (folderKey === 'unpaid') {
+    rows.push([{ text: '🗑 Удалить все без оплаты', callback_data: 'delall:unpaid' }]);
+  }
+  if (folderKey === 'archive') {
+    rows.push([{ text: '🗑 Удалить все отменённые', callback_data: 'delall:cancelled' }]);
+  }
   rows.push([{ text: '📂 Все папки', callback_data: 'menu:orders' }]);
   rows.push([{ text: '← Главное меню', callback_data: 'menu:home' }]);
 
@@ -246,6 +268,7 @@ async function sendOrderDetails(token, chatId, orderId) {
     reply_markup: unpaid
       ? {
         inline_keyboard: [
+          [{ text: '🗑 Удалить заказ', callback_data: `del:${order.id}` }],
           [{ text: '← К папке', callback_data: `folder:${folderKey}:0` }],
           [{ text: '📂 Все папки', callback_data: 'menu:orders' }],
           [{ text: '← Главное меню', callback_data: 'menu:home' }],
@@ -255,7 +278,75 @@ async function sendOrderDetails(token, chatId, orderId) {
   });
 }
 
-async function applyHuRuStage(token, chatId, orderId, stageKey, callbackQueryId, { confirmed = false } = {}) {
+function normalizeCdekTrack(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
+}
+
+async function askCdekTrack(token, chatId, order, { afterTransit = false } = {}) {
+  awaitingInput.set(Number(chatId), {
+    type: 'cdek_track',
+    orderId: order.id,
+    afterTransit: Boolean(afterTransit),
+  });
+  const hint = afterTransit
+    ? 'Статус станет «В пути». Пришлите трек-номер СДЭК одним сообщением.'
+    : 'Пришлите трек-номер СДЭК одним сообщением — клиент увидит его в кабинете.';
+  await sendTelegramMessage(
+    token,
+    chatId,
+    [
+      `<b>Трек СДЭК</b> для ${escapeHtml(order.orderNumber)}`,
+      '',
+      hint,
+      order.npTtn ? `Сейчас: <code>${escapeHtml(order.npTtn)}</code>` : null,
+      '',
+      'Или нажмите «Пропустить».',
+    ].filter(Boolean).join('\n'),
+    {
+      reply_markup: {
+        inline_keyboard: [
+          afterTransit
+            ? [{ text: 'Пропустить (без трека)', callback_data: `trskip:${order.id}` }]
+            : [{ text: 'Отмена', callback_data: `order:${order.id}` }],
+          [{ text: '← К заказу', callback_data: `order:${order.id}` }],
+        ],
+      },
+    },
+  );
+}
+
+async function saveCdekTrack(order, track, { actorChatId } = {}) {
+  const snap = (order.npSnapshot && typeof order.npSnapshot === 'object')
+    ? { ...order.npSnapshot }
+    : {};
+  return updateOrder(order.id, {
+    npTtn: track,
+    npRef: order.npRef && !String(order.npRef).startsWith('mock-')
+      ? order.npRef
+      : `cdek-${track}`,
+    npSnapshot: {
+      ...snap,
+      provider: snap.provider || 'hu-ru',
+      manualFulfillment: true,
+      carrier: 'cdek',
+      cdekTrack: track,
+      cdekTrackUpdatedAt: new Date().toISOString(),
+      cdekTrackUpdatedBy: actorChatId != null ? Number(actorChatId) : null,
+    },
+  }, { notify: false });
+}
+
+async function applyHuRuStage(
+  token,
+  chatId,
+  orderId,
+  stageKey,
+  callbackQueryId,
+  { confirmed = false, skipTrackPrompt = false, track = null } = {},
+) {
   const order = await findById(orderId);
   if (!order || !isHuRuOrder(order)) {
     await answerCallback(token, callbackQueryId, 'Заказ не найден');
@@ -267,7 +358,7 @@ async function applyHuRuStage(token, chatId, orderId, stageKey, callbackQueryId,
   }
 
   const current = resolveHuRuStageKey(order);
-  if (current === stageKey) {
+  if (current === stageKey && track == null) {
     await answerCallback(token, callbackQueryId, 'Уже этот статус');
     await sendOrderDetails(token, chatId, orderId);
     return;
@@ -293,20 +384,129 @@ async function applyHuRuStage(token, chatId, orderId, stageKey, callbackQueryId,
     return;
   }
 
+  // «В пути» after sorting — ask for CDEK track so clients see it.
+  if (stageKey === 'transit' && !skipTrackPrompt && track == null) {
+    await answerCallback(token, callbackQueryId, 'Укажите трек СДЭК');
+    await askCdekTrack(token, chatId, order, { afterTransit: true });
+    return;
+  }
+
   const built = buildHuRuStatusPatch(order, stageKey, { actorChatId: chatId });
   if (built.error) {
     await answerCallback(token, callbackQueryId, built.error);
     return;
   }
 
+  if (track) {
+    const normalized = normalizeCdekTrack(track);
+    built.patch.npTtn = normalized;
+    built.patch.npRef = order.npRef && !String(order.npRef).startsWith('mock-')
+      ? order.npRef
+      : `cdek-${normalized}`;
+    built.patch.npSnapshot = {
+      ...built.patch.npSnapshot,
+      carrier: 'cdek',
+      cdekTrack: normalized,
+      cdekTrackUpdatedAt: new Date().toISOString(),
+      cdekTrackUpdatedBy: Number(chatId),
+    };
+  }
+
   const updated = await updateOrder(order.id, built.patch);
   await answerCallback(token, callbackQueryId, built.stage.label);
+  const trackLine = updated?.npTtn
+    ? `\nТрек СДЭК: <code>${escapeHtml(updated.npTtn)}</code>`
+    : '';
   await sendTelegramMessage(
     token,
     chatId,
-    `✅ Статус обновлён: <b>${escapeHtml(built.stage.label)}</b>\nКлиент увидит это в личном кабинете.`,
+    `✅ Статус обновлён: <b>${escapeHtml(built.stage.label)}</b>${trackLine}\nКлиент увидит это в личном кабинете.`,
   );
   await sendOrderDetails(token, chatId, updated?.id || orderId);
+}
+
+async function confirmDeleteOrder(token, chatId, orderId, callbackQueryId) {
+  const order = await findById(orderId);
+  if (!order || !isHuRuOrder(order)) {
+    await answerCallback(token, callbackQueryId, 'Заказ не найден');
+    return;
+  }
+  if (!canHardDeleteOrder(order)) {
+    await answerCallback(token, callbackQueryId, 'Можно удалять только без оплаты / отменённые');
+    return;
+  }
+  await answerCallback(token, callbackQueryId, 'Подтвердите удаление');
+  await sendTelegramMessage(
+    token,
+    chatId,
+    `<b>Удалить ${escapeHtml(order.orderNumber)}?</b>\nЗаказ исчезнет из бота и базы. Это необратимо.`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Да, удалить', callback_data: `delc:${order.id}:yes` },
+            { text: 'Нет', callback_data: `order:${order.id}` },
+          ],
+        ],
+      },
+    },
+  );
+}
+
+async function executeDeleteOrder(token, chatId, orderId, callbackQueryId) {
+  const order = await findById(orderId);
+  if (!order || !isHuRuOrder(order)) {
+    await answerCallback(token, callbackQueryId, 'Заказ не найден');
+    return;
+  }
+  if (!canHardDeleteOrder(order)) {
+    await answerCallback(token, callbackQueryId, 'Удаление запрещено');
+    return;
+  }
+  const folderKey = resolveHuRuFolderKey(order);
+  const ok = await deleteOrder(order.id);
+  await answerCallback(token, callbackQueryId, ok ? 'Удалено' : 'Ошибка');
+  if (ok) {
+    await sendTelegramMessage(token, chatId, `🗑 Заказ <b>${escapeHtml(order.orderNumber)}</b> удалён.`);
+    await sendFolderOrders(token, chatId, folderKey, 0);
+  }
+}
+
+async function executeDeleteAll(token, chatId, kind, callbackQueryId, { confirmed = false } = {}) {
+  if (!confirmed) {
+    await answerCallback(token, callbackQueryId, 'Подтвердите очистку');
+    const label = kind === 'unpaid' ? 'все заказы без оплаты' : 'все отменённые заказы';
+    await sendTelegramMessage(
+      token,
+      chatId,
+      `<b>Удалить ${label}?</b>\nНеобратимо.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'Да, удалить', callback_data: `delallc:${kind}:yes` },
+              { text: 'Нет', callback_data: kind === 'unpaid' ? 'folder:unpaid:0' : 'folder:archive:0' },
+            ],
+          ],
+        },
+      },
+    );
+    return;
+  }
+
+  const orders = await listHuRuOrders();
+  const targets = orders.filter((o) => (
+    kind === 'unpaid'
+      ? o.status === 'pending_payment'
+      : o.status === 'cancelled'
+  ));
+  let deleted = 0;
+  for (const order of targets) {
+    if (await deleteOrder(order.id)) deleted += 1;
+  }
+  await answerCallback(token, callbackQueryId, `Удалено: ${deleted}`);
+  await sendTelegramMessage(token, chatId, `🗑 Удалено заказов: <b>${deleted}</b>.`);
+  await sendFolderOrders(token, chatId, kind === 'unpaid' ? 'unpaid' : 'archive', 0);
 }
 
 function escapeHtml(value) {
@@ -355,14 +555,65 @@ async function sendUsersMenu(token, chatId) {
   );
 }
 
+async function handlePendingInput(token, chatId, text, from) {
+  const pending = awaitingInput.get(Number(chatId));
+  if (!pending) return false;
+  touchTelegramUser(chatId, from);
+
+  if (pending.type === 'cdek_track') {
+    if (text === '/cancel' || text === MAIN_MENU_BUTTONS.home || text === MAIN_MENU_BUTTONS.orders) {
+      awaitingInput.delete(Number(chatId));
+      if (text === MAIN_MENU_BUTTONS.orders || text === '/orders') await sendOrdersMenu(token, chatId);
+      else if (text === MAIN_MENU_BUTTONS.home || text === '/menu') await sendMainMenu(token, chatId);
+      else await sendOrderDetails(token, chatId, pending.orderId);
+      return true;
+    }
+    const track = normalizeCdekTrack(text);
+    if (track.length < 6 || track.length > 40) {
+      await sendTelegramMessage(
+        token,
+        chatId,
+        'Трек слишком короткий или длинный. Пришлите номер СДЭК ещё раз (или /cancel).',
+      );
+      return true;
+    }
+    awaitingInput.delete(Number(chatId));
+    if (pending.afterTransit) {
+      await applyHuRuStage(token, chatId, pending.orderId, 'transit', 'noop', {
+        skipTrackPrompt: true,
+        track,
+      });
+      return true;
+    }
+    const order = await findById(pending.orderId);
+    if (!order || !isHuRuOrder(order)) {
+      await sendTelegramMessage(token, chatId, 'Заказ не найден.');
+      return true;
+    }
+    const updated = await saveCdekTrack(order, track, { actorChatId: chatId });
+    await sendTelegramMessage(
+      token,
+      chatId,
+      `✅ Трек СДЭК сохранён: <code>${escapeHtml(track)}</code>\nКлиент увидит его в кабинете.`,
+    );
+    await sendOrderDetails(token, chatId, updated?.id || pending.orderId);
+    return true;
+  }
+  return false;
+}
+
 async function handleMenuText(token, chatId, text, from) {
+  if (await handlePendingInput(token, chatId, text, from)) return;
+
   touchTelegramUser(chatId, from);
 
   if (text === MAIN_MENU_BUTTONS.home || text === '/menu') {
+    awaitingInput.delete(Number(chatId));
     await sendMainMenu(token, chatId);
     return;
   }
   if (text === MAIN_MENU_BUTTONS.orders || text === '/orders') {
+    awaitingInput.delete(Number(chatId));
     await sendOrdersMenu(token, chatId);
     return;
   }
@@ -412,7 +663,43 @@ async function handleCallback(token, callback) {
     await applyHuRuStage(token, chatId, orderId, 'cancel', callback.id, { confirmed: true });
     return;
   }
+  if (data.startsWith('trkask:')) {
+    const orderId = data.slice('trkask:'.length);
+    const order = await findById(orderId);
+    if (!order || !isHuRuOrder(order)) {
+      await answerCallback(token, callback.id, 'Заказ не найден');
+      return;
+    }
+    await answerCallback(token, callback.id, 'Жду трек');
+    await askCdekTrack(token, chatId, order, { afterTransit: false });
+    return;
+  }
+  if (data.startsWith('trskip:')) {
+    const orderId = data.slice('trskip:'.length);
+    awaitingInput.delete(Number(chatId));
+    await applyHuRuStage(token, chatId, orderId, 'transit', callback.id, { skipTrackPrompt: true });
+    return;
+  }
+  if (data.startsWith('del:') && !data.startsWith('delc:') && !data.startsWith('delall')) {
+    await confirmDeleteOrder(token, chatId, data.slice('del:'.length), callback.id);
+    return;
+  }
+  if (data.startsWith('delc:') && data.endsWith(':yes')) {
+    const orderId = data.slice('delc:'.length, -':yes'.length);
+    await executeDeleteOrder(token, chatId, orderId, callback.id);
+    return;
+  }
+  if (data === 'delall:unpaid' || data === 'delall:cancelled') {
+    await executeDeleteAll(token, chatId, data.slice('delall:'.length), callback.id);
+    return;
+  }
+  if (data.startsWith('delallc:') && data.endsWith(':yes')) {
+    const kind = data.slice('delallc:'.length, -':yes'.length);
+    await executeDeleteAll(token, chatId, kind, callback.id, { confirmed: true });
+    return;
+  }
 
+  awaitingInput.delete(Number(chatId));
   await answerCallback(token, callback.id);
 
   if (data === 'menu:home') {
