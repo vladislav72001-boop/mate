@@ -1,4 +1,9 @@
-import { HU_RU_STAGES, resolveHuRuStageKey } from './hu-ru-status.mjs';
+import {
+  HU_RU_FOLDERS,
+  HU_RU_STAGES,
+  resolveHuRuFolderKey,
+  resolveHuRuStageKey,
+} from './hu-ru-status.mjs';
 import { isTelegramAdmin } from './telegram-store.mjs';
 
 function escapeHtml(value) {
@@ -177,7 +182,21 @@ export function formatHuRuOrderMessage(order, { event = 'paid' } = {}) {
 }
 
 export function formatOrderListLabel(order) {
-  return `${fmtShortDate(order.createdAt || order.paidAt)} · ${order.orderNumber}`;
+  const body = order.payload || {};
+  const tariff = body.tariff || {};
+  const receiver = body.receiver || {};
+  const city = String(tariff.destCity || receiver.city || '').trim() || 'RU';
+  const folder = HU_RU_FOLDERS[resolveHuRuFolderKey(order)];
+  const stageKey = resolveHuRuStageKey(order);
+  const stage = stageKey ? HU_RU_STAGES[stageKey] : null;
+  const mark = folder?.emoji || '📦';
+  const stageShort = stage
+    ? stage.label.replace('Ждём посылку от отправителя', 'ждём').replace('Курьер забрал посылку', 'забрали').replace('На сортировочном центре', 'сорт.').replace('В пути', 'в пути').replace('Доставлен', 'доставлен').replace('Отменён', 'отменён')
+    : (order.status === 'pending_payment' ? 'без оплаты' : '—');
+  // Telegram button text limit ~64 chars — keep compact.
+  const num = String(order.orderNumber || '').slice(0, 18);
+  const when = fmtShortDate(order.paidAt || order.createdAt).slice(0, 11);
+  return `${mark} ${num} · ${city} · ${stageShort} · ${when}`.slice(0, 64);
 }
 
 export function formatTelegramProfile(user) {

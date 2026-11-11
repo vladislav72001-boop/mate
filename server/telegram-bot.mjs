@@ -1,8 +1,12 @@
 import { findById, listAllOrders, updateOrder } from './orders.mjs';
 import {
+  HU_RU_FOLDER_ORDER,
+  HU_RU_FOLDERS,
   HU_RU_STAGE_ORDER,
   HU_RU_STAGES,
   buildHuRuStatusPatch,
+  orderMatchesHuRuFolder,
+  resolveHuRuFolderKey,
   resolveHuRuStageKey,
 } from './hu-ru-status.mjs';
 import {
@@ -90,7 +94,7 @@ function welcomeText() {
     'Вы авторизованы. Заказы с сайта приходят сюда автоматически.',
     '',
     'Меню:',
-    `• ${MAIN_MENU_BUTTONS.orders} — список заявок`,
+    `• ${MAIN_MENU_BUTTONS.orders} — папки: ждём забор / в пути / архив`,
     `• ${MAIN_MENU_BUTTONS.profile} — ваш профиль`,
     `• ${MAIN_MENU_BUTTONS.users} — кто подключён к боту`,
     `• ${MAIN_MENU_BUTTONS.home} — вернуться сюда`,
@@ -101,6 +105,7 @@ function welcomeText() {
 
 function orderStatusKeyboard(order) {
   const current = resolveHuRuStageKey(order);
+  const folderKey = resolveHuRuFolderKey(order);
   const rows = [];
   const stageKeys = [...HU_RU_STAGE_ORDER, 'cancel'];
   for (let i = 0; i < stageKeys.length; i += 2) {
@@ -114,7 +119,8 @@ function orderStatusKeyboard(order) {
     });
     rows.push(chunk);
   }
-  rows.push([{ text: '← К списку заказов', callback_data: 'menu:orders:0' }]);
+  rows.push([{ text: '← К папке', callback_data: `folder:${folderKey}:0` }]);
+  rows.push([{ text: '📂 Все папки', callback_data: 'menu:orders' }]);
   rows.push([{ text: '← Главное меню', callback_data: 'menu:home' }]);
   return { inline_keyboard: rows };
 }
@@ -130,12 +136,75 @@ async function listHuRuOrders() {
   return orders.filter(isHuRuOrder);
 }
 
-async function sendOrdersMenu(token, chatId, page = 0) {
+function countByFolder(orders) {
+  const counts = Object.create(null);
+  for (const key of HU_RU_FOLDER_ORDER) counts[key] = 0;
+  for (const order of orders) {
+    const key = resolveHuRuFolderKey(order);
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+/** Root: folders with counts (ждём / в пути / без оплаты / архив). */
+async function sendOrdersMenu(token, chatId) {
   const orders = await listHuRuOrders();
   if (!orders.length) {
     await sendTelegramMessage(token, chatId, '<b>📦 Заказы</b>\n\nПока нет заявок HU→RU.', {
       reply_markup: backToMenuInline(),
     });
+    return;
+  }
+
+  const counts = countByFolder(orders);
+  const rows = HU_RU_FOLDER_ORDER.map((key) => {
+    const folder = HU_RU_FOLDERS[key];
+    const n = counts[key] || 0;
+    return [{
+      text: `${folder.title} (${n})`,
+      callback_data: `folder:${key}:0`,
+    }];
+  });
+  rows.push([{ text: '← Главное меню', callback_data: 'menu:home' }]);
+
+  const active = (counts.wait || 0) + (counts.transit || 0) + (counts.unpaid || 0);
+  await sendTelegramMessage(
+    token,
+    chatId,
+    [
+      '<b>📦 Заказы HU→RU</b>',
+      '',
+      `Активных: <b>${active}</b> · в архиве: <b>${counts.archive || 0}</b> · всего: ${orders.length}`,
+      '',
+      'Выберите папку:',
+      '📥 не забрали · ✈️ в пути · 🗄 доставлен / отменён',
+    ].join('\n'),
+    { reply_markup: { inline_keyboard: rows } },
+  );
+}
+
+async function sendFolderOrders(token, chatId, folderKey, page = 0) {
+  const folder = HU_RU_FOLDERS[folderKey];
+  if (!folder) {
+    await sendOrdersMenu(token, chatId);
+    return;
+  }
+
+  const orders = (await listHuRuOrders()).filter((o) => orderMatchesHuRuFolder(o, folderKey));
+  if (!orders.length) {
+    await sendTelegramMessage(
+      token,
+      chatId,
+      `<b>${folder.title}</b>\n\nВ этой папке пока пусто.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📂 Все папки', callback_data: 'menu:orders' }],
+            [{ text: '← Главное меню', callback_data: 'menu:home' }],
+          ],
+        },
+      },
+    );
     return;
   }
 
@@ -148,15 +217,16 @@ async function sendOrdersMenu(token, chatId, page = 0) {
   }]));
 
   const nav = [];
-  if (safePage > 0) nav.push({ text: '← Раньше', callback_data: `orders:${safePage - 1}` });
-  if (safePage < totalPages - 1) nav.push({ text: 'Дальше →', callback_data: `orders:${safePage + 1}` });
+  if (safePage > 0) nav.push({ text: '← Раньше', callback_data: `folder:${folderKey}:${safePage - 1}` });
+  if (safePage < totalPages - 1) nav.push({ text: 'Дальше →', callback_data: `folder:${folderKey}:${safePage + 1}` });
   if (nav.length) rows.push(nav);
+  rows.push([{ text: '📂 Все папки', callback_data: 'menu:orders' }]);
   rows.push([{ text: '← Главное меню', callback_data: 'menu:home' }]);
 
   await sendTelegramMessage(
     token,
     chatId,
-    `<b>📦 Заказы HU→RU</b>\nСтраница ${safePage + 1}/${totalPages} · всего ${orders.length}`,
+    `<b>${folder.title}</b>\nСтраница ${safePage + 1}/${totalPages} · заказов: ${orders.length}`,
     { reply_markup: { inline_keyboard: rows } },
   );
 }
@@ -171,11 +241,13 @@ async function sendOrderDetails(token, chatId, orderId) {
   }
   const event = order.status === 'pending_payment' ? 'created' : 'status';
   const unpaid = order.status === 'pending_payment';
+  const folderKey = resolveHuRuFolderKey(order);
   await sendTelegramMessage(token, chatId, formatHuRuOrderMessage(order, { event }), {
     reply_markup: unpaid
       ? {
         inline_keyboard: [
-          [{ text: '← К списку заказов', callback_data: 'menu:orders:0' }],
+          [{ text: '← К папке', callback_data: `folder:${folderKey}:0` }],
+          [{ text: '📂 Все папки', callback_data: 'menu:orders' }],
           [{ text: '← Главное меню', callback_data: 'menu:home' }],
         ],
       }
@@ -291,7 +363,7 @@ async function handleMenuText(token, chatId, text, from) {
     return;
   }
   if (text === MAIN_MENU_BUTTONS.orders || text === '/orders') {
-    await sendOrdersMenu(token, chatId, 0);
+    await sendOrdersMenu(token, chatId);
     return;
   }
   if (text === MAIN_MENU_BUTTONS.profile || text === '/profile') {
@@ -348,12 +420,19 @@ async function handleCallback(token, callback) {
     return;
   }
   if (data === 'menu:orders:0' || data === 'menu:orders') {
-    await sendOrdersMenu(token, chatId, 0);
+    await sendOrdersMenu(token, chatId);
     return;
   }
+  if (data.startsWith('folder:')) {
+    const parts = data.split(':');
+    const folderKey = parts[1] || 'wait';
+    const page = Number(parts[2]) || 0;
+    await sendFolderOrders(token, chatId, folderKey, page);
+    return;
+  }
+  // Legacy pagination from older messages → open folders root.
   if (data.startsWith('orders:')) {
-    const page = Number(data.slice('orders:'.length)) || 0;
-    await sendOrdersMenu(token, chatId, page);
+    await sendOrdersMenu(token, chatId);
     return;
   }
   if (data.startsWith('order:')) {

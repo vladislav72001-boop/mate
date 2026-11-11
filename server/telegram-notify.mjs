@@ -28,7 +28,7 @@ export async function notifyTelegramHuRuOrder(order, { event = 'paid' } = {}) {
   const replyMarkup = {
     inline_keyboard: [
       [{ text: '📦 Открыть заказ', callback_data: `order:${order.id}` }],
-      [{ text: '📋 Список заказов', callback_data: 'menu:orders:0' }],
+      [{ text: '📂 Папки заказов', callback_data: 'menu:orders' }],
     ],
   };
 

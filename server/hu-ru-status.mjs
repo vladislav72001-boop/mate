@@ -117,6 +117,48 @@ export function resolveHuRuStageKey(order) {
   return null;
 }
 
+/** Operator folders in Telegram: separate «не забрали / в пути / архив». */
+export const HU_RU_FOLDERS = {
+  unpaid: {
+    key: 'unpaid',
+    title: '💳 Без оплаты',
+    short: 'Без оплаты',
+    emoji: '💳',
+  },
+  wait: {
+    key: 'wait',
+    title: '📥 Ждём забор',
+    short: 'Ждём забор',
+    emoji: '📥',
+  },
+  transit: {
+    key: 'transit',
+    title: '✈️ В пути',
+    short: 'В пути',
+    emoji: '✈️',
+  },
+  archive: {
+    key: 'archive',
+    title: '🗄 Архив',
+    short: 'Архив',
+    emoji: '🗄',
+  },
+};
+
+export const HU_RU_FOLDER_ORDER = ['wait', 'transit', 'unpaid', 'archive'];
+
+export function resolveHuRuFolderKey(order) {
+  if (String(order?.status || '') === 'pending_payment') return 'unpaid';
+  const stage = resolveHuRuStageKey(order);
+  if (stage === 'done' || stage === 'cancel') return 'archive';
+  if (stage === 'pickup' || stage === 'sort' || stage === 'transit') return 'transit';
+  return 'wait';
+}
+
+export function orderMatchesHuRuFolder(order, folderKey) {
+  return resolveHuRuFolderKey(order) === folderKey;
+}
+
 /**
  * Build Prisma patch for a manual HU→RU stage change.
  * @returns {{ patch: object, stage: object } | { error: string }}
