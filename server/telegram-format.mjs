@@ -192,7 +192,14 @@ export function formatOrderListLabel(order) {
   const stage = stageKey ? HU_RU_STAGES[stageKey] : null;
   const mark = folder?.emoji || '📦';
   const stageShort = stage
-    ? stage.label.replace('Ждём посылку от отправителя', 'ждём').replace('Курьер забрал посылку', 'забрали').replace('На сортировочном центре', 'сорт.').replace('В пути', 'в пути').replace('Доставлен', 'доставлен').replace('Отменён', 'отменён')
+    ? stage.label
+      .replace('Ждём посылку от отправителя', 'ждём')
+      .replace('Курьер забрал посылку', 'забрали')
+      .replace('На сортировочном центре', 'сорт.')
+      .replace('Транзит (международный)', 'транзит')
+      .replace('В пути по России (СДЭК)', 'по РФ')
+      .replace('Доставлен', 'доставлен')
+      .replace('Отменён', 'отменён')
     : (order.status === 'pending_payment' ? 'без оплаты' : '—');
   // Telegram button text limit ~64 chars — keep compact.
   const num = String(order.orderNumber || '').slice(0, 18);

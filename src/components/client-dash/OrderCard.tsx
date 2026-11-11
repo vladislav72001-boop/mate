@@ -54,7 +54,11 @@ export function OrderCard({
                   ? t('dash.ttnCdekFmt', { ttn: order.npTtn })
                   : t('dash.ttnFmt', { ttn: order.npTtn })}
             </small>
-          )}        </div>
+          )}
+          {order.trackingCarrier === 'cdek' && order.npTtn && order.npValid !== false && (
+            <small className="client-dash-order-card__cdek-note">{t('dash.cdekLastMileNote')}</small>
+          )}
+        </div>
         <span className={`client-dash__badge client-dash__badge--${statusClass}`}>{statusLabel}</span>
       </div>
 

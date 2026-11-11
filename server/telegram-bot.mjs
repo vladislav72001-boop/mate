@@ -108,7 +108,8 @@ function welcomeText() {
     `• ${MAIN_MENU_BUTTONS.users} — кто подключён к боту`,
     `• ${MAIN_MENU_BUTTONS.home} — вернуться сюда`,
     '',
-    'В карточке заказа: этапы, трек СДЭК при «В пути», удаление без оплаты / отменённых.',
+    'Этапы: забор → сортировка → транзит → в пути по РФ (трек СДЭК) → доставлен.',
+    'Неоплаченные и отменённые можно удалять.',
   ].join('\n');
 }
 
@@ -285,14 +286,14 @@ function normalizeCdekTrack(raw) {
     .toUpperCase();
 }
 
-async function askCdekTrack(token, chatId, order, { afterTransit = false } = {}) {
+async function askCdekTrack(token, chatId, order, { afterRussia = false } = {}) {
   awaitingInput.set(Number(chatId), {
     type: 'cdek_track',
     orderId: order.id,
-    afterTransit: Boolean(afterTransit),
+    afterRussia: Boolean(afterRussia),
   });
-  const hint = afterTransit
-    ? 'Статус станет «В пути». Пришлите трек-номер СДЭК одним сообщением.'
+  const hint = afterRussia
+    ? 'Статус станет «В пути по России». Пришлите трек СДЭК — клиент увидит его и подсказку про партнёра.'
     : 'Пришлите трек-номер СДЭК одним сообщением — клиент увидит его в кабинете.';
   await sendTelegramMessage(
     token,
@@ -308,7 +309,7 @@ async function askCdekTrack(token, chatId, order, { afterTransit = false } = {})
     {
       reply_markup: {
         inline_keyboard: [
-          afterTransit
+          afterRussia
             ? [{ text: 'Пропустить (без трека)', callback_data: `trskip:${order.id}` }]
             : [{ text: 'Отмена', callback_data: `order:${order.id}` }],
           [{ text: '← К заказу', callback_data: `order:${order.id}` }],
@@ -384,29 +385,32 @@ async function applyHuRuStage(
     return;
   }
 
-  // «В пути» after sorting — ask for CDEK track so clients see it.
-  if (stageKey === 'transit' && !skipTrackPrompt && track == null) {
+  // «В пути по РФ» — ask for CDEK track (last mile partner).
+  if (stageKey === 'russia' && !skipTrackPrompt && track == null) {
     await answerCallback(token, callbackQueryId, 'Укажите трек СДЭК');
-    await askCdekTrack(token, chatId, order, { afterTransit: true });
+    await askCdekTrack(token, chatId, order, { afterRussia: true });
     return;
   }
 
-  const built = buildHuRuStatusPatch(order, stageKey, { actorChatId: chatId });
+  const normalizedTrack = track ? normalizeCdekTrack(track) : null;
+  const built = buildHuRuStatusPatch(order, stageKey, {
+    actorChatId: chatId,
+    cdekTrack: normalizedTrack || undefined,
+  });
   if (built.error) {
     await answerCallback(token, callbackQueryId, built.error);
     return;
   }
 
-  if (track) {
-    const normalized = normalizeCdekTrack(track);
-    built.patch.npTtn = normalized;
+  if (normalizedTrack) {
+    built.patch.npTtn = normalizedTrack;
     built.patch.npRef = order.npRef && !String(order.npRef).startsWith('mock-')
       ? order.npRef
-      : `cdek-${normalized}`;
+      : `cdek-${normalizedTrack}`;
     built.patch.npSnapshot = {
       ...built.patch.npSnapshot,
       carrier: 'cdek',
-      cdekTrack: normalized,
+      cdekTrack: normalizedTrack,
       cdekTrackUpdatedAt: new Date().toISOString(),
       cdekTrackUpdatedBy: Number(chatId),
     };
@@ -578,8 +582,8 @@ async function handlePendingInput(token, chatId, text, from) {
       return true;
     }
     awaitingInput.delete(Number(chatId));
-    if (pending.afterTransit) {
-      await applyHuRuStage(token, chatId, pending.orderId, 'transit', 'noop', {
+    if (pending.afterRussia) {
+      await applyHuRuStage(token, chatId, pending.orderId, 'russia', 'noop', {
         skipTrackPrompt: true,
         track,
       });
@@ -671,13 +675,13 @@ async function handleCallback(token, callback) {
       return;
     }
     await answerCallback(token, callback.id, 'Жду трек');
-    await askCdekTrack(token, chatId, order, { afterTransit: false });
+    await askCdekTrack(token, chatId, order, { afterRussia: false });
     return;
   }
   if (data.startsWith('trskip:')) {
     const orderId = data.slice('trskip:'.length);
     awaitingInput.delete(Number(chatId));
-    await applyHuRuStage(token, chatId, orderId, 'transit', callback.id, { skipTrackPrompt: true });
+    await applyHuRuStage(token, chatId, orderId, 'russia', callback.id, { skipTrackPrompt: true });
     return;
   }
   if (data.startsWith('del:') && !data.startsWith('delc:') && !data.startsWith('delall')) {

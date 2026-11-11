@@ -1,9 +1,11 @@
 /**
  * Manual HU→RU fulfillment stages for Telegram operators.
  * Updates Mate order.status + npSnapshot.trackingTimeline (shown in client cabinet).
+ *
+ * Flow: ждём → забрали → сортировка → транзит (международный) → в пути по РФ (СДЭК) → доставлен
  */
 
-export const HU_RU_STAGE_ORDER = ['wait', 'pickup', 'sort', 'transit', 'done'];
+export const HU_RU_STAGE_ORDER = ['wait', 'pickup', 'sort', 'transit', 'russia', 'done'];
 
 /** @type {Record<string, { key: string, status: string, button: string, label: string, stepId: string, title: string }>} */
 export const HU_RU_STAGES = {
@@ -34,10 +36,18 @@ export const HU_RU_STAGES = {
   transit: {
     key: 'transit',
     status: 'submitted',
-    button: '✈️ В пути',
-    label: 'В пути',
+    button: '✈️ Транзит',
+    label: 'Транзит (международный)',
     stepId: 'transit',
-    title: 'В пути',
+    title: 'В транзите',
+  },
+  russia: {
+    key: 'russia',
+    status: 'submitted',
+    button: '🇷🇺 В пути по РФ',
+    label: 'В пути по России (СДЭК)',
+    stepId: 'russia',
+    title: 'В пути по России',
   },
   done: {
     key: 'done',
@@ -68,7 +78,7 @@ function previousAtById(timeline) {
   return map;
 }
 
-export function buildHuRuTrackingTimeline(stageKey, { previousTimeline, paidAt } = {}) {
+export function buildHuRuTrackingTimeline(stageKey, { previousTimeline, paidAt, cdekTrack } = {}) {
   const now = new Date().toISOString();
   const prevAt = previousAtById(previousTimeline);
 
@@ -96,9 +106,13 @@ export function buildHuRuTrackingTimeline(stageKey, { previousTimeline, paidAt }
       at = prevAt[step.stepId] || (idx === 0 ? (paidAt || now) : null) || now;
       if (current && !prevAt[step.stepId]) at = now;
     }
+    const place = step.key === 'russia' && cdekTrack
+      ? `СДЭК ${cdekTrack}`
+      : (step.key === 'russia' ? 'Партнёр СДЭК · последняя миля' : null);
     return {
       id: step.stepId,
       title: step.title,
+      place,
       at,
       done,
       current,
@@ -109,10 +123,17 @@ export function buildHuRuTrackingTimeline(stageKey, { previousTimeline, paidAt }
 
 export function resolveHuRuStageKey(order) {
   const snap = order?.npSnapshot && typeof order.npSnapshot === 'object' ? order.npSnapshot : {};
+  // Old "transit" with CDEK track was the Russia last-mile step before we split stages.
+  if (snap.huRuStage === 'transit' && (snap.cdekTrack || order?.npTtn) && snap.carrier === 'cdek') {
+    return 'russia';
+  }
   if (snap.huRuStage && HU_RU_STAGES[snap.huRuStage]) return snap.huRuStage;
   if (order?.status === 'cancelled') return 'cancel';
   if (order?.status === 'delivered') return 'done';
-  if (order?.status === 'submitted') return 'transit';
+  if (order?.status === 'submitted') {
+    if (order?.npTtn || snap.cdekTrack) return 'russia';
+    return 'transit';
+  }
   if (order?.status === 'waiting_from_you' || order?.status === 'paid') return 'wait';
   return null;
 }
@@ -133,7 +154,7 @@ export const HU_RU_FOLDERS = {
   },
   transit: {
     key: 'transit',
-    title: '✈️ В пути',
+    title: '✈️ В работе / в пути',
     short: 'В пути',
     emoji: '✈️',
   },
@@ -151,7 +172,9 @@ export function resolveHuRuFolderKey(order) {
   if (String(order?.status || '') === 'pending_payment') return 'unpaid';
   const stage = resolveHuRuStageKey(order);
   if (stage === 'done' || stage === 'cancel') return 'archive';
-  if (stage === 'pickup' || stage === 'sort' || stage === 'transit') return 'transit';
+  if (stage === 'pickup' || stage === 'sort' || stage === 'transit' || stage === 'russia') {
+    return 'transit';
+  }
   return 'wait';
 }
 
@@ -163,7 +186,7 @@ export function orderMatchesHuRuFolder(order, folderKey) {
  * Build Prisma patch for a manual HU→RU stage change.
  * @returns {{ patch: object, stage: object } | { error: string }}
  */
-export function buildHuRuStatusPatch(order, stageKey, { actorChatId } = {}) {
+export function buildHuRuStatusPatch(order, stageKey, { actorChatId, cdekTrack } = {}) {
   const stage = HU_RU_STAGES[stageKey];
   if (!stage) return { error: 'Неизвестный статус' };
 
@@ -171,9 +194,11 @@ export function buildHuRuStatusPatch(order, stageKey, { actorChatId } = {}) {
     ? { ...order.npSnapshot }
     : {};
 
+  const track = cdekTrack || snap.cdekTrack || order.npTtn || null;
   const timeline = buildHuRuTrackingTimeline(stageKey, {
     previousTimeline: snap.trackingTimeline,
     paidAt: order.paidAt,
+    cdekTrack: track,
   });
   if (!timeline) return { error: 'Неизвестный статус' };
 

@@ -157,6 +157,9 @@ export function ShipmentDetailModal({
                   <dd><b>{order.npTtn}</b></dd>
                 </div>
               )}
+              {order.trackingCarrier === 'cdek' && order.npTtn && (
+                <p className="ship-detail__cdek-note">{t('dash.cdekLastMileNote')}</p>
+              )}
             </dl>
             {Array.isArray(order.tracking) && order.tracking.length > 0 && (
               <ul className="client-dash__timeline ship-detail__timeline">
